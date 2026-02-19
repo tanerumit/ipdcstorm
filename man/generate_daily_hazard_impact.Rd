@@ -20,7 +20,7 @@ generate_daily_hazard_impact(
 \arguments{
 \item{out}{List returned by \code{run_hazard_model()}.}
 
-\item{location}{Character; target location name.}
+\item{location}{Character vector of one or more target location names.}
 
 \item{sim_years}{Integer vector of simulation-year indices to generate.}
 
@@ -39,7 +39,7 @@ generate_daily_hazard_impact(
 \item{seed}{Integer seed.}
 }
 \value{
-Tibble with columns:
+Named list of tibbles (one per location), each with columns:
 \code{location}, \code{sim_year}, \code{scenario}, \code{date},
 \code{wind_kt}, \code{wind_gust_kt}, \code{surge_m},
 \code{event_id}, \code{event_class}, \code{pressure_hpa},
@@ -47,6 +47,19 @@ Tibble with columns:
 \code{damage_intensity}, \code{damage_rate}, \code{cum_damage}.
 }
 \description{
-For a given location and simulated years, creates daily hazard and damage
-series with a fixed 15-column schema.
+For one or more locations and simulated years, creates daily hazard and damage
+series with a fixed 15-column schema.  Always returns a \strong{named list} of
+tibbles, one element per location (e.g. \code{out$Saba}, \code{out$Miami}).
+}
+\examples{
+\dontrun{
+# Single location — returns list of length 1
+res <- generate_daily_hazard_impact(out, location = "Saba")
+res$Saba
+
+# Multiple locations
+res <- generate_daily_hazard_impact(out, location = c("Saba", "St. Eustatius"))
+res$Saba
+res$`St. Eustatius`
+}
 }

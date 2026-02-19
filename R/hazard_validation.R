@@ -35,17 +35,17 @@ compute_return_levels <- function(annual_max,
     names(out) <- paste0("RL_", return_periods, "yr")
     return(out)
   }
-  
+
   # Weibull plotting position: T = (n+1) / rank
   ranks <- seq_len(n)
   T_emp <- (n + 1) / (n + 1 - ranks)  # exceedance-based
-  
+
   out <- stats::approx(
     x = T_emp, y = x,
     xout = return_periods,
     rule = 2  # clamp at boundaries
   )$y
-  
+
   names(out) <- paste0("RL_", return_periods, "yr")
   out
 }
@@ -70,49 +70,49 @@ fit_intensity_kde <- function(pool, lower, upper = Inf, bw_mult = 1.0) {
       pool_sd = if (n > 1) stats::sd(pool) else 10
     ))
   }
-  
+
   # Reflect at boundaries
   reflected <- pool
   reflected <- c(reflected, 2 * lower - pool)  # reflect at lower bound
-  
+
   if (is.finite(upper)) {
     reflected <- c(reflected, 2 * upper - pool)  # reflect at upper bound
   }
-  
+
   # Bandwidth: Silverman's rule on original data, scaled
   bw <- bw_mult * stats::bw.nrd0(pool)
-  
+
   # Fit KDE on reflected data
   dens <- stats::density(reflected, bw = bw, n = 2048,
                          from = lower - 3 * bw,
                          to = if (is.finite(upper)) upper + 3 * bw else max(pool) + 6 * bw)
-  
+
   # Restrict to valid support
   valid <- dens$x >= lower & (if (is.finite(upper)) dens$x <= upper else TRUE)
   x_valid <- dens$x[valid]
   y_valid <- dens$y[valid]
-  
+
   # Renormalize
   y_valid <- pmax(0, y_valid)
   area <- stats::integrate(stats::approxfun(x_valid, y_valid, rule = 2),
                            lower = min(x_valid), upper = max(x_valid),
                            subdivisions = 500)$value
   if (area > 0) y_valid <- y_valid / area
-  
+
   # Build CDF for inverse-CDF sampling
   dx <- diff(x_valid)
   y_mid <- (y_valid[-1] + y_valid[-length(y_valid)]) / 2
   cdf_y <- c(0, cumsum(y_mid * dx))
   cdf_x <- x_valid
-  
+
   # Ensure CDF reaches exactly 1
   if (max(cdf_y) > 0) cdf_y <- cdf_y / max(cdf_y)
-  
+
   # Deduplicate CDF (approx() warns on tied x-values)
   dup <- duplicated(cdf_y)
   cdf_x <- cdf_x[!dup]
   cdf_y <- cdf_y[!dup]
-  
+
   list(
     method = "kde",
     density_x = x_valid,
@@ -138,7 +138,7 @@ fit_intensity_kde <- function(pool, lower, upper = Inf, bw_mult = 1.0) {
 #' @export
 sample_intensity_kde <- function(fit, n) {
   if (n <= 0) return(numeric(0))
-  
+
   if (fit$method == "fallback") {
     # Too few observations: jittered resample
     if (fit$n_obs == 0) {
@@ -150,15 +150,15 @@ sample_intensity_kde <- function(fit, n) {
     if (is.finite(fit$upper)) draws <- pmin(fit$upper, draws)
     return(draws)
   }
-  
+
   # Inverse-CDF sampling
   u <- stats::runif(n)
   draws <- stats::approx(fit$cdf_y, fit$cdf_x, xout = u, rule = 2)$y
-  
+
   # Enforce bounds
   draws <- pmax(fit$lower, draws)
   if (is.finite(fit$upper)) draws <- pmin(fit$upper, draws)
-  
+
   draws
 }
 
@@ -191,7 +191,7 @@ sample_intensity_kde <- function(fit, n) {
 fit_gev_lmom <- function(x, xi_bounds = c(-0.5, 0.5)) {
   x <- sort(x[is.finite(x)])
   n <- length(x)
-  
+
   if (n < 5) {
     return(list(
       mu = mean(x), sigma = stats::sd(x), xi = 0,
@@ -199,20 +199,20 @@ fit_gev_lmom <- function(x, xi_bounds = c(-0.5, 0.5)) {
       converged = FALSE
     ))
   }
-  
+
   # Probability-weighted moments (unbiased estimators)
   # b_r = (1/n) * sum_{i=1}^{n} x_{i:n} * C(i-1, r) / C(n-1, r)
   ii <- seq_len(n)
-  
+
   b0 <- mean(x)
   b1 <- sum(x * (ii - 1) / (n - 1)) / n
   b2 <- sum(x * (ii - 1) * (ii - 2) / ((n - 1) * (n - 2))) / n
-  
+
   # L-moments
   L1 <- b0
   L2 <- 2 * b1 - b0
   L3 <- 6 * b2 - 6 * b1 + b0
-  
+
   if (!is.finite(L2) || L2 <= 0) {
     return(list(
       mu = L1, sigma = abs(L2), xi = 0,
@@ -220,17 +220,17 @@ fit_gev_lmom <- function(x, xi_bounds = c(-0.5, 0.5)) {
       converged = FALSE
     ))
   }
-  
+
   tau3 <- L3 / L2  # L-skewness
-  
+
   # Hosking (1997) approximation for GEV shape from tau3
   # ÃŽÂ¾ Ã¢â€°Ë† 7.8590c + 2.9554cÃ‚Â² where c = 2/(3+tau3) - log(2)/log(3)
   c_val <- 2 / (3 + tau3) - log(2) / log(3)
   xi <- 7.8590 * c_val + 2.9554 * c_val^2
-  
+
   # Clamp shape parameter to physical bounds
   xi <- max(xi_bounds[1], min(xi_bounds[2], xi))
-  
+
   # Back-solve for sigma and mu
   if (abs(xi) < 1e-6) {
     # Gumbel case (ÃŽÂ¾ Ã¢â€ â€™ 0)
@@ -239,7 +239,7 @@ fit_gev_lmom <- function(x, xi_bounds = c(-0.5, 0.5)) {
   } else {
     g1 <- gamma(1 + xi)
     g2 <- gamma(1 + 2 * xi)
-    
+
     # Protect against gamma overflow
     if (!is.finite(g1) || !is.finite(g2)) {
       sigma <- L2 / log(2)
@@ -256,9 +256,9 @@ fit_gev_lmom <- function(x, xi_bounds = c(-0.5, 0.5)) {
       }
     }
   }
-  
+
   sigma <- max(1e-6, sigma)  # floor
-  
+
   list(
     mu = mu,
     sigma = sigma,
@@ -334,13 +334,13 @@ compute_return_levels_gev <- function(annual_max,
                                       xi_bounds = c(-0.3, 0.4)) {
   x <- annual_max[is.finite(annual_max)]
   n <- length(x)
-  
+
   n_zero <- sum(x <= 0)
   p_zero <- n_zero / n
-  
+
   x_pos <- x[x > 0]
   n_pos <- length(x_pos)
-  
+
   if (n_pos < 5) {
     rl <- rep(NA_real_, length(return_periods))
     names(rl) <- paste0("RL_", return_periods, "yr")
@@ -352,29 +352,29 @@ compute_return_levels_gev <- function(annual_max,
       n_nonzero = n_pos
     ))
   }
-  
+
   gev <- fit_gev_lmom(x_pos, xi_bounds = xi_bounds)
-  
+
   # Hurdle-GEV return levels:
   # Solve: p0 + (1-p0) * F_GEV(v) = 1 - 1/T
   # Ã¢â€ â€™ F_GEV(v) = (1 - 1/T - p0) / (1 - p0)
   # Ã¢â€ â€™ v = Q_GEV( (1 - 1/T - p0) / (1 - p0) )
-  
+
   rl <- vapply(return_periods, function(T_rp) {
     target_p <- 1 - 1 / T_rp
     p_cond <- (target_p - p_zero) / (1 - p_zero)
-    
+
     if (p_cond <= 0) return(0)       # return period shorter than mean recurrence
     if (p_cond >= 1) return(NA_real_) # can't compute
-    
+
     .qgev(p_cond, gev$mu, gev$sigma, gev$xi)
   }, numeric(1))
-  
+
   # Physical cap: TC winds can't exceed ~185 kt
   rl <- pmin(rl, 185)
-  
+
   names(rl) <- paste0("RL_", return_periods, "yr")
-  
+
   list(
     return_levels = rl,
     gev_fit = gev,
@@ -411,21 +411,21 @@ bootstrap_return_level_ci <- function(annual_max,
                                       n_boot = 500,
                                       xi_bounds = c(-0.3, 0.4)) {
   if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` required.")
-  
+
   n <- length(annual_max)
   boot_rl <- matrix(NA_real_, nrow = n_boot, ncol = length(return_periods))
-  
+
   for (b in seq_len(n_boot)) {
     idx <- sample.int(n, n, replace = TRUE)
     boot_sample <- annual_max[idx]
-    
+
     res <- tryCatch(
       compute_return_levels_gev(boot_sample, return_periods, xi_bounds)$return_levels,
       error = function(e) rep(NA_real_, length(return_periods))
     )
     boot_rl[b, ] <- res
   }
-  
+
   tibble::tibble(
     return_period = return_periods,
     sim_median = apply(boot_rl, 2, stats::median, na.rm = TRUE),
@@ -477,34 +477,34 @@ validate_hindcast <- function(events_island,
                               gamma_intensity = 0) {
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
-  
+
   set.seed(seed)
-  
+
   ev <- events_island |>
     dplyr::filter(.data$storm_class %in% c(severities, "none"),
                   is.finite(.data$peak_wind_kt))
-  
+
   all_years <- sort(unique(ev$year))
   if (length(all_years) < holdout_years + 10) {
     stop("Insufficient years for holdout. Have ", length(all_years),
          ", need at least ", holdout_years + 10)
   }
-  
+
   cutoff <- all_years[length(all_years) - holdout_years]
   train_years <- all_years[all_years <= cutoff]
   test_years  <- all_years[all_years > cutoff]
-  
+
   message("[Hindcast] ", location, ": training ", min(train_years), "-", max(train_years),
           " (", length(train_years), " yr), testing ", min(test_years), "-",
           max(test_years), " (", length(test_years), " yr)")
-  
+
   # --- Observed annual maxima (full record) ---
   obs_annual_max <- ev |>
     dplyr::group_by(.data$year) |>
     dplyr::summarise(V_max_kt = max(.data$peak_wind_kt, na.rm = TRUE),
                      .groups = "drop") |>
     dplyr::mutate(period = dplyr::if_else(.data$year %in% train_years, "train", "test"))
-  
+
   full_years <- tibble::tibble(year = seq(min(all_years), max(all_years)))
   obs_annual_max <- full_years |>
     dplyr::left_join(obs_annual_max, by = "year") |>
@@ -512,15 +512,15 @@ validate_hindcast <- function(events_island,
       V_max_kt = dplyr::if_else(is.na(.data$V_max_kt), 0, .data$V_max_kt),
       period = dplyr::if_else(.data$year %in% test_years, "test", "train")
     )
-  
+
   # --- Fit frequency model on training period ---
   ev_train <- events_island |>
     dplyr::filter(.data$year %in% train_years)
-  
+
   ac_train <- compute_annual_counts(ev_train, severities = severities)
   lt_train <- compute_lambda_table(ac_train)
   ki_train <- estimate_k_hat(ac_train)
-  
+
   train_params <- list(
     lambda_table = lt_train,
     k_hat = ki_train$k_hat,
@@ -528,18 +528,18 @@ validate_hindcast <- function(events_island,
     mu_total = ki_train$mu,
     var_total = ki_train$var
   )
-  
+
   # --- FIT KDE INTENSITY DISTRIBUTIONS (replaces discrete pools) ---
   train_V_ts <- ev_train |>
     dplyr::filter(.data$storm_class == "TS") |>
     dplyr::pull(.data$peak_wind_kt) |>
     (\(x) x[is.finite(x)])()
-  
+
   train_V_hur <- ev_train |>
     dplyr::filter(.data$storm_class == "HUR64plus") |>
     dplyr::pull(.data$peak_wind_kt) |>
     (\(x) x[is.finite(x)])()
-  
+
   kde_ts  <- fit_intensity_kde(train_V_ts,  lower = 34, upper = 64)
   # For hurricane KDE: use tighter bandwidth to avoid over-smoothing the tail
   # with small samples. Silverman's rule assumes Gaussian data, but hurricane
@@ -550,17 +550,17 @@ validate_hindcast <- function(events_island,
   else if (length(train_V_hur) < 30) 0.85
   else 1.0
   kde_hur <- fit_intensity_kde(train_V_hur, lower = 64, upper = 185, bw_mult = hur_bw_mult)
-  
+
   n_ts_obs  <- length(train_V_ts)
   n_hur_obs <- length(train_V_hur)
-  
+
   message(sprintf("  KDE fits: TS pool=%d events (mean=%.0f kt), HUR pool=%d events (mean=%.0f kt)",
                   n_ts_obs,  if (n_ts_obs > 0) mean(train_V_ts) else NA,
                   n_hur_obs, if (n_hur_obs > 0) mean(train_V_hur) else NA))
-  
+
   # Fallback intensities if KDE can't be fit
   fallback_V <- list(TS = 45, HUR64plus = 85)
-  
+
   # --- SIMULATE ANNUAL MAXIMA WITH KDE SAMPLING ---
   # If SST data available, use historical SST anomalies resampled for simulation
   sst_anomaly_sim <- NULL
@@ -577,20 +577,20 @@ validate_hindcast <- function(events_island,
       }
     }
   }
-  
+
   sim_counts <- simulate_twolevel_counts(
     lt_train, ki_train$k_hat, n_years_sim = n_sim,
     sst_anomaly = sst_anomaly_sim,
     beta_sst = beta_sst,
     gamma_intensity = gamma_intensity
   )
-  
+
   sim_annual_max <- vapply(seq_len(n_sim), function(i) {
     n_ts  <- sim_counts$n_ts[i]
     n_hur <- sim_counts$n_hur[i]
-    
+
     winds <- numeric(0)
-    
+
     if (n_ts > 0) {
       if (n_ts_obs >= 3) {
         winds <- c(winds, sample_intensity_kde(kde_ts, n_ts))
@@ -607,27 +607,27 @@ validate_hindcast <- function(events_island,
                      stats::rnorm(n_hur, 0, 10))
       }
     }
-    
+
     if (length(winds) == 0) return(0)
     max(winds)
   }, numeric(1))
-  
+
   # --- GEV RETURN LEVELS ---
   # Model: GEV fit to 5000 simulated annual maxima (precise point estimate)
   sim_gev <- compute_return_levels_gev(sim_annual_max, return_periods)
   sim_rl  <- sim_gev$return_levels
-  
+
   # Observed: GEV fit to full observed record (~45-55 years)
   obs_full_max <- obs_annual_max$V_max_kt
   obs_gev <- compute_return_levels_gev(obs_full_max, return_periods)
   obs_full_rl <- obs_gev$return_levels
-  
+
   # Test period (empirical, for reference only)
   obs_test_max <- obs_annual_max |>
     dplyr::filter(.data$period == "test") |>
     dplyr::pull(.data$V_max_kt)
   obs_test_rl <- compute_return_levels(obs_test_max, return_periods)
-  
+
   # --- BOOTSTRAP CIs ON OBSERVED RETURN LEVELS ---
   # The CI reflects uncertainty from the limited historical record (~45 yr).
   # Question: "Given observational uncertainty, is the model consistent with obs?"
@@ -636,22 +636,22 @@ validate_hindcast <- function(events_island,
     n_boot = 500,
     xi_bounds = c(-0.3, 0.4)
   )
-  
+
   # Also compute model CIs (secondary diagnostic Ã¢â‚¬â€ should be narrow)
   sim_rl_ci <- bootstrap_return_level_ci(
     sim_annual_max, return_periods,
     n_boot = 200,
     xi_bounds = c(-0.3, 0.4)
   )
-  
+
   message(sprintf("  Model GEV: \u03bc=%.1f, \u03c3=%.1f, \u03be=%.3f (n_pos=%d, p0=%.2f)",
                   sim_gev$gev_fit$mu, sim_gev$gev_fit$sigma, sim_gev$gev_fit$xi,
                   sim_gev$n_nonzero, sim_gev$p_zero))
   message(sprintf("  Obs GEV:   \u03bc=%.1f, \u03c3=%.1f, \u03be=%.3f (n_pos=%d, p0=%.2f)",
                   obs_gev$gev_fit$mu, obs_gev$gev_fit$sigma, obs_gev$gev_fit$xi,
                   obs_gev$n_nonzero, obs_gev$p_zero))
-  
-  
+
+
   # --- Comparison table ---
   # Columns are kept compatible with existing plotting/report code:
   #   sim_median/sim_lo_90/sim_hi_90 describe the MODEL uncertainty (bootstrap on simulated annual maxima).
@@ -676,7 +676,7 @@ validate_hindcast <- function(events_island,
     obs_in_model_90ci = obs_full_rl >= sim_rl_ci$sim_lo_90 & obs_full_rl <= sim_rl_ci$sim_hi_90,
     bias_pct = 100 * (sim_rl - obs_full_rl) / pmax(obs_full_rl, 1)
   )
-  
+
   list(
     location = location,
     train_years = train_years,
@@ -726,7 +726,7 @@ validate_hindcast_all <- function(out,
   if (is.null(out$events)) stop("out$events is required.", call. = FALSE)
   locations <- sort(unique(out$events$location))
   results <- setNames(vector("list", length(locations)), locations)
-  
+
   for (location in locations) {
     ev <- out$events |>
       dplyr::filter(.data$location == location)
@@ -735,7 +735,7 @@ validate_hindcast_all <- function(out,
               if (is.null(ev)) 0 else nrow(ev), ")")
       next
     }
-    
+
     tryCatch({
       results[[location]] <- validate_hindcast(
         events_island = ev,
@@ -752,11 +752,11 @@ validate_hindcast_all <- function(out,
       message("[Hindcast] Error for ", location, ": ", e$message)
     })
   }
-  
+
   comparison_all <- dplyr::bind_rows(
     lapply(Filter(Negate(is.null), results), function(r) r$comparison)
   )
-  
+
   list(
     per_island = results,
     comparison = comparison_all
@@ -790,16 +790,16 @@ get_reference_rates <- function() {
     # TS rates: ~2-4 per year pass within 200nm of the northern Leewards
     "Leeward_Islands",  "TS34plus",   2.0,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
     "Leeward_Islands",  "HUR64plus",  0.55,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
-    
+
     # St. Martin specific (NHC/NOAA tropical cyclone climatology)
     # ~1.5 TS + HUR within 65nm per year, ~0.4 HUR
     "St_Martin",        "TS34plus",   1.2,         "NOAA TC Climo (65nm, 1970-2023)", 65,              "1970-2023",
     "St_Martin",        "HUR64plus",  0.40,        "NOAA TC Climo (65nm, 1970-2023)", 65,              "1970-2023",
-    
+
     # Puerto Rico (much larger location, well-studied)
     "Puerto_Rico",      "TS34plus",   1.8,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
     "Puerto_Rico",      "HUR64plus",  0.45,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
-    
+
     # Miami / SE Florida
     "Miami",            "TS34plus",   1.5,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
     "Miami",            "HUR64plus",  0.35,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020"
@@ -826,21 +826,21 @@ get_reference_rates <- function() {
 #' @export
 validate_rates <- function(out, ref_rates = NULL) {
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  
+
   if (is.null(ref_rates)) ref_rates <- get_reference_rates()
-  
+
   model_rates <- out$rates |>
     dplyr::select(location = "location", storm_class = "storm_class",
                   lambda_model = "lambda", n_years_model = "n_years")
-  
+
   model_rates2 <- model_rates |>
     tidyr::pivot_wider(names_from = storm_class, values_from = lambda_model, values_fill = 0) |>
     dplyr::mutate(TS34plus = TS + HUR64plus) |>
     tidyr::pivot_longer(c("TS34plus","HUR64plus"), names_to="storm_class", values_to="lambda_model")
-  
-  
-  
-  
+
+
+
+
   # Join where location name matches region in reference table
   # (Saba/Statia not in reference Ã¢â€ â€™ use Leeward_Islands as fallback)
   island_to_region <- tibble::tribble(
@@ -851,13 +851,13 @@ validate_rates <- function(out, ref_rates = NULL) {
     "Puerto_Rico",  "Puerto_Rico",
     "Miami",        "Miami"
   )
-  
+
   comp <- model_rates2 |>
     dplyr::left_join(island_to_region, by = "location") |>
     dplyr::left_join(ref_rates, by = c("region", "storm_class")) |>
     dplyr::mutate(
       ratio     = .data$lambda_model / pmax(.data$lambda_ref, 0.001),
-      
+
       # Expected model/reference ratio: model measures point exceedance,
       # reference measures storm center proximity within gate radius.
       # A storm center within the gate does NOT mean threshold winds at the point.
@@ -870,10 +870,10 @@ validate_rates <- function(out, ref_rates = NULL) {
         .data$storm_class == "HUR64plus" & .data$gate_approx_nm < 100  ~ 0.45,
         TRUE ~ 0.50
       ),
-      
+
       # Adjusted ratio normalises for the point-vs-proximity mismatch
       adj_ratio = .data$ratio / .data$expected_ratio,
-      
+
       # Flag on adjusted ratio (should be ~1.0 if model is correct)
       flag = dplyr::case_when(
         is.na(.data$lambda_ref)   ~ "no_reference",
@@ -890,7 +890,7 @@ validate_rates <- function(out, ref_rates = NULL) {
       "lambda_ref", "source", "gate_approx_nm", "period",
       "expected_ratio", "ratio", "adj_ratio", "flag"
     )
-  
+
   message("\n[Rate Check] Summary:")
   for (i in seq_len(nrow(comp))) {
     r <- comp[i, ]
@@ -903,7 +903,7 @@ validate_rates <- function(out, ref_rates = NULL) {
                     if (is.na(r$adj_ratio)) NA else r$adj_ratio,
                     r$flag))
   }
-  
+
   comp
 }
 
@@ -928,42 +928,42 @@ get_wind_observations <- function() {
   tibble::tribble(
     ~storm_sid,          ~storm_name, ~year, ~target_island, ~station,
     ~obs_wind_kt, ~obs_type,       ~obs_source,               ~notes,
-    
+
     # Hurricane Irma (2017) - Cat 5 direct hit on St. Martin
     # NHC TCR: Irma produced sustained winds of ~155 kt on St. Martin (Juliana Airport)
     # Meteo France recorded 113 kt sustained (10-min) before instrument failure
     # NHC best track: 155 kt Vmax at closest approach
     "2017242N16333",     "IRMA",    2017L, "St_Martin",     "Juliana_Airport_TNCM",
     155,                 "1min_sust",     "NHC TCR (AL112017)",      "Instruments failed; 155 kt is NHC best-track Vmax at landfall",
-    
+
     "2017242N16333",     "IRMA",    2017L, "St_Martin",     "Meteo_France_SXM",
     113,                 "10min_sust",    "Meteo France RSMC report", "Last valid reading before instrument failure; 10-min sustained",
-    
+
     # Hurricane Gonzalo (2014) - Cat 1 near St. Martin
     "2014279N15323",     "GONZALO", 2014L, "St_Martin",     "Juliana_Airport_TNCM",
     60,                  "1min_sust",     "NHC TCR (AL082014)",      "Marginal TS winds at SXM; storm passed ~50nm north",
-    
+
     # Hurricane Irma (2017) - effects at Saba (~30 nm from track)
     # No official station data; NHC estimates TS-force winds
     "2017242N16333",     "IRMA",    2017L, "Saba",          "NHC_estimate",
     80,                  "1min_sust",     "NHC TCR estimate",        "Estimated from best-track; Saba ~30nm from eye center",
-    
+
     # Hurricane Maria (2017) - passed south of Leeward Islands
     "2017255N12319",     "MARIA",   2017L, "St_Martin",     "Juliana_Airport_TNCM",
     40,                  "1min_sust",     "NHC TCR (AL152017)",      "Maria passed ~100nm south; TS-force winds at SXM",
-    
+
     # Hurricane Hugo (1989) - major hurricane near St. Croix/PR
     "1989248N12343",     "HUGO",    1989L, "Puerto_Rico",   "Roosevelt_Roads_NAS",
     104,                 "1min_sust",     "NHC TCR (AL081989)",      "Direct hit eastern PR",
-    
+
     # Hurricane Andrew (1992) - direct hit Miami
     "1992216N10325",     "ANDREW",  1992L, "Miami",         "NHC_Miami_ASOS",
     141,                 "1min_sust",     "NHC TCR (AL041992)",      "Before instrument failure at NHC",
-    
+
     # Hurricane Lenny (1999) - unusual W-to-E track through Leewards
     "1999317N14290",     "LENNY",   1999L, "St_Martin",     "Juliana_Airport_TNCM",
     55,                  "1min_sust",     "NHC TCR (AL171999)",      "Unusual west-to-east track; Cat 4 but passed south",
-    
+
     # Hurricane Luis (1995) - direct hit northern Leeward Islands
     "1995241N12330",     "LUIS",    1995L, "St_Martin",     "Juliana_Airport_TNCM",
     110,                 "1min_sust",     "NHC TCR (AL131995)",      "Cat 4 at closest approach to SXM; major damage"
@@ -988,32 +988,32 @@ get_wind_observations <- function() {
 #' @export
 validate_wind_field <- function(out, obs_table = NULL) {
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  
+
   if (is.null(obs_table)) obs_table <- get_wind_observations()
-  
+
   # Conversion factor: 10-min to 1-min sustained (WMO standard)
   conv_10min_to_1min <- 1.12
-  
+
   results <- vector("list", nrow(obs_table))
-  
+
   for (i in seq_len(nrow(obs_table))) {
     obs <- obs_table[i, ]
     location <- obs$target_island
-    
+
     # Convert observed wind to 1-min equivalent for fair comparison
     obs_1min_kt <- if (grepl("10min", obs$obs_type)) {
       obs$obs_wind_kt * conv_10min_to_1min
     } else {
       obs$obs_wind_kt
     }
-    
+
     # Look up model estimate: peak V_site_kt for this SID at this location
     events <- out$events |>
       dplyr::filter(.data$location == location)
     model_V <- NA_real_
     model_wind_max <- NA_real_
     storm_found <- FALSE
-    
+
     if (!is.null(events)) {
       match_row <- events |> dplyr::filter(.data$storm_id == obs$storm_sid)
       if (nrow(match_row) > 0) {
@@ -1022,7 +1022,7 @@ validate_wind_field <- function(out, obs_table = NULL) {
         model_wind_max <- match_row$storm_intensity_kt[1]
       }
     }
-    
+
     # Also check trackpoints for more detail
     tp <- out$trackpoints[[location]]
     model_V_track <- NA_real_
@@ -1036,10 +1036,10 @@ validate_wind_field <- function(out, obs_table = NULL) {
         if (!is.finite(min_dist_km)) min_dist_km <- NA_real_
       }
     }
-    
+
     # Use the better of event-level and trackpoint-level
     model_best <- if (is.finite(model_V)) model_V else model_V_track
-    
+
     results[[i]] <- tibble::tibble(
       location = location,
       storm_name = obs$storm_name,
@@ -1060,16 +1060,16 @@ validate_wind_field <- function(out, obs_table = NULL) {
       notes = obs$notes
     )
   }
-  
+
   comp <- dplyr::bind_rows(results)
-  
+
   # Summary statistics
   valid <- comp |> dplyr::filter(is.finite(.data$bias_kt))
   if (nrow(valid) > 0) {
     mae  <- mean(abs(valid$bias_kt))
     rmse <- sqrt(mean(valid$bias_kt^2))
     mb   <- mean(valid$bias_kt)
-    
+
     message("\n[Wind Field Check] ", nrow(valid), " of ", nrow(comp), " storms matched")
     message(sprintf("  Mean Bias: %+.1f kt  |  MAE: %.1f kt  |  RMSE: %.1f kt", mb, mae, rmse))
     message("  Storm-by-storm:")
@@ -1083,7 +1083,7 @@ validate_wind_field <- function(out, obs_table = NULL) {
   } else {
     message("[Wind Field Check] No matching storms found in model output.")
   }
-  
+
   comp
 }
 
@@ -1112,16 +1112,16 @@ run_validation_suite <- function(out,
                                  n_sim = 5000,
                                  return_periods = c(5, 10, 25, 50),
                                  seed = 42) {
-  
+
   message("=" |> rep(72) |> paste(collapse = ""))
   message("  HAZARD MODEL VALIDATION SUITE")
   message("=" |> rep(72) |> paste(collapse = ""))
-  
+
   # --- Tier 1: Hindcast ---
   message("\n", "-" |> rep(72) |> paste(collapse = ""))
   message("  TIER 1: HINDCAST VALIDATION")
   message("-" |> rep(72) |> paste(collapse = ""))
-  
+
   # Extract climate info from model output (if available)
   sst_df_val <- NULL
   beta_sst_val <- 0
@@ -1132,7 +1132,7 @@ run_validation_suite <- function(out,
     gamma_val <- out$fit$gamma_intensity[1]
     message(sprintf("  [Climate] beta_SST=%.3f, gamma=%.4f", beta_sst_val, gamma_val))
   }
-  
+
   hc <- tryCatch(
     validate_hindcast_all(out, holdout_years = holdout_years,
                           n_sim = n_sim, return_periods = return_periods,
@@ -1142,7 +1142,7 @@ run_validation_suite <- function(out,
                           gamma_intensity = gamma_val),
     error = function(e) { message("  ERROR: ", e$message); NULL }
   )
-  
+
   if (!is.null(hc) && nrow(hc$comparison) > 0) {
     message("\n  Return-level comparison (kt):")
     for (i in seq_len(nrow(hc$comparison))) {
@@ -1153,43 +1153,43 @@ run_validation_suite <- function(out,
                       r$obs_lo_90, r$obs_hi_90, r$bias_pct, ci_tag))
     }
   }
-  
+
   # --- Tier 2: Rate check ---
   message("\n", "-" |> rep(72) |> paste(collapse = ""))
   message("  TIER 2: RATE SANITY CHECK")
   message("-" |> rep(72) |> paste(collapse = ""))
-  
+
   rc <- tryCatch(
     validate_rates(out),
     error = function(e) { message("  ERROR: ", e$message); NULL }
   )
-  
+
   # --- Tier 3: Wind field ---
   message("\n", "-" |> rep(72) |> paste(collapse = ""))
   message("  TIER 3: WIND FIELD SPOT-CHECKS")
   message("-" |> rep(72) |> paste(collapse = ""))
-  
+
   wf <- tryCatch(
     validate_wind_field(out),
     error = function(e) { message("  ERROR: ", e$message); NULL }
   )
-  
+
   # --- Summary ---
   message("\n", "=" |> rep(72) |> paste(collapse = ""))
   message("  VALIDATION SUMMARY")
   message("=" |> rep(72) |> paste(collapse = ""))
-  
+
   n_rl_ok <- if (!is.null(hc)) sum(hc$comparison$obs_in_90ci, na.rm = TRUE) else 0
   n_rl_total <- if (!is.null(hc)) sum(!is.na(hc$comparison$obs_in_90ci)) else 0
-  
+
   n_rate_ok <- if (!is.null(rc)) sum(rc$flag == "OK", na.rm = TRUE) else 0
   n_rate_total <- if (!is.null(rc)) sum(!is.na(rc$flag)) else 0
-  
+
   n_wf_ok <- if (!is.null(wf)) {
     sum(abs(wf$bias_pct) < 30, na.rm = TRUE)
   } else 0
   n_wf_total <- if (!is.null(wf)) sum(is.finite(wf$bias_pct)) else 0
-  
+
   summary_tbl <- tibble::tibble(
     tier = c("Hindcast (RL in 90% CI)", "Rate check (flag OK)", "Wind field (|bias| < 30%)"),
     pass = c(n_rl_ok, n_rate_ok, n_wf_ok),
@@ -1197,12 +1197,12 @@ run_validation_suite <- function(out,
     pct = round(100 * c(n_rl_ok, n_rate_ok, n_wf_ok) /
                   pmax(c(n_rl_total, n_rate_total, n_wf_total), 1), 0)
   )
-  
+
   message(sprintf("  Hindcast:   %d / %d return levels within 90%% CI", n_rl_ok, n_rl_total))
   message(sprintf("  Rate check: %d / %d rates flagged OK", n_rate_ok, n_rate_total))
   message(sprintf("  Wind field: %d / %d storms within 30%% bias", n_wf_ok, n_wf_total))
   message("=" |> rep(72) |> paste(collapse = ""))
-  
+
   list(
     hindcast = hc,
     rate_check = rc,
@@ -1272,10 +1272,10 @@ plot_hindcast_validation <- function(val, out_dir = "output/validation", base_si
   }
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
   if (!requireNamespace("tibble", quietly = TRUE)) return(invisible(NULL))
-  
+
   .validate_dir_create(out_dir)
   ggtheme <- .validate_theme(base_size = base_size)
-  
+
   comp <- val$hindcast$comparison
   p_rl <- ggplot2::ggplot(comp, ggplot2::aes(x = factor(return_period))) +
     ggplot2::geom_errorbar(
@@ -1293,11 +1293,11 @@ plot_hindcast_validation <- function(val, out_dir = "output/validation", base_si
       subtitle = "Blue dot = model; Red triangle [90% CI] = observed (full record); dashed = 64 kt HUR threshold"
     ) +
     ggtheme
-  
+
   paths <- character(0)
   paths["hindcast_return_levels"] <- file.path(out_dir, "hindcast_return_levels.png")
   .validate_save_plot(p_rl, paths[["hindcast_return_levels"]], width = 12, height = 7, dpi = 150)
-  
+
   # Per-location distribution plots
   if (!is.null(val$hindcast$per_island)) {
     for (isl in names(val$hindcast$per_island)) {
@@ -1305,7 +1305,7 @@ plot_hindcast_validation <- function(val, out_dir = "output/validation", base_si
       if (is.null(hc_isl)) next
       obs_df <- hc_isl$obs_annual_max
       sim_df <- tibble::tibble(V_max_kt = hc_isl$sim_annual_max)
-      
+
       p_dist <- ggplot2::ggplot() +
         ggplot2::geom_histogram(
           data = sim_df,
@@ -1324,13 +1324,13 @@ plot_hindcast_validation <- function(val, out_dir = "output/validation", base_si
           color = "Observed"
         ) +
         ggtheme
-      
+
       nm <- paste0("hindcast_dist_", tolower(isl))
       paths[[nm]] <- file.path(out_dir, paste0(nm, ".png"))
       .validate_save_plot(p_dist, paths[[nm]], width = 8, height = 5, dpi = 150)
     }
   }
-  
+
   invisible(paths)
 }
 
@@ -1346,13 +1346,13 @@ plot_rate_validation <- function(val, out_dir = "output/validation", base_size =
   if (is.null(val$rate_check) || nrow(val$rate_check) == 0) return(invisible(NULL))
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
   if (!requireNamespace("dplyr", quietly = TRUE)) return(invisible(NULL))
-  
+
   .validate_dir_create(out_dir)
   ggtheme <- .validate_theme(base_size = base_size)
-  
+
   rc <- dplyr::filter(val$rate_check, !is.na(lambda_ref))
   if (nrow(rc) == 0) return(invisible(NULL))
-  
+
   p_rate <- ggplot2::ggplot(rc, ggplot2::aes(x = lambda_ref, y = lambda_model)) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
     ggplot2::geom_abline(slope = 2, intercept = 0, linetype = "dotted", color = "grey70") +
@@ -1377,7 +1377,7 @@ plot_rate_validation <- function(val, out_dir = "output/validation", base_size =
       color = "Flag", shape = "storm_class"
     ) +
     ggtheme
-  
+
   path <- file.path(out_dir, "rate_comparison.png")
   .validate_save_plot(p_rate, path, width = 8, height = 6, dpi = 150)
   invisible(path)
@@ -1399,13 +1399,13 @@ plot_wind_field_validation <- function(val, out = NULL, out_dir = "output/valida
   }
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
   if (!requireNamespace("dplyr", quietly = TRUE)) return(invisible(NULL))
-  
+
   .validate_dir_create(out_dir)
   ggtheme <- .validate_theme(base_size = base_size)
-  
+
   wf <- dplyr::filter(val$wind_field, is.finite(model_V_site_kt))
   if (nrow(wf) == 0) return(invisible(NULL))
-  
+
   p_wf <- ggplot2::ggplot(wf, ggplot2::aes(x = obs_1min_equiv_kt, y = model_V_site_kt)) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
     ggplot2::geom_abline(slope = 1, intercept = 20, linetype = "dotted", color = "grey70") +
@@ -1424,16 +1424,16 @@ plot_wind_field_validation <- function(val, out = NULL, out_dir = "output/valida
       color = "location", shape = "location"
     ) +
     ggtheme
-  
+
   paths <- character(0)
   paths[["wind_field_scatter"]] <- file.path(out_dir, "wind_field_scatter.png")
   .validate_save_plot(p_wf, paths[["wind_field_scatter"]], width = 8, height = 6, dpi = 150)
-  
+
   # Optional per-storm distance profile for Irma at St. Martin (requires `out`).
   if (!is.null(out) && !is.null(out$trackpoints$St_Martin)) {
     irma_tp <- dplyr::filter(out$trackpoints$St_Martin, SID == "2017242N16333")
     irma_tp <- dplyr::filter(irma_tp, is.finite(V_site_kt), is.finite(dist_km))
-    
+
     if (nrow(irma_tp) > 0) {
       p_irma <- ggplot2::ggplot(irma_tp, ggplot2::aes(x = dist_km, y = V_site_kt)) +
         ggplot2::geom_line(color = "steelblue", linewidth = 0.8) +
@@ -1455,12 +1455,12 @@ plot_wind_field_validation <- function(val, out = NULL, out_dir = "output/valida
           subtitle = "V_site_kt vs distance at each 6-hourly track point"
         ) +
         ggtheme
-      
+
       paths[["irma_stmartin_profile"]] <- file.path(out_dir, "irma_stmartin_profile.png")
       .validate_save_plot(p_irma, paths[["irma_stmartin_profile"]], width = 8, height = 5, dpi = 150)
     }
   }
-  
+
   invisible(paths)
 }
 
@@ -1492,32 +1492,32 @@ plot_bias_diagnostics <- function(val, out_dir = "output/validation", base_size 
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
   if (!requireNamespace("dplyr", quietly = TRUE)) return(invisible(NULL))
   if (!requireNamespace("tibble", quietly = TRUE)) return(invisible(NULL))
-  
+
   .validate_dir_create(out_dir)
   ggtheme <- .validate_theme(base_size = base_size)
   paths <- character(0)
-  
+
   # --- Collect per-location bias decomposition ---
   bias_rows <- list()
   for (isl in names(val$hindcast$per_island)) {
     hc <- val$hindcast$per_island[[isl]]
     if (is.null(hc)) next
-    
+
     obs_am <- hc$obs_annual_max$V_max_kt
     sim_am <- hc$sim_annual_max
-    
+
     # Frequency: fraction of non-zero years
     obs_freq <- mean(obs_am > 0)
     sim_freq <- mean(sim_am > 0)
-    
+
     # Intensity: mean of non-zero annual maxima
     obs_int <- mean(obs_am[obs_am > 0])
     sim_int <- mean(sim_am[sim_am > 0])
-    
+
     # Overall mean annual max
     obs_mean <- mean(obs_am)
     sim_mean <- mean(sim_am)
-    
+
     # Decomposition:  E[max] = P(any event) * E[max | event]
     # Total bias = sim_mean - obs_mean
     # Frequency contribution  = (sim_freq - obs_freq) * obs_int
@@ -1526,7 +1526,7 @@ plot_bias_diagnostics <- function(val, out_dir = "output/validation", base_size 
     freq_contrib <- (sim_freq - obs_freq) * obs_int
     int_contrib  <- obs_freq * (sim_int - obs_int)
     interact     <- (sim_freq - obs_freq) * (sim_int - obs_int)
-    
+
     bias_rows[[isl]] <- tibble::tibble(
       location = isl,
       obs_event_rate  = obs_freq,
@@ -1541,16 +1541,16 @@ plot_bias_diagnostics <- function(val, out_dir = "output/validation", base_size 
       interact_kt     = interact
     )
   }
-  
+
   if (length(bias_rows) == 0) return(invisible(NULL))
   bias_df <- dplyr::bind_rows(bias_rows)
-  
+
   # --- Panel 1: Stacked bar chart of bias contributions ---
   bias_long <- bias_df |>
     dplyr::select("location", Frequency = "freq_contrib_kt",
                   Intensity = "int_contrib_kt", Interaction = "interact_kt") |>
     tidyr::pivot_longer(-"location", names_to = "source", values_to = "bias_kt")
-  
+
   p_decomp <- ggplot2::ggplot(bias_long, ggplot2::aes(x = location, y = bias_kt, fill = source)) +
     ggplot2::geom_col(position = "stack", width = 0.6) +
     ggplot2::geom_hline(yintercept = 0, linewidth = 0.5) +
@@ -1565,10 +1565,10 @@ plot_bias_diagnostics <- function(val, out_dir = "output/validation", base_size 
     ) +
     ggtheme +
     ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1))
-  
+
   paths[["bias_decomposition"]] <- file.path(out_dir, "bias_decomposition.png")
   .validate_save_plot(p_decomp, paths[["bias_decomposition"]], width = 8, height = 5, dpi = 150)
-  
+
   # --- Panel 2: Frequency & intensity scatter ---
   p_freq <- ggplot2::ggplot(bias_df, ggplot2::aes(x = obs_event_rate, y = sim_event_rate)) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
@@ -1581,7 +1581,7 @@ plot_bias_diagnostics <- function(val, out_dir = "output/validation", base_size 
       subtitle = "Dashed = 1:1 line"
     ) +
     ggtheme
-  
+
   p_int <- ggplot2::ggplot(bias_df, ggplot2::aes(x = obs_mean_int_kt, y = sim_mean_int_kt)) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
     ggplot2::geom_point(size = 3.5, color = "#D55E00") +
@@ -1593,16 +1593,16 @@ plot_bias_diagnostics <- function(val, out_dir = "output/validation", base_size 
       subtitle = "Dashed = 1:1 line"
     ) +
     ggtheme
-  
+
   paths[["freq_scatter"]] <- file.path(out_dir, "bias_frequency_scatter.png")
   .validate_save_plot(p_freq, paths[["freq_scatter"]], width = 6, height = 5, dpi = 150)
   paths[["int_scatter"]] <- file.path(out_dir, "bias_intensity_scatter.png")
   .validate_save_plot(p_int, paths[["int_scatter"]], width = 6, height = 5, dpi = 150)
-  
+
   # --- Save decomposition table ---
   paths[["bias_table"]] <- file.path(out_dir, "bias_decomposition.csv")
   .validate_write_csv(bias_df, paths[["bias_table"]])
-  
+
   invisible(paths)
 }
 
@@ -1628,24 +1628,24 @@ plot_qq_validation <- function(val, out_dir = "output/validation", base_size = 1
   if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
   if (!requireNamespace("tibble", quietly = TRUE)) return(invisible(NULL))
-  
+
   .validate_dir_create(out_dir)
   ggtheme <- .validate_theme(base_size = base_size)
-  
+
   qq_rows <- list()
   for (isl in names(val$hindcast$per_island)) {
     hc <- val$hindcast$per_island[[isl]]
     if (is.null(hc)) next
-    
+
     obs_am <- sort(hc$obs_annual_max$V_max_kt)
     n_obs  <- length(obs_am)
     if (n_obs < 5) next
-    
+
     # Compute theoretical quantiles from the simulated distribution
     # at the same plotting positions as the observed data
     probs <- (seq_len(n_obs) - 0.5) / n_obs
     sim_q <- stats::quantile(hc$sim_annual_max, probs = probs, na.rm = TRUE)
-    
+
     qq_rows[[isl]] <- tibble::tibble(
       location = isl,
       obs_quantile = obs_am,
@@ -1653,10 +1653,10 @@ plot_qq_validation <- function(val, out_dir = "output/validation", base_size = 1
       prob = probs
     )
   }
-  
+
   if (length(qq_rows) == 0) return(invisible(NULL))
   qq_df <- dplyr::bind_rows(qq_rows)
-  
+
   p_qq <- ggplot2::ggplot(qq_df, ggplot2::aes(x = obs_quantile, y = sim_quantile)) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
     ggplot2::geom_point(ggplot2::aes(color = prob), size = 2, alpha = 0.8) +
@@ -1669,7 +1669,7 @@ plot_qq_validation <- function(val, out_dir = "output/validation", base_size = 1
       subtitle = "Points above dashed line = model overprediction; color = quantile level"
     ) +
     ggtheme
-  
+
   path <- file.path(out_dir, "qq_annual_max.png")
   .validate_save_plot(p_qq, path, width = 12, height = 7, dpi = 150)
   invisible(path)
@@ -1696,22 +1696,22 @@ plot_cdf_comparison <- function(val, out_dir = "output/validation", base_size = 
   if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
   if (!requireNamespace("tibble", quietly = TRUE)) return(invisible(NULL))
-  
+
   .validate_dir_create(out_dir)
   ggtheme <- .validate_theme(base_size = base_size)
-  
+
   cdf_rows <- list()
   gev_rows <- list()
   for (isl in names(val$hindcast$per_island)) {
     hc <- val$hindcast$per_island[[isl]]
     if (is.null(hc)) next
-    
+
     obs_am <- sort(hc$obs_annual_max$V_max_kt)
     sim_am <- sort(hc$sim_annual_max)
     n_obs  <- length(obs_am)
     n_sim  <- length(sim_am)
     if (n_obs < 5) next
-    
+
     # Empirical CDFs
     cdf_rows[[paste0(isl, "_obs")]] <- tibble::tibble(
       location = isl,
@@ -1727,7 +1727,7 @@ plot_cdf_comparison <- function(val, out_dir = "output/validation", base_size = 
       wind_kt = sim_am[idx_sim],
       ecdf = idx_sim / n_sim
     )
-    
+
     # Fitted hurdle-GEV CDF line (if GEV fit available)
     if (!is.null(hc$gev_fit) && !is.null(hc$gev_fit$gev_fit)) {
       gev <- hc$gev_fit$gev_fit
@@ -1737,7 +1737,7 @@ plot_cdf_comparison <- function(val, out_dir = "output/validation", base_size = 
         if (v <= 0) return(p0)
         p0 + (1 - p0) * .pgev(v, gev$mu, gev$sigma, gev$xi)
       }, numeric(1))
-      
+
       gev_rows[[isl]] <- tibble::tibble(
         location = isl,
         wind_kt = x_grid,
@@ -1745,11 +1745,11 @@ plot_cdf_comparison <- function(val, out_dir = "output/validation", base_size = 
       )
     }
   }
-  
+
   if (length(cdf_rows) == 0) return(invisible(NULL))
   cdf_df <- dplyr::bind_rows(cdf_rows)
   gev_df <- if (length(gev_rows) > 0) dplyr::bind_rows(gev_rows) else NULL
-  
+
   p_cdf <- ggplot2::ggplot(cdf_df, ggplot2::aes(x = wind_kt, y = ecdf, color = source)) +
     ggplot2::geom_step(linewidth = 0.7, alpha = 0.85) +
     ggplot2::scale_color_manual(values = c(Observed = "red", Simulated = "steelblue")) +
@@ -1763,7 +1763,7 @@ plot_cdf_comparison <- function(val, out_dir = "output/validation", base_size = 
       color = "Source"
     ) +
     ggtheme
-  
+
   # Add GEV fit line if available
   if (!is.null(gev_df)) {
     p_cdf <- p_cdf +
@@ -1774,11 +1774,11 @@ plot_cdf_comparison <- function(val, out_dir = "output/validation", base_size = 
         inherit.aes = FALSE
       )
   }
-  
+
   paths <- character(0)
   paths[["cdf_comparison"]] <- file.path(out_dir, "cdf_comparison.png")
   .validate_save_plot(p_cdf, paths[["cdf_comparison"]], width = 12, height = 7, dpi = 150)
-  
+
   # --- Exceedance probability plot (1-CDF, log scale) for tail behavior ---
   p_exceed <- ggplot2::ggplot(cdf_df, ggplot2::aes(x = wind_kt, y = 1 - ecdf, color = source)) +
     ggplot2::geom_step(linewidth = 0.7, alpha = 0.85) +
@@ -1797,10 +1797,10 @@ plot_cdf_comparison <- function(val, out_dir = "output/validation", base_size = 
       color = "Source"
     ) +
     ggtheme
-  
+
   paths[["exceedance_plot"]] <- file.path(out_dir, "exceedance_comparison.png")
   .validate_save_plot(p_exceed, paths[["exceedance_plot"]], width = 12, height = 7, dpi = 150)
-  
+
   invisible(paths)
 }
 
@@ -1841,7 +1841,7 @@ validate_hazard_model <- function(cfg,
                                   save_tables = TRUE,
                                   base_size = 11) {
   .validate_dir_create(out_dir)
-  
+
   out <- run_hazard_model(
     cfg = cfg,
     targets = targets,
@@ -1849,7 +1849,7 @@ validate_hazard_model <- function(cfg,
     severities = severities,
     sst_cfg = sst_cfg
   )
-  
+
   val <- run_validation_suite(
     out = out,
     holdout_years = holdout_years,
@@ -1857,9 +1857,9 @@ validate_hazard_model <- function(cfg,
     return_periods = return_periods,
     seed = seed
   )
-  
+
   artifacts <- list(plots = list(), tables = list())
-  
+
   if (isTRUE(save_plots)) {
     artifacts$plots$hindcast <- plot_hindcast_validation(val, out_dir = out_dir, base_size = base_size)
     artifacts$plots$rate_check <- plot_rate_validation(val, out_dir = out_dir, base_size = base_size)
@@ -1868,7 +1868,7 @@ validate_hazard_model <- function(cfg,
     artifacts$plots$qq_plots <- plot_qq_validation(val, out_dir = out_dir, base_size = base_size)
     artifacts$plots$cdf_comparison <- plot_cdf_comparison(val, out_dir = out_dir, base_size = base_size)
   }
-  
+
   if (isTRUE(save_tables)) {
     tables <- list(
       `Hindcast Return Levels` = val$hindcast$comparison,
@@ -1876,7 +1876,7 @@ validate_hazard_model <- function(cfg,
       `Wind Field Spot-Checks` = val$wind_field,
       `Summary` = val$summary
     )
-    
+
     if (!is.null(val$hindcast$comparison)) {
       artifacts$tables$hindcast_csv <- file.path(out_dir, "hindcast_return_levels.csv")
       .validate_write_csv(val$hindcast$comparison, artifacts$tables$hindcast_csv)
@@ -1893,11 +1893,11 @@ validate_hazard_model <- function(cfg,
       artifacts$tables$summary_csv <- file.path(out_dir, "validation_summary.csv")
       .validate_write_csv(val$summary, artifacts$tables$summary_csv)
     }
-    
+
     artifacts$tables$tables_md <- file.path(out_dir, "validation_tables.md")
     .validate_write_md_tables(tables, artifacts$tables$tables_md)
   }
-  
+
   list(out = out, val = val, artifacts = artifacts)
 }
 

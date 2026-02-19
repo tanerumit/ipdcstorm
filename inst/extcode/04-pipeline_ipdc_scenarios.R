@@ -26,23 +26,10 @@ per_target_cfg <- list(
 
 # Run baseline model
 out_stat <- run_hazard_model(
-  cfg = cfg, 
-  targets = targets, 
+  cfg = cfg,
+  targets = targets,
   per_target_cfg = per_target_cfg,
   sst_cfg = NULL
-)
-
-daily_stat <- generate_daily_hazard_impact(
-  out = out_stat, 
-  island = "Saba", 
-  sim_years = 1:200, 
-  year0 = 2025,
-  thr_port = 40, 
-  thr_infra = 55, 
-  gust_factor = 1.25,
-  damage_method = "powerlaw", 
-  seed = 42,
-  cc_scenario = "Baseline-scenario"
 )
 
 

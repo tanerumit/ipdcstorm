@@ -1,4 +1,3 @@
-
 # =============================================================================
 # Script overview: temporal downscaling and impact forcing
 # - .assign_severity_simple(): simple TD/TS/HUR class from peak wind.
@@ -79,19 +78,19 @@ build_event_library <- function(track_df, event_df,
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   if (!requireNamespace("lubridate", quietly = TRUE)) stop("Package `lubridate` is required.")
   if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
-  
+
   resampling_method <- match.arg(resampling_method)
-  
+
   if (!is.null(seed)) set.seed(seed)
-  
+
   stopifnot(all(c("SID", "iso_time") %in% names(track_df)))
   if (!("SID" %in% names(event_df)) && ("storm_id" %in% names(event_df))) {
     event_df <- dplyr::mutate(event_df, SID = .data$storm_id)
   }
   stopifnot("SID" %in% names(event_df))
-  
+
   ev <- tibble::as_tibble(event_df)
-  
+
   if (!("V_site_max_kt" %in% names(ev)) && ("peak_wind_kt" %in% names(ev))) ev$V_site_max_kt <- ev$peak_wind_kt
   if (!("V_site_max_kt" %in% names(ev))) ev$V_site_max_kt <- NA_real_
   if (!("wind_max_kt"   %in% names(ev)) && ("storm_intensity_kt" %in% names(ev))) ev$wind_max_kt <- ev$storm_intensity_kt
@@ -102,18 +101,18 @@ build_event_library <- function(track_df, event_df,
   if (!("dP_max_hPa"    %in% names(ev))) ev$dP_max_hPa    <- NA_real_
   if (!("RMW_mean_km"   %in% names(ev)) && ("rmw_mean_km" %in% names(ev))) ev$RMW_mean_km <- ev$rmw_mean_km
   if (!("RMW_mean_km"   %in% names(ev))) ev$RMW_mean_km   <- NA_real_
-  
+
   if (!("start_time" %in% names(ev))) {
     starts <- track_df |>
       dplyr::filter(!is.na(.data$iso_time)) |>
       dplyr::arrange(.data$SID, .data$iso_time) |>
       dplyr::group_by(.data$SID) |>
       dplyr::summarise(start_time = min(.data$iso_time), .groups = "drop")
-    
+
     ev <- ev |>
       dplyr::left_join(starts, by = "SID")
   }
-  
+
   # Only needed for copula_nn; kept inert otherwise
   if (resampling_method == "copula_nn" && !("dur_days" %in% names(ev))) {
     durs <- track_df |>
@@ -131,36 +130,36 @@ build_event_library <- function(track_df, event_df,
     ev <- ev |>
       dplyr::left_join(durs, by = "SID")
   }
-  
+
   if (!("doy" %in% names(ev))) {
     ev <- ev |>
       dplyr::mutate(doy = lubridate::yday(.data$start_time))
   }
-  
+
   ev <- ev |>
     dplyr::filter(!is.na(.data$start_time))
-  
+
   if (nrow(ev) == 0) {
     stop("No events left after requiring non-missing start_time. Cannot build library.")
   }
-  
+
   ev <- ev |>
     dplyr::mutate(
       wind_for_sev = dplyr::coalesce(.data$V_site_max_kt, .data$wind_max_kt),
       severity = .assign_severity_simple(.data$wind_for_sev),
       severity = factor(.data$severity, levels = sev_levels),
       doy = as.integer(.data$doy),
-      
+
       wind_bin = cut(.data$wind_for_sev, breaks = bins$wind, include.lowest = TRUE, right = FALSE),
       Pc_bin   = cut(.data$Pc_min_hPa,   breaks = bins$Pc,   include.lowest = TRUE, right = FALSE),
       RMW_bin  = cut(.data$RMW_mean_km,  breaks = bins$RMW,  include.lowest = TRUE, right = FALSE)
     )
-  
+
   doy_by_sev <- ev |>
     dplyr::filter(!is.na(.data$severity), is.finite(.data$doy)) |>
     dplyr::group_by(.data$severity) |>
     dplyr::summarise(doy = list(.data$doy), .groups = "drop")
-  
+
   strat <- ev |>
     dplyr::filter(!is.na(.data$severity)) |>
     dplyr::mutate(
@@ -179,11 +178,11 @@ build_event_library <- function(track_df, event_df,
     dplyr::group_by(.data$severity) |>
     dplyr::mutate(w = .data$n / sum(.data$n)) |>
     dplyr::ungroup()
-  
+
   if (nrow(strat) == 0) {
     stop("No stratification bins created. Check severity levels and available event data.")
   }
-  
+
   # ---------------------------------------------------------------------------
   # copula_nn helpers (local, base R only; inert unless resampling_method="copula_nn")
   # ---------------------------------------------------------------------------
@@ -196,14 +195,14 @@ build_event_library <- function(track_df, event_df,
     z[ok] <- qnorm(u)
     z
   }
-  
+
   .norm_to_emp_quantile <- function(u, x_ref) {
     xr <- x_ref[is.finite(x_ref)]
     if (length(xr) == 0) return(NA_real_)
     u <- pmin(1 - 1e-12, pmax(1e-12, u))
     as.numeric(stats::quantile(xr, probs = u, names = FALSE, type = 8))
   }
-  
+
   .robust_scale_vec <- function(x) {
     xok <- x[is.finite(x)]
     if (length(xok) < 2) return(list(center = NA_real_, scale = NA_real_))
@@ -218,7 +217,7 @@ build_event_library <- function(track_df, event_df,
     if (!is.finite(sc) || sc <= 0) sc <- 1
     list(center = cen, scale = max(sc, 1e-12))
   }
-  
+
   .standardize_matrix <- function(X) {
     p <- ncol(X)
     Z <- X
@@ -232,22 +231,22 @@ build_event_library <- function(track_df, event_df,
     }
     list(Z = Z, center = cen, scale = sc)
   }
-  
+
   .fit_copula_by_sev <- function(ev_sub) {
     feat <- c("wind_for_sev", "Pc_min_hPa", "RMW_mean_km", "dur_days")
     feat <- feat[feat %in% names(ev_sub)]
     if (length(feat) < 2) return(NULL)
-    
+
     X <- as.data.frame(ev_sub[, feat, drop = FALSE])
     cc <- stats::complete.cases(X)
     if (sum(cc) < as.integer(copula_min_n)) return(NULL)
-    
+
     Xc <- as.matrix(X[cc, , drop = FALSE])
     Zc <- apply(Xc, 2, .rank_to_norm)
     if (any(colSums(is.finite(Zc)) < as.integer(copula_min_n))) return(NULL)
-    
+
     R <- stats::cor(Zc, use = "pairwise.complete.obs")
-    
+
     eig <- eigen(R, symmetric = TRUE, only.values = TRUE)$values
     if (any(!is.finite(eig)) || min(eig) <= 1e-10) {
       add <- max(1e-8, 1e-6 - min(eig, na.rm = TRUE))
@@ -255,12 +254,12 @@ build_event_library <- function(track_df, event_df,
       d <- sqrt(diag(R))
       R <- R / (d %o% d)
     }
-    
+
     L <- tryCatch(chol(R), error = function(e) NULL)
     if (is.null(L)) return(NULL)
-    
+
     std <- .standardize_matrix(as.matrix(ev_sub[, feat, drop = FALSE]))
-    
+
     list(
       feat = feat,
       L = L,
@@ -269,35 +268,35 @@ build_event_library <- function(track_df, event_df,
       Zstd = std$Z
     )
   }
-  
+
   .sample_event_copula_nn <- function(fit) {
     p <- length(fit$feat)
     z <- as.numeric(crossprod(fit$L, rnorm(p)))
     u <- stats::pnorm(z)
-    
+
     x_star <- rep(NA_real_, p)
     for (j in seq_len(p)) {
       x_star[j] <- .norm_to_emp_quantile(u[j], fit$X[, j])
     }
-    
+
     X <- fit$X
     x_std <- rep(NA_real_, p)
     for (j in seq_len(p)) {
       ss <- .robust_scale_vec(X[, j])
       x_std[j] <- (x_star[j] - ss$center) / ss$scale
     }
-    
+
     ok_dim <- is.finite(x_std)
     if (!any(ok_dim)) {
       i <- sample.int(nrow(fit$ev_sub), 1)
       return(fit$ev_sub[i, , drop = FALSE])
     }
-    
+
     Z <- fit$Zstd[, ok_dim, drop = FALSE]
     dx <- sweep(Z, 2, x_std[ok_dim], FUN = "-")
     d2 <- rowSums(dx * dx)
     d2[!is.finite(d2)] <- Inf
-    
+
     k <- max(1L, as.integer(copula_k))
     ord <- order(d2)
     ord <- ord[is.finite(d2[ord])]
@@ -309,7 +308,7 @@ build_event_library <- function(track_df, event_df,
     i <- sample(top, 1)
     fit$ev_sub[i, , drop = FALSE]
   }
-  
+
   copula_fits <- NULL
   if (resampling_method == "copula_nn") {
     copula_fits <- list()
@@ -322,7 +321,7 @@ build_event_library <- function(track_df, event_df,
       }
     }
   }
-  
+
   # ---------------------------------------------------------------------------
   # Samplers
   # ---------------------------------------------------------------------------
@@ -334,10 +333,10 @@ build_event_library <- function(track_df, event_df,
     if (length(v) == 0) stop("No DOY data for severity: ", sev)
     sample(v, size = 1)
   }
-  
+
   sample_event <- function(sev) {
     sev <- as.character(sev)
-    
+
     if (resampling_method == "copula_nn") {
       fit <- copula_fits[[sev]]
       if (!is.null(fit)) {
@@ -345,24 +344,24 @@ build_event_library <- function(track_df, event_df,
       }
       # fall back to stratified
     }
-    
+
     # Stratified behavior (patched)
     sub <- strat[as.character(strat$severity) == sev, , drop = FALSE]
     if (nrow(sub) == 0) stop("No events for severity: ", sev)
-    
+
     p <- sub$w
     p[!is.finite(p) | p < 0] <- 0
     if (sum(p) == 0) p <- rep(1 / nrow(sub), nrow(sub)) else p <- p / sum(p)
-    
+
     k <- sample.int(nrow(sub), size = 1, prob = p)
     sid <- sample(sub$sid[[k]], size = 1)
     if (is.na(sid)) stop("Sampled SID is NA (strat bin contains NA SIDs).", call. = FALSE)
-    
+
     idx <- match(sid, ev$SID)
     if (is.na(idx)) stop("Sampled SID not found in event table: ", sid, call. = FALSE)
     ev[idx, , drop = FALSE]
   }
-  
+
   list(
     doy_by_severity = doy_by_sev,
     strat_bins = strat,
@@ -458,18 +457,18 @@ peak_wind_by_year <- function(daily) {
 #' @export
 build_event_library_from_out <- function(out, location, ..., seed = NULL) {
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  
+
   if (is.null(out$trackpoints[[location]])) {
     stop("out$trackpoints has no entry for location='", location, "'.")
   }
   if (is.null(out$events)) {
     stop("out$events is required.", call. = FALSE)
   }
-  
+
   track_df <- out$trackpoints[[location]]
   event_df <- out$events |>
     dplyr::filter(.data$location == location)
-  
+
   build_event_library(
     track_df = track_df,
     event_df = event_df,
@@ -496,11 +495,11 @@ build_event_library_from_out <- function(out, location, ..., seed = NULL) {
 sample_events_for_year <- function(lib, year, n_ts, n_hur, seed = NULL) {
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
-  
+
   if (!is.null(seed)) set.seed(seed)
   stopifnot(is.list(lib), is.function(lib$sample_doy), is.function(lib$sample_event))
   year <- as.integer(year)
-  
+
   get_dur_days <- function(row) {
     if ("dur_days" %in% names(row) && is.finite(row$dur_days) && row$dur_days > 0) {
       return(as.integer(row$dur_days))
@@ -515,7 +514,7 @@ sample_events_for_year <- function(lib, year, n_ts, n_hur, seed = NULL) {
     }
     1L
   }
-  
+
   get_V_peak <- function(row, sev) {
     v <- NA_real_
     if ("peak_wind_kt" %in% names(row)) v <- row$peak_wind_kt
@@ -525,17 +524,17 @@ sample_events_for_year <- function(lib, year, n_ts, n_hur, seed = NULL) {
     if (!is.finite(v) || v <= 0) v <- if (sev == "HUR") 80 else if (sev == "TS") 40 else 25
     as.numeric(v)
   }
-  
+
   sample_one <- function(sev) {
     doy0 <- as.integer(lib$sample_doy(sev))
     if (!is.finite(doy0) || doy0 < 1L || doy0 > 366L) stop("Invalid DOY sampled: ", doy0)
-    
+
     row <- dplyr::as_tibble(lib$sample_event(sev))
-    
+
     start_date <- as.Date(sprintf("%d-01-01", year)) + (doy0 - 1L)
     dur_days <- get_dur_days(row)
     V_peak <- get_V_peak(row, sev)
-    
+
     tibble::tibble(
       severity   = sev,
       start_date = start_date,
@@ -543,12 +542,12 @@ sample_events_for_year <- function(lib, year, n_ts, n_hur, seed = NULL) {
       V_peak     = as.numeric(V_peak)
     )
   }
-  
+
   out <- dplyr::bind_rows(
     if (n_ts  > 0) dplyr::bind_rows(replicate(n_ts,  sample_one("TS"),  simplify = FALSE)) else NULL,
     if (n_hur > 0) dplyr::bind_rows(replicate(n_hur, sample_one("HUR"), simplify = FALSE)) else NULL
   )
-  
+
   if (nrow(out) == 0) {
     tibble::tibble(severity = character(0), start_date = as.Date(character(0)),
                    dur_days = integer(0), V_peak = numeric(0))
@@ -697,7 +696,7 @@ event_pulse <- function(dur_days, V_peak, shape = c("cosine", "triangle")) {
   shape <- match.arg(shape)
   d <- as.integer(dur_days)
   if (d <= 0) return(numeric(0))
-  
+
   t <- seq_len(d)
   if (shape == "triangle") {
     mid <- (d + 1) / 2
@@ -731,35 +730,35 @@ generate_daily_year <- function(year, sampled_events,
                                 pulse_shape = "cosine") {
   if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  
+
   start <- as.Date(sprintf("%d-01-01", year))
   end   <- as.Date(sprintf("%d-12-31", year))
   dates <- seq.Date(start, end, by = "day")
-  
+
   n <- length(dates)
   wind <- rep(0, n)
-  
+
   if (nrow(sampled_events) > 0) {
     for (k in seq_len(nrow(sampled_events))) {
       s <- sampled_events$start_date[k]
       d <- sampled_events$dur_days[k]
       V <- sampled_events$V_peak[k]
-      
+
       idx0 <- as.integer(s - start) + 1L
       idx1 <- idx0 + d - 1L
       if (idx1 < 1L || idx0 > n) next
-      
+
       idx0c <- max(1L, idx0)
       idx1c <- min(n, idx1)
-      
+
       pulse <- event_pulse(d, V, shape = pulse_shape)
       ps <- idx0c - idx0 + 1L
       pe <- ps + (idx1c - idx0c)
-      
+
       wind[idx0c:idx1c] <- pmax(wind[idx0c:idx1c], pulse[ps:pe])
     }
   }
-  
+
   tibble::tibble(
     date = dates,
     wind_kt = wind
@@ -788,46 +787,46 @@ generate_daily_year_extended <- function(year, sampled_events,
                                          pulse_shape = "cosine") {
   if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  
+
   start <- as.Date(sprintf("%d-01-01", year))
   end   <- as.Date(sprintf("%d-12-31", year))
   dates <- seq.Date(start, end, by = "day")
-  
+
   n <- length(dates)
   wind <- rep(0, n)
-  
+
   # Dominant event per day
   event_id <- rep(NA_character_, n)
   event_class <- rep(NA_character_, n)
   pressure_hpa  <- rep(NA_real_, n)
   pressure_deficit_hpa  <- rep(NA_real_, n)
   rmw_km <- rep(NA_real_, n)
-  
+
   best_wind_contrib <- rep(-Inf, n)
-  
+
   if (nrow(sampled_events) > 0) {
     for (k in seq_len(nrow(sampled_events))) {
       s  <- sampled_events$start_date[k]
       d  <- sampled_events$dur_days[k]
       V  <- sampled_events$V_peak[k]
       id <- sampled_events$event_id[k]
-      
+
       idx0 <- as.integer(s - start) + 1L
       idx1 <- idx0 + d - 1L
       if (idx1 < 1L || idx0 > n) next
-      
+
       idx0c <- max(1L, idx0)
       idx1c <- min(n, idx1)
-      
+
       pulse <- event_pulse(d, V, shape = pulse_shape)
-      
+
       ps <- idx0c - idx0 + 1L
       pe <- ps + (idx1c - idx0c)
-      
+
       contrib <- pulse[ps:pe]
-      
+
       wind[idx0c:idx1c] <- pmax(wind[idx0c:idx1c], contrib)
-      
+
       take <- contrib > best_wind_contrib[idx0c:idx1c]
       if (any(take)) {
         ii <- (idx0c:idx1c)[take]
@@ -840,7 +839,7 @@ generate_daily_year_extended <- function(year, sampled_events,
       }
     }
   }
-  
+
   tibble::tibble(
     date = dates,
     wind_kt = wind,
@@ -858,11 +857,12 @@ generate_daily_year_extended <- function(year, sampled_events,
 #' Generate daily synthetic hazard + impact series from hazard model output
 #'
 #' @description
-#' For a given location and simulated years, creates daily hazard and damage
-#' series with a fixed 15-column schema.
+#' For one or more locations and simulated years, creates daily hazard and damage
+#' series with a fixed 15-column schema.  Always returns a **named list** of
+#' tibbles, one element per location (e.g. \code{out$Saba}, \code{out$Miami}).
 #'
 #' @param out List returned by \code{run_hazard_model()}.
-#' @param location Character; target location name.
+#' @param location Character vector of one or more target location names.
 #' @param sim_years Integer vector of simulation-year indices to generate.
 #' @param year0 Integer base calendar year corresponding to sim_year == 1.
 #' @param gust_factor Numeric scalar to derive gust wind from sustained wind.
@@ -872,12 +872,24 @@ generate_daily_year_extended <- function(year, sampled_events,
 #' @param scenario Optional character scenario label carried to output.
 #' @param seed Integer seed.
 #'
-#' @return Tibble with columns:
+#' @return Named list of tibbles (one per location), each with columns:
 #'   \code{location}, \code{sim_year}, \code{scenario}, \code{date},
 #'   \code{wind_kt}, \code{wind_gust_kt}, \code{surge_m},
 #'   \code{event_id}, \code{event_class}, \code{pressure_hpa},
 #'   \code{pressure_deficit_hpa}, \code{rmw_km},
 #'   \code{damage_intensity}, \code{damage_rate}, \code{cum_damage}.
+#'
+#' @examples
+#' \dontrun{
+#' # Single location — returns list of length 1
+#' res <- generate_daily_hazard_impact(out, location = "Saba")
+#' res$Saba
+#'
+#' # Multiple locations
+#' res <- generate_daily_hazard_impact(out, location = c("Saba", "St. Eustatius"))
+#' res$Saba
+#' res$`St. Eustatius`
+#' }
 #' @export
 generate_daily_hazard_impact <- function(
     out,
@@ -890,17 +902,61 @@ generate_daily_hazard_impact <- function(
     pulse_shape = "cosine",
     scenario = NA_character_,
     seed = 1) {
+
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  
+  stopifnot(is.character(location), length(location) >= 1L)
+
   damage_method <- match.arg(damage_method)
+
+  # --- Run each location via the internal worker ---
+  results <- stats::setNames(
+    vector("list", length(location)),
+    location
+  )
+
+  for (loc in location) {
+    # Per-location seed: deterministic but distinct across locations
+    loc_seed <- seed + match(loc, location) - 1L
+
+    results[[loc]] <- .generate_daily_hazard_impact_single(
+      out = out,
+      location = loc,
+      sim_years = sim_years,
+      year0 = year0,
+      gust_factor = gust_factor,
+      damage_method = damage_method,
+      damage_params = damage_params,
+      pulse_shape = pulse_shape,
+      scenario = scenario,
+      seed = loc_seed
+    )
+  }
+
+  results
+}
+
+
+#' @keywords internal
+.generate_daily_hazard_impact_single <- function(
+    out,
+    location,
+    sim_years,
+    year0,
+    gust_factor,
+    damage_method,
+    damage_params,
+    pulse_shape,
+    scenario,
+    seed) {
+
   set.seed(seed)
-  
+
   method <- if (!is.null(out$cfg) && !is.null(out$cfg$resampling_method)) out$cfg$resampling_method else NULL
   if (is.null(method)) method <- "stratified"
   copula_min_n <- if (!is.null(out$cfg) && !is.null(out$cfg$copula_min_n)) out$cfg$copula_min_n else 30L
   copula_k <- if (!is.null(out$cfg) && !is.null(out$cfg$copula_k)) out$cfg$copula_k else 1L
   copula_robust_scale <- if (!is.null(out$cfg) && !is.null(out$cfg$copula_robust_scale)) out$cfg$copula_robust_scale else TRUE
-  
+
   lib <- build_event_library_from_out(
     out,
     location = location,
@@ -910,14 +966,14 @@ generate_daily_hazard_impact <- function(
     copula_k = copula_k,
     copula_robust_scale = copula_robust_scale
   )
-  
+
   if (is.null(out$sim)) stop("out$sim is NULL.", call. = FALSE)
-  
+
   sim <- out$sim |>
-    dplyr::filter(.data$location == location, .data$sim_year %in% sim_years)
-  
-  if (nrow(sim) == 0) stop("No sim years found for location in out$sim.", call. = FALSE)
-  
+    dplyr::filter(.data$location == !!location, .data$sim_year %in% sim_years)
+
+  if (nrow(sim) == 0) stop("No sim years found for location '", location, "' in out$sim.", call. = FALSE)
+
   .get_sim_col <- function(sim, candidates) {
     hit <- candidates[candidates %in% names(sim)][1]
     if (is.na(hit)) {
@@ -926,29 +982,28 @@ generate_daily_hazard_impact <- function(
     }
     sim[[hit]]
   }
-  
+
   n_ts_vec  <- .get_sim_col(sim, c("n_ts"))
   n_hur_vec <- .get_sim_col(sim, c("n_hur"))
-  
+
   # --- Level 3: resolve SST anomaly vector for storm perturbation ---
-  # sst_scenario can be passed explicitly, or extracted from out$sst_info$scenario
   sst_anom_vec <- if (!is.null(out$cfg) && !is.null(out$cfg$sst_scenario)) out$cfg$sst_scenario$sst_anomaly else NULL
   cc_params <- if (!is.null(out$fit)) attr(out$fit, "cc_params") else NULL
 
   l3_enabled <- !is.null(cc_params) && !is.null(sst_anom_vec)
 
   daily_list <- vector("list", nrow(sim))
-  
+
   for (i in seq_len(nrow(sim))) {
     yr <- year0 + (sim$sim_year[i] - 1L)
-    
+
     sampled <- sample_events_for_year_extended(
       lib = lib,
       year = yr,
       n_ts = n_ts_vec[i],
       n_hur = n_hur_vec[i]
     )
-    
+
     # --- Level 3: perturb storm characteristics ---
     if (l3_enabled && nrow(sampled) > 0) {
       sy <- sim$sim_year[i]
@@ -959,7 +1014,7 @@ generate_daily_hazard_impact <- function(
       }
       sampled <- perturb_event(sampled, delta_sst = delta_sst_i, cc_params = cc_params)
     }
-    
+
     daily0 <- generate_daily_year_extended(
       year = yr,
       sampled_events = sampled,
@@ -967,10 +1022,10 @@ generate_daily_hazard_impact <- function(
     ) |>
       dplyr::mutate(
         sim_year = sim$sim_year[i],
-        location = location,
-        scenario = scenario
+        location = !!location,
+        scenario = !!scenario
       )
-    
+
     V0 <- if (!is.null(damage_params$V0)) damage_params$V0 else 34
     V1 <- if (!is.null(damage_params$V1)) damage_params$V1 else 120
     p_exp <- if (!is.null(damage_params$p)) damage_params$p else 3
@@ -1045,16 +1100,16 @@ add_damage_forcing <- function(daily,
                                p = 3,
                                dmax = 0.02) {
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  
+
   stopifnot(is.data.frame(daily))
   if (!("wind_kt" %in% names(daily))) stop("daily must contain `wind_kt`.", call. = FALSE)
-  
+
   clip01 <- function(x) pmax(0, pmin(1, x))
-  
+
   x <- (daily$wind_kt - V0) / (V1 - V0)
   I <- clip01(x)^p
   d <- dmax * I
-  
+
   out <- dplyr::as_tibble(daily) |>
     dplyr::mutate(
       damage_intensity = I,
@@ -1091,7 +1146,7 @@ damage_rate_from_wind <- function(wind_kt,
   stopifnot(is.numeric(wind_kt))
   denom <- (V_ref - thr)
   if (!is.finite(denom) || denom <= 0) stop("V_ref must be > thr")
-  
+
   x <- pmax(0, (wind_kt - thr) / denom)
   rate <- d_ref * (x ^ p)
   rate <- pmin(rate, d_max)

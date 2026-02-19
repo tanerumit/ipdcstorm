@@ -284,90 +284,6 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
 
 
 
-#' Estimate site wind using a Holland-type radial wind profile
-#'
-#' @description
-#' Computes a gradient-wind-like radial profile parameterized by a Holland B
-#' parameter and the radius of maximum wind (RMW). Optionally uses central
-#' pressure (Pc) and ambient pressure (Pn) to derive B; otherwise uses a
-#' heuristic by intensity. Includes a mild outer decay beyond an outer radius.
-#'
-#' @param Vmax_kt Numeric; storm maximum wind (kt).
-#' @param r_km Numeric; distance from storm center to site (km).
-#' @param R34_km,R50_km,R64_km Numeric; wind radii (km), used for optional calibration.
-#' @param RMW_km Numeric; radius of maximum wind (km). Required.
-#' @param Pn Numeric; ambient pressure (hPa), default 1013.
-#' @param Pc Numeric; central pressure (hPa), optional.
-#'
-#' @return Numeric scalar; estimated sustained wind at site (kt).
-#'
-#' @keywords internal
-
-.estimate_site_wind_holland <- function(
-    Vmax_kt,
-    r_km,
-    R34_km,
-    R50_km = NA,
-    R64_km = NA,
-    RMW_km,
-    Pn = 1013,
-    Pc = NA
-) {
-  if (!is.finite(Vmax_kt) || Vmax_kt <= 0) return(NA_real_)
-  if (!is.finite(r_km) || r_km < 0) return(NA_real_)
-  if (!is.finite(RMW_km) || RMW_km <= 0) return(NA_real_)
-  
-  RMW_km <- pmax(5, pmin(200, RMW_km))
-  
-  # Holland B
-  if (is.finite(Pc) && is.finite(Pn) && Pc < Pn) {
-    deltaP <- Pn - Pc
-    B <- -4.4e-5 * deltaP^2 + 0.01 * deltaP + 0.03 * (deltaP - 25)
-    B <- pmax(1.0, pmin(2.5, B))
-  } else {
-    if (Vmax_kt >= 100) {
-      B <- 1.2 + (120 - Vmax_kt) * 0.005
-    } else if (Vmax_kt >= 64) {
-      B <- 1.4 + (100 - Vmax_kt) * 0.008
-    } else {
-      B <- 1.8 + (64 - Vmax_kt) * 0.01
-    }
-    B <- pmax(0.9, pmin(2.5, B))
-  }
-  
-  # Avoid returning 0 at the center
-  if (r_km < 0.1) return(pmax(0, Vmax_kt))
-  
-  r_norm <- r_km / RMW_km
-  if (r_norm < 1.0) {
-    V_gradient <- sqrt((1 / r_norm)^B * exp(1 - (1 / r_norm)^B))
-  } else {
-    V_gradient <- sqrt((RMW_km / r_km)^B * exp(1 - (RMW_km / r_km)^B))
-  }
-  
-  V_site_kt <- Vmax_kt * V_gradient
-  
-  # Optional calibration at R34
-  if (is.finite(R34_km) && R34_km > 0 && r_km > RMW_km * 1.5) {
-    V_at_R34_model <- Vmax_kt * sqrt((RMW_km / R34_km)^B * exp(1 - (RMW_km / R34_km)^B))
-    if (V_at_R34_model > 25 && V_at_R34_model < 50) {
-      V_site_kt <- V_site_kt * (34 / V_at_R34_model)
-    }
-  }
-  
-  # Outer cutoff
-  R_outer <- if (is.finite(R34_km) && R34_km > 0) 1.8 * R34_km else 300
-  if (r_km > R_outer) {
-    V_site_kt <- V_site_kt * exp(-2 * (r_km - R_outer) / R_outer)
-  }
-  
-  pmax(0, pmin(Vmax_kt, V_site_kt))
-}
-
-# =============================================================================
-# Fixes 1 & 2: Patched Holland profile
-# =============================================================================
-
 #' Estimate site wind using a Holland-type radial wind profile (patched)
 #'
 #' @description
@@ -390,7 +306,7 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
 #'
 #' @return Numeric scalar; estimated sustained wind at site (kt).
 #' @keywords internal
-.estimate_site_wind_holland_v2 <- function(
+.estimate_site_wind_holland <- function(
     Vmax_kt,
     r_km,
     R34_km,
@@ -821,7 +737,7 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
   # --- Use patched Holland profile (vectorized; removes mapply bottleneck) ---
   df |>
     dplyr::mutate(
-      V_site_symmetric_kt = .estimate_site_wind_holland_v2(
+      V_site_symmetric_kt = .estimate_site_wind_holland(
         Vmax_kt = .data$Vmax_kt,
         r_km    = .data$dist_km,
         R34_km  = .data$R34_km,

@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_core.R
 \name{.estimate_site_wind_holland}
 \alias{.estimate_site_wind_holland}
-\title{Estimate site wind using a Holland-type radial wind profile}
+\title{Estimate site wind using a Holland-type radial wind profile (patched)}
 \usage{
 .estimate_site_wind_holland(
   Vmax_kt,
@@ -12,7 +12,8 @@
   R64_km = NA,
   RMW_km,
   Pn = 1013,
-  Pc = NA
+  Pc = NA,
+  lat = 18
 )
 }
 \arguments{
@@ -20,21 +21,30 @@
 
 \item{r_km}{Numeric; distance from storm center to site (km).}
 
-\item{R34_km, R50_km, R64_km}{Numeric; wind radii (km), used for optional calibration.}
+\item{R34_km}{Numeric; 34-kt wind radius (km). If NA and Vmax >= 34 kt,
+a climatological estimate is used.}
+
+\item{R50_km, R64_km}{Numeric; 50/64-kt wind radii (km), optional.}
 
 \item{RMW_km}{Numeric; radius of maximum wind (km). Required.}
 
 \item{Pn}{Numeric; ambient pressure (hPa), default 1013.}
 
 \item{Pc}{Numeric; central pressure (hPa), optional.}
+
+\item{lat}{Numeric; storm latitude (degrees N), used for climatological infill.}
 }
 \value{
 Numeric scalar; estimated sustained wind at site (kt).
 }
 \description{
-Computes a gradient-wind-like radial profile parameterized by a Holland B
-parameter and the radius of maximum wind (RMW). Optionally uses central
-pressure (Pc) and ambient pressure (Pn) to derive B; otherwise uses a
-heuristic by intensity. Includes a mild outer decay beyond an outer radius.
+Computes a gradient-wind-like radial profile. This version fixes:
+\itemize{
+\item Holland B: uses Vickery & Wadhera (2008)-style parameterization that
+increases B for compact intense storms (was inverted above 120 kt).
+\item R34 calibration: widens the acceptable V_at_R34 window from [25,50] to
+[5,60] so weak tropical storms get calibrated.
+\item Adds climatological R34 infill when observed R34 is missing.
+}
 }
 \keyword{internal}
