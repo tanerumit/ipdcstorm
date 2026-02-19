@@ -1,0 +1,79 @@
+
+Consistent end-to-end pipeline from IBTrACS track points → site wind time series → event catalog → stochastic annual counts → daily synthetic wind series → damage forcing.
+
+At a high level:
+
+Read + clean IBTrACS (read_ibtracs_clean())
+
+Standardized time (iso_time), coordinates, USA wind and quadrant radii.
+
+Added pressure fields (pres_hpa, source) and optional structure fields when present.
+
+Gate to each location (dist_to_target() + filter by gate_km)
+
+You only retain track points that can affect the site.
+
+Convert track points to site wind (compute_site_winds_full())
+
+Bearing/quadrant selection for directional radii.
+
+Monotone radii enforcement.
+
+Storm heading calculation.
+
+RMW inference when missing.
+
+Holland-type radial decay plus forward-motion asymmetry.
+
+Aggregate to storm events (make_storm_events())
+
+Storm-level summaries: start/end time, max site wind, pressure minima, RMW summaries, etc.
+
+Robust handling of missing series (no Inf/-Inf leakage).
+
+Fit rates and simulate annual counts (compute_annual_counts(), compute_lambda_table(), estimate_k_hat(), simulate_twolevel_counts())
+
+Two-level count model using a shared activity factor A (gamma), capturing overdispersion and TS/HUR dependence.
+
+Build event library for resampling (build_event_library())
+
+Empirical seasonality (DOY) by severity.
+
+Stratified resampling bins (wind/Pc/RMW) and sampler closures (sample_doy(), sample_event()).
+
+Downscale annual counts into daily series (generate_daily_from_hazard() + sample_events_for_year() + generate_daily_year())
+
+Sample event timing and attributes, then create daily pulses; take daily max across overlapping events.
+
+Add damage forcing
+
+Option A: standalone bounded power-law damage curve.
+
+Option B: intensity-based forcing + service disruption flags (better for system/impact coupling).
+
+
+
+
+
+
+
+Key improvements you made (the ones that actually mattered)
+Data integrity / failure-proofing
+
+Fixed missing-column crashes by creating optional columns (V_site_kt, pres_hpa, rmw_km, etc.) when absent and dropping rows with missing time before aggregation.
+
+Eliminated start_time join collisions in the event library builder. The core issue was event_df already had start_time, and the join created suffixes (start_time.x/.y) leaving no plain start_time.
+
+Methodological coherence
+
+Aligned severity logic so the library can use site intensity when available (V_site_max_kt) and only fall back to track intensity (wind_max_kt).
+
+Stopped using “raw DOY columns” incorrectly and switched to sampler closures (lib$sample_doy(), lib$sample_event()), which prevents factor/data.frame DOY bugs.
+
+Clarified that the library constructor requires track_df + event_df, not out + island. That mismatch caused the “unused argument (island=…)” error.
+
+Practical modeling upgrades
+
+Introduced a forward-motion asymmetry term and storm heading to make winds less symmetric and more realistic at a point site.
+
+Introduced a coherent forcing layer (Option B) that can emit damage plus port/infra service flags from the same daily wind driver.

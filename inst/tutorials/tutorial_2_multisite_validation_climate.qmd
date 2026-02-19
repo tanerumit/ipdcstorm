@@ -1,0 +1,685 @@
+---
+title: "Tutorial 2 — Multi-Site Application, Validation & Climate Change"
+subtitle: "Hurricane Wind Hazard Model for the Caribbean"
+author: ""
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: true
+    code-fold: false
+    code-tools: true
+    code-copy: true
+    highlight-style: github
+    smooth-scroll: true
+    self-contained: true
+execute:
+  eval: false
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup-hidden
+#| include: false
+knitr::opts_chunk$set(comment = "#>")
+```
+
+::: {.callout-note}
+## Prerequisites
+This tutorial assumes you have completed **Tutorial 1** and are familiar with the model setup, configuration, and single-site baseline workflow. All source scripts should already be loaded (see Tutorial 1, @sec-prerequisites).
+:::
+
+```{r}
+#| label: setup
+library(tidyr)
+library(stringr)
+library(lubridate)
+library(geosphere)
+library(readr)
+library(dplyr)
+library(tibble)
+library(ggplot2)
+library(purrr)
+
+source("R/hazard_core.R")
+source("R/hazard_climate.R")
+source("R/hazard_downscale.R")
+source("R/hazard_ibtracs.R")
+source("R/hazard_utils.R")
+source("R/hazard_run.R")
+source("R/hazard_validation.R")
+
+set.seed(123)
+```
+
+
+## Multi-Site Application {#sec-multi}
+
+In Tutorial 1 we ran the model for a single island. In practice, you will often want to analyse **multiple locations simultaneously** — for example, all islands in a supply chain network, or a set of ports along a shipping route.
+
+The model handles this natively: `run_hazard_model()` loops over all targets internally, running the full wind field computation and rate estimation for each one. All outputs are stacked with a `location` column for easy comparison.
+
+### Step 1 — Define multiple targets {#sec-targets}
+
+Add rows to the targets table. Each row is an independent site:
+
+```{r}
+#| label: targets-multi
+targets <- tibble::tribble(
+  ~name,          ~lat,      ~lon,
+  "St_Martin",    18.0708,  -63.0501,
+  "Saba",         17.6350,  -63.2300,
+  "Statia",       17.4890,  -62.9740,
+  "Puerto_Rico",  18.2208,  -66.5901,
+  "Miami",        25.7617,  -80.1918
+)
+```
+
+::: {.callout-tip}
+## Choosing coordinates
+Use the coordinates of the specific asset you are interested in (e.g., the port, the airport, the city centre). The model computes wind at an exact point — moving the target by even 10 km can change results for near-miss storms.
+:::
+
+
+### Step 2 — Create the configuration {#sec-cfg-multi}
+
+Create a configuration using `make_hazard_cfg()`. The setup is identical to the single-site case:
+
+```{r}
+#| label: cfg-multi
+cfg <- make_hazard_cfg(
+  data_path        = "data/ibtracs/ibtracs.NA.list.v04r01.csv",
+  start_year       = 1970L,
+  search_radius_km = 800,
+  n_sim_years      = 1000L
+)
+```
+
+
+### Step 3 — Run for all sites {#sec-run-multi}
+
+The call is identical to the single-site case — `run_hazard_model()` handles the loop:
+
+```{r}
+#| label: run-multi
+out <- run_hazard_model(
+  cfg     = cfg,
+  targets = targets,
+  sst_cfg = NULL
+)
+```
+
+::: {.callout-important}
+## Runtime
+With 5 targets, expect roughly 5–8 minutes. The IBTrACS data is read once; the wind field computation is the bottleneck and scales linearly with the number of targets.
+:::
+
+
+### Step 4 — Compare across sites {#sec-compare}
+
+All outputs are stacked with a `location` column:
+
+```{r}
+#| label: compare-rates
+# Annual rates by site
+out$rates
+```
+
+```{r}
+#| label: compare-sim
+# Mean simulated activity
+out$sim |>
+  group_by(location) |>
+  summarise(
+    mean_storms = mean(n_tc),
+    mean_hur    = mean(n_hur),
+    p_hur       = mean(n_hur / pmax(1, n_tc)),
+    .groups = "drop"
+  )
+```
+
+You should see that Miami and Puerto Rico have somewhat different rates than the smaller Leeward Islands — this reflects genuine differences in geographic exposure (track density, typical storm paths).
+
+
+### Step 5 — Daily series for multiple sites {#sec-daily-multi}
+
+Loop over the islands of interest and bind the results:
+
+```{r}
+#| label: daily-multi
+daily_all <- purrr::map_dfr(c("Saba", "St_Martin", "Statia"), function(loc) {
+  generate_daily_hazard_impact(
+    out           = out,
+    location      = loc,
+    sim_years     = 1:200,
+    year0         = 2025,
+    gust_factor   = 1.25,
+    damage_method = "powerlaw",
+    seed          = 42,
+    scenario      = "stationary"
+  )
+})
+```
+
+```{r}
+#| label: daily-multi-summary
+daily_all |>
+  group_by(location) |>
+  summarise(
+    ts_days       = sum(wind_kt >= 34),
+    hur_days      = sum(wind_kt >= 64),
+    port_closed   = sum(wind_gust_kt >= 40, na.rm = TRUE),
+    annual_damage = sum(damage_rate, na.rm = TRUE) / 200,
+    .groups = "drop"
+  )
+```
+
+::: {.callout-tip}
+## Applying per-site thresholds
+The daily output provides `wind_gust_kt` and `wind_kt` for flexible downstream thresholding. For example, to flag port closures at different thresholds per island:
+
+```r
+port_thresholds <- c(Saba = 40, Statia = 38, St_Martin = 45)
+
+daily_all |>
+  mutate(
+    port_closed = wind_gust_kt >= port_thresholds[location]
+  )
+```
+:::
+
+::: {.callout-tip}
+## Interpreting multi-site results
+Because each site is modelled independently, storm events at nearby islands (e.g., Saba and Statia, only 30 km apart) are **not** correlated in the daily series. A storm hitting Saba in simulated year 42 is not the same storm event as one hitting Statia in year 42. For correlated multi-site analysis, you would need a full track simulation model.
+:::
+
+
+## Model Validation {#sec-validation}
+
+Before using model outputs for decision-making, it is important to verify that the model produces realistic results. The validation framework (`hazard_validation.R`) implements three complementary checks — called **tiers** — that test different aspects of model performance.
+
+
+### Why three tiers?
+
+Each tier catches a different kind of error:
+
+| Tier | What it tests | What a failure means |
+|------|--------------|---------------------|
+| **1 — Hindcast** | Are the simulated return levels consistent with the historical record? | The statistical model (rates, overdispersion, intensity sampling) is miscalibrated |
+| **2 — Rate sanity** | Do the model's annual rates match published climatologies? | The wind field computation is systematically over- or under-counting storms at the site |
+| **3 — Wind field spot-checks** | Does the model reproduce known wind observations for individual storms? | The Holland profile, RMW estimation, or forward-motion asymmetry has a systematic bias |
+
+A model can pass one tier and fail another. For example, the rates might be correct (Tier 2 pass) but the intensity distribution could be wrong (Tier 1 fail). Running all three tiers gives you confidence in different parts of the modelling chain.
+
+
+### The quick way — `validate_hazard_model()` {#sec-validate-quick}
+
+The simplest approach is the all-in-one wrapper that runs the model, validates it, and saves all plots and tables to disk:
+
+```{r}
+#| label: validate-quick
+source("R/hazard_validation.R")
+
+res <- validate_hazard_model(
+  cfg            = cfg,
+  targets        = targets,
+  holdout_years  = 10,        # hold out last 10 years for testing
+  n_sim          = 5000,      # simulate 5,000 years for smoother return levels
+  return_periods = c(5, 10, 25, 50),
+  seed           = 42,
+  out_dir        = "output/validation",
+  save_plots     = TRUE,
+  save_tables    = TRUE
+)
+
+# The result contains everything:
+out <- res$out    # full model output (same as run_hazard_model())
+val <- res$val    # validation results
+```
+
+This creates an `output/validation/` directory with PNG plots and CSV tables for each tier. The sections below explain what each tier does and how to interpret its output.
+
+
+### Tier 1 — Hindcast validation {#sec-tier1}
+
+#### What it does
+
+The hindcast test asks: **if we trained the model on older data, would it have correctly predicted recent observations?**
+
+The procedure:
+
+1. **Split the historical record**: The last `holdout_years` (default: 10) are set aside as the test period. The model is trained only on the earlier years.
+2. **Fit rates and intensity distributions**: Using only training data, estimate $\lambda$, $k$, and the intensity distribution for each storm class (via boundary-corrected kernel density estimation).
+3. **Simulate**: Generate `n_sim` (5,000) synthetic years using the training-period parameters.
+4. **Compare return levels**: Extract return levels (e.g., the 10-year, 25-year, 50-year wind) from both the simulated and observed annual maxima. Compute 90% confidence intervals around the observed estimates using a parametric bootstrap (GEV with L-moment fitting).
+
+#### How to interpret it
+
+```{r}
+#| label: tier1-results
+# Return level comparison table
+val$hindcast$comparison
+```
+
+Key columns in the comparison table:
+
+| Column | Description |
+|--------|-------------|
+| `location` | Target site |
+| `return_period` | Return period in years (e.g., 10, 25, 50) |
+| `obs_full_rl` | Observed return level from the full historical record (kt) |
+| `sim_rl` | Simulated return level from the model (kt) |
+| `obs_lo_90` / `obs_hi_90` | 90% bootstrap confidence interval around the observed estimate |
+| `obs_in_90ci` | **Pass/fail**: is the observed return level within the simulated 90% CI? |
+| `bias_pct` | Percentage bias: positive = model overpredicts, negative = underpredicts |
+
+::: {.callout-note}
+## What "pass" means
+A simulated return level falling within the 90% CI of the observed estimate is a **pass** — it means the model and observations are statistically consistent given sampling uncertainty. With ~54 years of data, the 50-year return level estimate is inherently uncertain, so moderate biases (±20%) are expected and acceptable.
+:::
+
+
+### Tier 2 — Rate sanity check {#sec-tier2}
+
+#### What it does
+
+This tier compares the model's estimated annual storm rates ($\lambda$) against **published climatological rates** from NHC/NOAA. The reference rates come from the tropical cyclone climatology for the Leeward Islands, Puerto Rico, and Miami regions.
+
+An important subtlety: the model measures **point exceedance** (wind speed at a specific coordinate exceeding a threshold), while reference climatologies typically count storms whose **centre passes within a fixed radius** (e.g., 100 nautical miles). A storm centre passing 100 nm from your site does not necessarily produce threshold winds there — the wind field may not extend that far. The validation accounts for this by computing an **expected ratio** between model and reference rates, then flagging sites where the adjusted ratio deviates significantly from 1.0.
+
+#### How to interpret it
+
+```{r}
+#| label: tier2-results
+val$rate_check
+```
+
+Key columns:
+
+| Column | Description |
+|--------|-------------|
+| `lambda_model` | Model-estimated annual rate |
+| `lambda_ref` | Published reference rate |
+| `ratio` | Raw ratio: `lambda_model / lambda_ref` |
+| `expected_ratio` | Expected ratio given the point-vs-proximity methodological difference |
+| `adj_ratio` | Adjusted ratio: `ratio / expected_ratio` — should be near 1.0 |
+| `flag` | `OK`, `elevated`, `slightly_low`, `HIGH`, or `LOW` |
+
+::: {.callout-note}
+## Interpreting the flags
+- **`OK`**: Adjusted ratio between 0.6 and 1.8 — model and reference are consistent
+- **`elevated`** / **`slightly_low`**: Mild discrepancy — may reflect genuine differences in methodology
+- **`HIGH`** / **`LOW`**: Adjusted ratio >2.5 or <0.4 — investigate whether the gate radius, wind field computation, or reference gate mismatch is the cause
+:::
+
+Because the model and the reference climatologies use fundamentally different definitions of "storm affecting a site," perfect agreement is not expected. The key diagnostic is whether the adjusted ratios are broadly consistent across sites and storm classes.
+
+
+### Tier 3 — Wind field spot-checks {#sec-tier3}
+
+#### What it does
+
+This tier compares the model's wind estimates for **specific well-documented storms** against actual station observations. The reference table (`get_wind_observations()`) contains observed peak winds from weather stations and buoys during storms like Hurricane Irma (2017), Hugo (1989), and Andrew (1992).
+
+For each observation, the validation:
+
+1. Finds the matching storm in the model's track point data (by `storm_id`)
+2. Extracts the model's peak `site_wind_kt` for that storm at the target location
+3. Converts observation types (10-min sustained vs. 1-min sustained) to a common basis
+4. Computes the bias in knots and as a percentage
+
+#### How to interpret it
+
+```{r}
+#| label: tier3-results
+val$wind_field
+```
+
+Key columns:
+
+| Column | Description |
+|--------|-------------|
+| `storm_name` | Storm name (e.g., IRMA, HUGO) |
+| `location` | Target site where the observation was made |
+| `obs_1min_equiv_kt` | Observed wind, converted to 1-min sustained equivalent |
+| `model_V_site_kt` | Model-estimated peak wind at the site |
+| `min_dist_km` | Closest approach distance between storm centre and site |
+| `bias_kt` | Model − observed (positive = overprediction) |
+| `bias_pct` | Percentage bias |
+
+::: {.callout-note}
+## What to expect
+Wind field validation is the hardest tier to pass cleanly. Station observations are point measurements affected by local terrain, instrument exposure, and mounting height. The model estimates wind at a conceptual "open terrain" point. Biases of ±20% are normal; ±30% is the threshold used for pass/fail. Systematic positive bias across many storms suggests the Holland profile or RMW estimation needs adjustment.
+:::
+
+
+### Validation summary {#sec-val-summary}
+
+The validation suite produces an overall summary:
+
+```{r}
+#| label: val-summary
+val$summary
+```
+
+This table shows pass rates for each tier:
+
+| Tier | Pass criterion |
+|------|---------------|
+| Hindcast | Observed return level falls within the simulated 90% confidence interval |
+| Rate check | Adjusted ratio flagged as `OK` |
+| Wind field | Absolute bias < 30% |
+
+
+### Running validation step-by-step {#sec-validate-manual}
+
+If you want more control, you can run each tier individually. This is useful when you want to validate a model you have already run (without re-running it):
+
+```{r}
+#| label: validate-manual
+# Assumes 'out' already exists from run_hazard_model()
+
+# Run all three tiers
+val <- run_validation_suite(
+  out            = out,
+  holdout_years  = 10,
+  n_sim          = 5000,
+  return_periods = c(5, 10, 25, 50),
+  seed           = 42
+)
+
+# Or run individual tiers:
+# Tier 1 - Hindcast (for a single location)
+hc <- validate_hindcast(
+  events_island = out$events |> dplyr::filter(location == "Saba"),
+  location      = "Saba",
+  holdout_years = 10,
+  n_sim         = 5000,
+  return_periods = c(5, 10, 25, 50)
+)
+
+# Tier 2 - Rate sanity check
+rc <- validate_rates(out)
+
+# Tier 3 - Wind field spot-checks
+wf <- validate_wind_field(out)
+```
+
+
+### Saving diagnostic plots {#sec-val-plots}
+
+The validation framework includes six plot types that can be saved individually:
+
+```{r}
+#| label: val-plots
+out_dir <- "output/validation"
+
+# Return level comparison (bar chart with confidence intervals)
+plot_hindcast_validation(val, out_dir = out_dir)
+
+# Model vs reference rate scatter plot
+plot_rate_validation(val, out_dir = out_dir)
+
+# Wind field: model vs observed scatter with 1:1 line
+plot_wind_field_validation(val, out = out, out_dir = out_dir)
+
+# Bias decomposition: frequency vs intensity contributions
+plot_bias_diagnostics(val, out_dir = out_dir)
+
+# QQ plots: simulated vs observed annual maxima
+plot_qq_validation(val, out_dir = out_dir)
+
+# CDF comparison: empirical vs simulated intensity distributions
+plot_cdf_comparison(val, out_dir = out_dir)
+```
+
+::: {.callout-tip}
+## Key plots to check first
+Start with the **QQ plots** and **bias decomposition**. The QQ plot immediately reveals whether the model over- or under-predicts at different intensity levels. The bias decomposition tells you whether any discrepancy is driven by getting the **frequency** wrong (too many or too few storms) or the **intensity** wrong (storms are too strong or too weak) — these require different fixes.
+:::
+
+
+## Climate Change Scenarios {#sec-climate}
+
+The baseline model assumes stationarity — the same statistical properties throughout the simulation. The climate change extension relaxes this assumption by conditioning storm activity and intensity on projected sea surface temperature (SST) changes in the Main Development Region (MDR: 10–20°N, 80–20°W).
+
+There are three levels of modification, each adding a layer of climate response:
+
+| Level | What it modifies | Scientific confidence |
+|-------|-----------------|----------------------|
+| **1 — Rate scaling** | Total annual storm frequency scales with SST anomaly via $\beta_{\text{SST}}$ | Strong — well-supported by historical data |
+| **2 — Intensity shift** | Hurricane fraction increases with SST via $\gamma$ (probability of TS reaching hurricane intensity) | Moderate — consistent with literature |
+| **3 — Storm perturbation** | Individual storm properties (peak wind, size, duration) are perturbed proportionally to SST anomaly | Exploratory — useful for scenario analysis |
+
+Levels 1 and 2 operate at the count simulation stage (Workflow 2). Level 3 operates at the daily downscaling stage (Workflow 3), perturbing the characteristics of each resampled storm event.
+
+
+### Step 1 — Configure the climate scenarios {#sec-sst-cfg}
+
+Use `make_sst_cfg()` to build a climate configuration object. The key choice is which SST scenario to use for the projection period:
+
+```{r}
+#| label: sst-cfg
+# SSP2-4.5: moderate emissions (~+1.0°C by 2100 relative to 1991-2020)
+sst_cfg_245 <- make_sst_cfg(
+  enabled             = TRUE,
+  scenario            = "ssp245",
+  scenario_start_year = 2025L
+)
+
+# SSP5-8.5: high emissions (~+2.5°C by 2100 relative to 1991-2020)
+sst_cfg_585 <- make_sst_cfg(
+  enabled             = TRUE,
+  scenario            = "ssp585",
+  scenario_start_year = 2025L
+)
+```
+
+::: {.callout-note}
+## SST data and coefficients
+By default, the model uses built-in MDR SST data derived from NOAA ERSST v5 (1970–2024) to estimate $\beta_{\text{SST}}$ and $\gamma$ from the historical record. If you have your own ERSST extraction, you can pass it via `sst_source = "csv"` and `sst_path = "path/to/your/sst.csv"`.
+
+Expert parameters like `beta_sst` and `gamma_intensity` can be fixed manually via the `advanced` argument rather than estimated from data:
+
+```r
+sst_cfg_custom <- make_sst_cfg(
+  enabled  = TRUE,
+  scenario = "ssp245",
+  advanced = list(
+    beta_sst        = 0.5,    # fix rate-scaling coefficient
+    gamma_intensity = 0.08    # fix intensity shift coefficient
+  )
+)
+```
+:::
+
+The available SST scenarios are:
+
+| `scenario` | Description |
+|------------|-------------|
+| `"stationary"` | Constant SST anomaly — equivalent to the baseline (no trend). When set, `enabled` is automatically set to `FALSE`. |
+| `"ssp126"` | CMIP6 SSP1-2.6 low-emissions warming trajectory |
+| `"ssp245"` | CMIP6 SSP2-4.5 multi-model median warming trajectory |
+| `"ssp585"` | CMIP6 SSP5-8.5 multi-model median warming trajectory |
+
+
+### Step 2 — Run the model with climate modifications {#sec-run-climate}
+
+Pass `sst_cfg` to `run_hazard_model()`. The historical calibration (Workflow 1) is unchanged; the SST configuration affects only the stochastic simulation (Workflow 2):
+
+```{r}
+#| label: run-climate
+out_245 <- run_hazard_model(
+  cfg     = cfg,
+  targets = targets,
+  sst_cfg = sst_cfg_245
+)
+
+out_585 <- run_hazard_model(
+  cfg     = cfg,
+  targets = targets,
+  sst_cfg = sst_cfg_585
+)
+```
+
+::: {.callout-note}
+## What changes in the output
+The `sim` table now includes additional columns: `sst_anomaly` (the per-year SST anomaly), `sst_scale` (the Level 1 rate multiplier $e^{\beta \cdot \Delta\text{SST}}$), and a time-varying `p_hur` (reflecting the Level 2 intensity shift). In the stationary baseline, `sst_scale` is always 1 and `p_hur` is constant.
+
+The `fit` table also populates `beta_sst`, `gamma_intensity`, and `p_hurricane_base` with non-zero values reflecting the estimated or user-supplied climate coefficients.
+:::
+
+
+### Step 3 — Compare scenarios {#sec-compare-scenarios}
+
+Compare mean annual storm counts and hurricane fractions across scenarios:
+
+```{r}
+#| label: compare-scenarios
+bind_rows(
+  out$sim      |> mutate(scenario = "stationary"),
+  out_245$sim  |> mutate(scenario = "ssp245"),
+  out_585$sim  |> mutate(scenario = "ssp585")
+) |>
+  filter(location == "Saba") |>
+  group_by(scenario) |>
+  summarise(
+    mean_total = mean(n_tc),
+    mean_hur   = mean(n_hur),
+    p_hur      = mean(n_hur / pmax(1, n_tc)),
+    .groups = "drop"
+  )
+```
+
+You should see increasing storm frequency and hurricane fraction as the scenario warms. The magnitude depends on the estimated $\beta_{\text{SST}}$ and $\gamma$ coefficients — these are printed to the console when `run_hazard_model()` runs with `sst_cfg` enabled.
+
+
+### Step 4 — Daily series with Level 3 perturbation {#sec-daily-climate}
+
+Level 3 storm perturbations are applied during the daily downscaling step. When the model output was generated with an active `sst_cfg`, Level 3 perturbation parameters are carried through automatically in the output object (stored as an attribute on `out$fit`). The function `generate_daily_hazard_impact()` detects these and applies per-year storm perturbations based on the SST anomaly trajectory:
+
+```{r}
+#| label: daily-climate
+daily_585 <- generate_daily_hazard_impact(
+  out           = out_585,
+  location      = "Saba",
+  sim_years     = 1:200,
+  year0         = 2025,
+  gust_factor   = 1.25,
+  damage_method = "powerlaw",
+  seed          = 42,
+  scenario      = "ssp585"
+)
+```
+
+::: {.callout-note}
+## Level 3 defaults
+When `sst_cfg` is active and `cc_params` was not explicitly set to `NULL` in the `advanced` argument, Level 3 perturbations use literature-based defaults (Knutson et al. 2020; Kossin et al. 2020):
+
+- `v_scale = +5%` peak wind per °C
+- `r_scale = +8%` storm size per °C
+- `speed_scale = -10%` translation speed per °C (slower storms → longer exposure)
+- `precip_scale = +7%` rainfall per °C
+
+You can override these in `make_sst_cfg()`:
+
+```r
+sst_cfg_custom <- make_sst_cfg(
+  enabled  = TRUE,
+  scenario = "ssp585",
+  advanced = list(
+    cc_params = list(v_scale = 0.08, r_scale = 0.05)
+  )
+)
+```
+
+To disable Level 3 while keeping Levels 1 and 2, pass `cc_params = NULL` explicitly in `advanced`.
+:::
+
+
+### Step 5 — Multi-scenario comparison {#sec-multi-scenario}
+
+Stack daily outputs from multiple scenarios and compare disruption metrics:
+
+```{r}
+#| label: multi-scenario-daily
+daily_stationary <- generate_daily_hazard_impact(
+  out = out, location = "Saba", sim_years = 1:200, year0 = 2025,
+  gust_factor = 1.25, damage_method = "powerlaw", seed = 42,
+  scenario = "stationary"
+)
+
+daily_245 <- generate_daily_hazard_impact(
+  out = out_245, location = "Saba", sim_years = 1:200, year0 = 2025,
+  gust_factor = 1.25, damage_method = "powerlaw", seed = 42,
+  scenario = "ssp245"
+)
+
+# Compare across scenarios
+bind_rows(daily_stationary, daily_245, daily_585) |>
+  group_by(scenario) |>
+  summarise(
+    ts_days       = sum(wind_kt >= 34),
+    hur_days      = sum(wind_kt >= 64),
+    port_closed   = sum(wind_gust_kt >= 40, na.rm = TRUE),
+    annual_damage = sum(damage_rate, na.rm = TRUE) / 200,
+    .groups = "drop"
+  )
+```
+
+::: {.callout-tip}
+## Interpreting scenario differences
+The difference between `"stationary"` and `"ssp585"` reflects the combined effect of all three modification levels. If you want to isolate contributions — e.g., how much comes from increased frequency (Level 1) vs. more intense storms (Levels 2 & 3) — run intermediate scenarios with only Level 1 enabled (set `gamma_intensity = 0` and `cc_params = NULL` in `advanced`) and compare.
+:::
+
+
+## Validation and Climate Reference {#sec-references}
+
+### Validation Function Reference
+
+| Function | Purpose |
+|----------|---------|
+| `validate_hazard_model()` | End-to-end: run model + validate + save all artifacts |
+| `run_validation_suite()` | Run all 3 tiers on an existing `out` object |
+| `validate_hindcast()` | Tier 1: Hold-out return level test (single location) |
+| `validate_hindcast_all()` | Tier 1: Hold-out test across all locations |
+| `validate_rates()` | Tier 2: Compare model rates to published climatologies |
+| `validate_wind_field()` | Tier 3: Compare model winds to station observations |
+| `get_reference_rates()` | Built-in reference rates from NHC/NOAA climatology |
+| `get_wind_observations()` | Built-in observation table (Irma, Hugo, Andrew, etc.) |
+| `plot_hindcast_validation()` | Return level comparison bar chart |
+| `plot_rate_validation()` | Rate check scatter plot |
+| `plot_wind_field_validation()` | Wind field model-vs-observed plot |
+| `plot_bias_diagnostics()` | Frequency vs intensity bias decomposition |
+| `plot_qq_validation()` | QQ plots of annual maxima |
+| `plot_cdf_comparison()` | Simulated vs empirical CDF comparison |
+
+### Climate Function Reference
+
+| Function | Purpose |
+|----------|---------|
+| `make_sst_cfg()` | Build a climate configuration object for `run_hazard_model()` |
+| `generate_sst_scenario()` | Generate per-year SST anomaly time series (stationary, SSP scenarios) |
+| `get_mdr_sst_builtin()` | Built-in MDR SST data from ERSST v5 (1970–2024) |
+| `simulate_twolevel_counts()` | Non-stationary count simulation with Levels 1 and 2 modifications |
+| `perturb_event()` | Apply Level 3 storm property perturbations to sampled events |
+| `default_cc_params()` | Returns default Level 3 perturbation parameters |
+| `estimate_gamma_intensity()` | Estimate $\gamma$ (intensity shift coefficient) from historical data |
+
+### Model Output Structure Reference
+
+The `out` object returned by `run_hazard_model()` contains:
+
+| Element | Description |
+|---------|-------------|
+| `out$sim` | Simulated annual counts (1 row per year × location) |
+| `out$events` | Historical storm events (1 row per storm × location) |
+| `out$trackpoints` | Named list of raw 6-hourly track points per location |
+| `out$rates` | Poisson rate table ($\lambda$) per location × storm class |
+| `out$fit` | Overdispersion ($k$) and climate parameters per location |
+| `out$cfg` | The `hazard_cfg` object used, plus any SST scenario data |
