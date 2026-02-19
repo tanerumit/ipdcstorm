@@ -17,10 +17,13 @@ format:
     smooth-scroll: true
     self-contained: true
 execute:
-  eval: false
+  eval: true
   echo: true
   warning: false
   message: false
+editor: 
+  markdown: 
+    wrap: sentence
 ---
 
 ```{r}
@@ -34,76 +37,61 @@ knitr::opts_chunk$set(comment = "#>")
 
 ### What the model does
 
-This work presents a simple statistical wind hazard assessment model developed for the Dutch Caribbean region to support climate stress testing of the supply-chain of the Statia and Saba islands. 
+This work presents a simple statistical wind hazard assessment model developed for the Dutch Caribbean region to support climate stress testing of the supply-chain of the Statia and Saba islands.
 
-Main purpose of the model is to produce a range of climate scenarios that includes  probability and intensity of hurricane wind exposure at point-locations representing the islands. The model combines NOAA's historical storm data (IBTrACS) and stochastic simulations.
+Main purpose of the model is to produce a range of climate scenarios that includes probability and intensity of hurricane wind exposure at point-locations representing the islands.
+The model combines NOAA's historical storm data (IBTrACS) and stochastic simulations.
 
 The modeling scheme consists of three workflows:
 
-1. **Historical calibration**   
-The first workflow extracts and processes observed tropical cyclone tracks from the IBTrACS database, then computes site-level wind speeds for each historical storm using a parametric wind field model. The wind model then estimates long-term average storm rates at each location. 
+1.  **Historical calibration**\
+    The first workflow extracts and processes observed tropical cyclone tracks from the IBTrACS database, then computes site-level wind speeds for each historical storm using a parametric wind field model.
+    The wind model then estimates long-term average storm rates at each location.
 
-2. **Stochastic simulation**   
-The simulation model takes the calibrated annual storm rates and other parameters to generate a long series of synthetic hurricane seasons. This is done by sampling from appropriate statistical distributions to capture both year-to-year variability and realistic hurricane counts. Climate change is reflected by scaling model parameters to mimic the observed relationship between sea surface temperatures (SST) and tropical cyclone and hurricane frequencies.
+2.  **Stochastic simulation**\
+    The simulation model takes the calibrated annual storm rates and other parameters to generate a long series of synthetic hurricane seasons.
+    This is done by sampling from appropriate statistical distributions to capture both year-to-year variability and realistic hurricane counts.
+    Climate change is reflected by scaling model parameters to mimic the observed relationship between sea surface temperatures (SST) and tropical cyclone and hurricane frequencies.
 
-3. **Temporal downscaling**  
-The final downscaling workflow converts the annual storm counts into a daily wind series for each island. This is done by sampling storm arrival dates from empirical day-of-year distributions, preserving event characteristics and seasonality (i.e., the August–October peak). Each event is then spread over its duration using a wind pulse to obtain a 365-day time series of daily wind speeds (kt). The model can also compute associated damage and disruption metrics from these daily wind speed series. Combining all simulated years provides a long, stochastic daily wind record that can be used as input to a system model.
-
-Some other potential use cases can be:
-
-- Estimation of 50 or 100-year wind for infrastructure design. 
-- Estimation of loss exceedance curves from synthetic records
-- Disruption frequency estimates (e.g., expected port closures per year)
-
-### Key assumptions
-
-- **Stationarity** (in baseline mode): The statistical properties of hurricane activity are assumed constant over the historical record (post-1970). Climate change scenarios relaxes this assumption via SST-conditioned modifications.
-- **Poisson-Gamma count model**: Annual storm counts follow a Poisson distribution modulated by a Gamma-distributed activity factor. This captures the well-documented year-to-year clustering of tropical cyclone activity (active vs. quiet seasons) through a single overdispersion parameter ($k$).
-- **Holland wind profile**: Site-level winds are estimated using a parametric radial wind profile (Holland 1980; Vickery & Wadhera 2008). This is a simplified approach that assumes approximately symmetric wind structure with forward-motion asymmetry corrections.
-- **Gradient-to-surface correction**: The Holland profile describes gradient-level (upper boundary layer) winds. A radially varying surface reduction factor (based on Powell et al. 2003) converts these to 10-metre surface-level winds.
-- **Binomial severity split**: Given a total storm count for a year, the number of hurricanes vs. tropical storms is drawn from a binomial distribution with a fixed probability (estimated from the historical record).
-
-### Limitations
-
-- **No track simulation**: The model does not generate synthetic storm tracks. It uses a gate-based approach (storms passing within a fixed radius) combined with historical wind field reconstruction. This means it cannot produce spatially correlated hazard across a network of sites from the same storm event.
-- **No storm surge or rainfall** (in baseline mode): The model produces wind-only hazard. Precipitation scaling is available only through Level 3 climate perturbations.
-- **Parametric wind field**: The Holland profile is a smooth, idealised representation. It does not capture eyewall replacement cycles, terrain-induced acceleration, or the complex structure of large asymmetric storms.
-- **Historical record length**: With data from 1970 onward (~54 years), estimates of rare events (e.g., 500-year return periods) carry substantial uncertainty.
-- **No compound hazard**: Wind, surge, and rainfall are not jointly modelled.
+3.  **Temporal downscaling**\
+    The final downscaling workflow converts the annual storm counts into a daily wind series for each island.
+    This is done by sampling storm arrival dates from empirical day-of-year distributions, preserving event characteristics and seasonality (i.e., the August–October peak).
+    Each event is then spread over its duration using a wind pulse to obtain a 365-day time series of daily wind speeds (kt).
+    The model can also compute associated damage and disruption metrics from these daily wind speed series.
+    Combining all simulated years provides a long, stochastic daily wind record that can be used as input to a system model.
 
 ## Prerequisites {#sec-prerequisites}
 
 ### R packages
 
-Install once if you don't have them:
+Install the package if you haven't done:
 
 ```{r}
 #| label: install-packages
-install.packages(c("tidyr", "stringr", "lubridate", "geosphere",
-                    "readr", "dplyr", "tibble", "ggplot2", "purrr"))
+# install.packages("devtools")
+# devtools::install_github("Deltares-research/ipdcstorm")
 ```
 
 ### Data — the IBTrACS dataset {#sec-ibtracs}
 
-The model is calibrated using the **International Best Track Archive for Climate Stewardship (IBTrACS)**, maintained by NOAA's National Centers for Environmental Information. IBTrACS is the most comprehensive global dataset of tropical cyclone tracks, merging best-track data from all regional agencies into a single, standardised archive.
+The model is calibrated using the **International Best Track Archive for Climate Stewardship (IBTrACS)**, maintained by NOAA's National Centers for Environmental Information.
+IBTrACS is the most comprehensive global dataset of tropical cyclone tracks, merging best-track data from all regional agencies into a single, standardized archive.
 
-The model uses the **North Atlantic subset** (`ibtracs.NA.list.v04r01.csv`), which contains 6-hourly track points for every recorded tropical cyclone in the Atlantic basin. From this dataset, the model extracts:
+The model uses the **North Atlantic subset** (`ibtracs.NA.list.v04r01.csv`), which contains 6-hourly track points for every recorded tropical cyclone in the Atlantic basin.
+From this dataset, the model extracts:
 
 | IBTrACS field(s) | What the model uses it for |
-|---|---|
+|------------------------------------|------------------------------------|
 | `SID`, `SEASON`, `BASIN` | Storm identification — unique ID, year, and basin filtering |
 | `USA_LAT`, `USA_LON`, `ISO_TIME` | Track position at each 6-hourly time step |
 | `USA_WIND` | Maximum sustained wind speed (knots) — storm intensity at each time step |
 | `USA_R34_NE/SE/SW/NW`, `USA_R50_*`, `USA_R64_*` | Directional wind radii (nautical miles) at 34, 50, and 64-kt thresholds — defines the spatial extent of the wind field in each quadrant |
-| `USA_PRES`, `USA_POCI` | Central pressure and outermost closed isobar pressure — used to parameterise the Holland wind profile |
+| `USA_PRES`, `USA_POCI` | Central pressure and outermost closed isobar pressure — used to parameterize the Holland wind profile |
 | `USA_RMW`, `USA_ROCI` | Radius of maximum wind and outermost closed isobar radius — storm structure parameters |
 
-The **wind radii** are particularly important: they allow the model to estimate winds at locations that are hundreds of kilometres from the storm centre. When radii data is missing (primarily for pre-2004 storms), the model falls back to climatological estimates based on Knaff et al. (2015).
-
-**File location**: `data/ibtracs/ibtracs.NA.list.v04r01.csv`
+The **wind radii** are particularly important: they allow the model to estimate winds at locations that are hundreds of km from the storm center When radii data is missing (mostly before 2004), the model uses climatological estimates (see Knaff et al., 2015).
 
 **Download**: [IBTrACS NCEI](https://www.ncei.noaa.gov/products/international-best-track-archive)
-
 
 ### Source the model scripts
 
@@ -111,30 +99,16 @@ Load all model scripts at the top of every session:
 
 ```{r}
 #| label: setup
-library(tidyr)
-library(stringr)
-library(lubridate)
-library(geosphere)
-library(readr)
+library(ipdcstorm)
 library(dplyr)
-library(tibble)
-library(ggplot2)
-
-source("R/hazard_core.R")
-source("R/hazard_climate.R")
-source("R/hazard_downscale.R")
-source("R/hazard_ibtracs.R")
-source("R/hazard_utils.R")
-source("R/hazard_run.R")
-
-set.seed(123)
 ```
 
-::: {.callout-tip}
+::: callout-tip
 ## Project structure
+
 The model expects the following layout:
 
-```
+```         
 project/
 ├── R/
 │   ├── hazard_core.R
@@ -149,24 +123,23 @@ project/
 ```
 :::
 
+## Basic usage example
 
-## Single-Site Baseline {#sec-single-site}
+In this section we run the model for a **single site** under a stationary climate & no climate change
 
-In this section we run the model for a **single site** with no climate change — the **stationary baseline**. By the end you will have worked through all three workflows and produced:
+### Create the configuration {#sec-cfg}
 
-- **Historical event statistics**: How many storms have affected this site per year, and at what intensity?
-- **Simulated annual counts**: 1,000 synthetic hurricane seasons capturing the full range of possible activity levels
-- **Daily wind time series**: A day-by-day record of wind exposure with damage rates
-
-
-### Step 1 — Create the configuration {#sec-cfg}
-
-Use `make_hazard_cfg()` to create a configuration object. This is the entry point for all model settings — it validates inputs and provides sensible defaults so that most users only need to set the data path and simulation length:
+Use `make_hazard_cfg()` to setup the model.
+The function validates all inputs and any missing parameter is set to its default value.
+At minimum, the user is expected to set the data path and simulation length
 
 ```{r}
 #| label: cfg
+
+ibtracs_demo <- system.file("extdata", "ibtracs_demo.csv", package = "ipdcstorm")
+
 cfg <- make_hazard_cfg(
-  data_path        = "data/ibtracs/ibtracs.NA.list.v04r01.csv",
+  data_path        = ibtracs_demo,
   start_year       = 1970L,       # use data from 1970 onward (satellite era)
   search_radius_km = 800,         # only consider storms passing within 800 km
   n_sim_years      = 1000L        # number of years to simulate
@@ -176,40 +149,26 @@ cfg <- make_hazard_cfg(
 cfg
 ```
 
-::: {.callout-note}
+::: callout-note
 ## What these parameters mean
 
 | Parameter | Description |
-|-----------|-------------|
-| `data_path` | Path to the IBTrACS North Atlantic CSV file. |
-| `start_year` | Start of the calibration period. 1970 marks the beginning of reliable satellite-era observations in the Atlantic. Earlier data has known intensity biases. |
-| `search_radius_km` | The model only processes IBTrACS track points within this radius of the target site. This is a computational filter — not a physical threshold. A storm 700 km away can still produce tropical storm winds at your site through its wind field extent. |
-| `n_sim_years` | Number of synthetic years to generate. 1,000 is a good default — enough for stable statistics up to roughly the 200-year return period. |
+|---------------------------------|---------------------------------------|
+| `data_path` | Path to the IBTrACS North Atlantic CSV file (or a subset as in this tutorial). |
+| `start_year` | Start of the calibration period. 1970 marks the beginning of reliable satellite-era observations in the Atlantic. |
+| `search_radius_km` | The model only processes IBTrACS track points within this radius of the target site. This is used as a filter, not a physical threshold. A storm 700 km away can still produce tropical storm winds at your site through its wind field extent. |
+| `n_sim_years` | Number of synthetic years to generate (default = 1,000 years) |
 
-Wind speed thresholds and wind radii caps use standard WMO values by default (TS ≥ 34 kt, Hurricane ≥ 64 kt). These are set automatically by the `"default"` preset and should not need changing for most applications.
+Wind speed thresholds and wind radii caps use standard WMO values by default (TS ≥ 34 kt, Hurricane ≥ 64 kt).
+These are set automatically by the `"default"` preset.
+
+See `?make_hazard_cfg` for the full list of parameters
 :::
 
-::: {.callout-tip}
-## Advanced tuning
-If you do need to override thresholds or caps, pass them via the `advanced` argument:
+### 2. Define a target location {#sec-target}
 
-```r
-cfg <- make_hazard_cfg(
-  data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv",
-  advanced  = list(
-    ts_threshold_kt  = 34,
-    hurricane_threshold_kt = 64,
-    r34_cap_nm       = 600
-  )
-)
-```
-
-Only specify the parameters you want to change — the rest keep their defaults. See `?make_hazard_cfg` for the full list of supported names.
-:::
-
-### Step 2 — Define a single target location {#sec-target}
-
-A target is any point of interest — an island, a city, a port. You need a name, latitude, and longitude:
+A target is any point of interest — an island, a city, a port.
+We define the target as a data frame with a name, latitude, and longitude:
 
 ```{r}
 #| label: target-single
@@ -219,10 +178,10 @@ targets <- tibble::tribble(
 )
 ```
 
+### Workflows 1 & 2: Historical calibration and stochastic simulation {#sec-run}
 
-### Workflow 1 & 2 — Historical calibration and stochastic simulation {#sec-run}
-
-Both the historical calibration (Workflow 1) and stochastic simulation (Workflow 2) are executed together by `run_hazard_model()`. With `sst_cfg = NULL`, the model runs in **stationary mode** (no climate change):
+We use `run_hazard_model()` for conveniently executing historical calibration (Workflow 1) and stochastic simulation (Workflow 2).
+With `sst_cfg = NULL`, the model runs in **stationary mode** (no climate change):
 
 ```{r}
 #| label: run-baseline
@@ -233,61 +192,28 @@ out <- run_hazard_model(
 )
 ```
 
-::: {.callout-important}
-## Runtime
-This takes roughly 1–2 minutes depending on your machine. The model prints progress messages as it processes each step.
-:::
-
 #### What happens inside `run_hazard_model()`
 
-The function executes six steps for each target location. Steps 1–5 correspond to Workflow 1 (historical calibration); Step 6 corresponds to Workflow 2 (stochastic simulation).
+**Step 1 — Read and clean IBTrACS**: The model reads IBTrACS using `read_ibtracs_clean()`. It standardizes column names, keeps the USA best-track wind and pressure fields, converts wind radii to km, and filters to the North Atlantic.
 
-**Step 1 — Read and clean IBTrACS.**
-The raw CSV is ingested via `read_ibtracs_clean()`. This standardises column names, parses timestamps, extracts the USA best-track wind and pressure fields, converts wind radii from nautical miles to kilometres, and filters to the North Atlantic basin.
+**Step 2 — Gate track points:** For each site, the model computes the great-circle distance from every 6-hour track point to the site. It keeps only points within search_radius_km (default 800 km), since far points cannot generate meaningful winds at the site.
 
-**Step 2 — Gate track points.**
-For each target, the model computes the great-circle distance from every IBTrACS track point to the site. Only points within `search_radius_km` (800 km) are retained. This reduces the dataset from hundreds of thousands of track points to the subset that is physically close enough to potentially produce measurable winds at the site.
+**Step 3 — Compute site-level winds:** For each retained track point, the model computes wind at the site using `compute_site_winds_full()`. It determines the quadrant of the site relative to the storm center, uses the matching directional wind radii (R34, R50, R64), estimates RMW, and applies a parametric wind profile with a forward-motion asymmetry adjustment. The output is sustained wind at the site in knots for each 6-hour track point (`site_wind_kt`).
 
-**Step 3 — Compute site-level winds.**
-This is the core wind field computation (`compute_site_winds_full()`). For every retained 6-hourly track point, the model:
+**Step 4 — Aggregate into storm events:** The model groups track points by storm_id using `make_storm_events()`. It summarizes each storm into an event record with peak site wind, intensity and pressure summaries, mean RMW, timing, and the number of gated points. It classifies events as Tropical Storm (34–63 kt peak site wind) or Hurricane (64 kt or higher peak site wind), and drops events before 1970 and events with missing site wind.
 
-  - Determines which **quadrant** (NE/SE/SW/NW) the site falls in relative to the storm centre, using the bearing from storm to site
-  - Selects the appropriate **directional wind radii** (R34, R50, R64) for that quadrant — these are asymmetric because storms are typically larger on the right side of motion
-  - Estimates the **radius of maximum wind** (RMW) from observed radii when available, or from the Knaff & Zehr (2007) climatological relationship (which accounts for intensity and latitude)
-  - Computes wind speed at the site's distance using the **Holland (1980) parametric wind profile**, with corrections for gradient-to-surface wind reduction (Powell et al. 2003) and profile steepening for intense hurricanes (to counteract Holland's tendency to overpredict winds near the eyewall of strong storms)
-  - Adds **forward-motion asymmetry**: the right-front quadrant of a moving storm experiences higher winds than the left-rear, following Lin & Chavas (2012). The asymmetry magnitude tapers with distance from the storm centre.
+**Step 5 — Estimate annual rates:** The model counts events per year and class using `compute_annual_counts()` and converts them into average rates with `compute_lambda_table()`. A rate of 1.2 for TS34plus means about 1.2 tropical-storm-impact events per year at that site. It also estimates k_hat, which captures how much hurricane activity clusters across years rather than behaving like independent Poisson years.
 
-The result is a `site_wind_kt` value — estimated sustained wind in knots at the site — for every 6-hourly track point.
+**Step 6 — Simulate annual counts:** The model generates `n_sim_years` synthetic years using `simulate_twolevel_counts()` with the calibrated rates and `k_hat`. For each synthetic year, it draws a year-level activity factor, then draws total storms, then assigns storms to TS vs HUR classes based on the calibrated split. 
 
-**Step 4 — Aggregate into storm events.**
-Track points are grouped by storm ID (`storm_id`) into event-level summaries via `make_storm_events()`. Each event record captures the **peak site wind** (`peak_wind_kt`), the storm's overall maximum intensity, minimum central pressure, mean RMW, start/end times, and the number of track points within the gate. Events are classified by storm class:
+The result is a table with one row per simulated year (often 1,000), containing storm counts by class.
 
-  - **Tropical storm** (`TS`): peak site wind 34–63 kt
-  - **Hurricane** (`HUR64plus`): peak site wind ≥64 kt
+### 3. Inspect the outputs {#sec-outputs}
 
-Events from before `start_year` (1970) and those with unknown site winds are excluded.
+The `out` object is a named list.
+Here is what each element contains.
 
-**Step 5 — Estimate annual rates.**
-Historical events are counted by year and storm class (`compute_annual_counts()`, `compute_lambda_table()`). The result is a Poisson rate $\lambda$ for each storm class — for example, $\lambda_{\text{TS}} = 1.2$ means on average 1.2 tropical storm events per year produce ≥34 kt winds at this site.
-
-The model also estimates an **overdispersion parameter** $k$ via `estimate_k_hat()`. In reality, hurricane seasons are not independent Poisson draws — active seasons tend to cluster due to large-scale climate drivers (ENSO, AMO, etc.). The Poisson-Gamma framework captures this: $k$ is estimated using the method-of-moments identity $k = \mu^2 / (\text{Var} - \mu)$. A small $k$ (2–5) means high variability between seasons; a very large $k$ (>100) means the data is essentially Poisson with no extra clustering.
-
-**Step 6 — Simulate annual counts.**
-Using the estimated $\lambda$ values and $k$, the model generates `n_sim_years` synthetic hurricane seasons via `simulate_twolevel_counts()`. For each simulated year:
-
-  1. An activity factor is drawn: $A \sim \text{Gamma}(k, k)$ — mean 1, variance $1/k$
-  2. Total storms are drawn: $N_{\text{tc}} \sim \text{Poisson}(A \cdot \lambda_{\text{total}})$
-  3. Each storm is classified: $N_{\text{hur}} \sim \text{Binomial}(N_{\text{tc}}, p_{\text{hur}})$
-
-This produces a table of 1,000 rows — one per simulated year — each with storm counts by class.
-
-
-### Step 3 — Inspect the outputs {#sec-outputs}
-
-The `out` object is a named list. Here is what each element contains.
-
-::: {.panel-tabset}
-
+::: panel-tabset
 #### `rates` — Annual rates
 
 ```{r}
@@ -298,16 +224,16 @@ out$rates
 The Poisson rate estimates derived from the historical record:
 
 | Column | Description |
-|--------|-------------|
+|----------------------------|--------------------------------------------|
 | `location` | Target site name |
 | `storm_class` | `TS` (tropical storm, 34–63 kt) or `HUR64plus` (hurricane, ≥64 kt) |
 | `lambda` | Mean annual rate — average number of events per year of this class |
-| `n_years` | Number of historical years in the estimate (typically ~54 for 1970–2023) |
+| `n_years` | Number of historical years in the estimate (typically \~54 for 1970–2023) |
 | `prob_annual` | Probability of ≥1 event in any given year: $1 - e^{-\lambda}$ |
 | `prob_none` | Probability of zero events in a year: $e^{-\lambda}$ |
 
-For example, $\lambda_{\text{TS}} = 1.2$ means 1.2 tropical storms affect this site per year on average. This does not mean every year has one storm — the actual count varies due to the Gamma-distributed activity factor.
-
+For example, $\lambda_{\text{TS}} = 1.2$ means 1.2 tropical storms affect this site per year on average.
+This does not mean every year has one storm — the actual count varies due to the Gamma-distributed activity factor.
 
 #### `fit` — Overdispersion & climate parameters
 
@@ -316,18 +242,19 @@ For example, $\lambda_{\text{TS}} = 1.2$ means 1.2 tropical storms affect this s
 out$fit
 ```
 
-| Column | Description |
-|--------|-------------|
-| `location` | Target site name |
-| `k_hat` | Overdispersion parameter for the Poisson-Gamma model |
+| Column              | Description                                           |
+|----------------------------|--------------------------------------------|
+| `location`          | Target site name                                      |
+| `k_hat`             | Overdispersion parameter for the Poisson-Gamma model  |
 | `mean_annual_total` | Mean total events per year (sum across storm classes) |
-| `var_annual_total` | Variance of total events per year |
-| `beta_sst` | SST rate-scaling coefficient (0 in stationary mode) |
-| `gamma_intensity` | Intensity shift coefficient (0 in stationary mode) |
-| `p_hurricane_base` | Baseline hurricane probability |
+| `var_annual_total`  | Variance of total events per year                     |
+| `beta_sst`          | SST rate-scaling coefficient (0 in stationary mode)   |
+| `gamma_intensity`   | Intensity shift coefficient (0 in stationary mode)    |
+| `p_hurricane_base`  | Baseline hurricane probability                        |
 
-$k$ controls how "bursty" the simulated seasons are. When $k$ is small (2–5), the Gamma distribution generates a mix of very active and very quiet years — consistent with real hurricane climatology. When $k$ is large, every year is close to the average.
-
+$k$ controls how "bursty" the simulated seasons are.
+When $k$ is small (2–5), the Gamma distribution generates a mix of very active and very quiet years — consistent with real hurricane climatology.
+When $k$ is large, every year is close to the average.
 
 #### `sim` — Simulated counts
 
@@ -339,17 +266,16 @@ head(out$sim)
 The main simulation output — 1,000 synthetic hurricane seasons:
 
 | Column | Description |
-|--------|-------------|
+|----------------------------|--------------------------------------------|
 | `location` | Target site name |
 | `sim_year` | Simulated year index (1 to `n_sim_years`) |
 | `n_tc` | Total storms with ≥34 kt at the site this year |
 | `n_ts` | Tropical storm–only events (34–63 kt) |
 | `n_hur` | Hurricane-strength events (≥64 kt) |
-| `A` | Activity multiplier from $\text{Gamma}(k, k)$ — values >1 are hyperactive seasons, <1 are quiet |
+| `A` | Activity multiplier from $\text{Gamma}(k, k)$ — values \>1 are hyperactive seasons, \<1 are quiet |
 | `p_hur` | Probability each storm is hurricane-strength (constant in baseline mode) |
 
 This table drives all downstream analysis: return periods, exceedance probabilities, and daily time series.
-
 
 #### `events` — Historical events
 
@@ -361,7 +287,7 @@ head(out$events)
 One row per historical storm that affected the site:
 
 | Column | Description |
-|--------|-------------|
+|----------------------------|--------------------------------------------|
 | `storm_id` | IBTrACS storm identifier (e.g., `2017242N16333` for Irma) |
 | `year` | Season year |
 | `peak_wind_kt` | **Peak wind at the site** — the model-computed value, accounting for distance and wind field structure |
@@ -372,8 +298,8 @@ One row per historical storm that affected the site:
 | `storm_class` | Classification based on site-level wind: `TS` or `HUR64plus` |
 | `location` | Target site name |
 
-The distinction between `peak_wind_kt` and `storm_intensity_kt` is important: a Category 5 storm (155 kt peak) passing 400 km from your site might only produce Category 1 winds (70 kt) there. The model captures this attenuation through the Holland wind profile.
-
+The distinction between `peak_wind_kt` and `storm_intensity_kt` is important: a Category 5 storm (155 kt peak) passing 400 km from your site might only produce Category 1 winds (70 kt) there.
+The model captures this attenuation through the Holland wind profile.
 
 #### `trackpoints` — Raw track data
 
@@ -382,14 +308,14 @@ The distinction between `peak_wind_kt` and `storm_intensity_kt` is important: a 
 head(out$trackpoints[["Saba"]])
 ```
 
-The lowest-level output: every 6-hourly IBTrACS track point within the search radius, with all computed wind field columns (`site_wind_kt`, `dist_km`, `bearing_deg`, `RMW_km`, etc.). Useful for diagnostics and spot-checking individual storms.
-
+The lowest-level output: every 6-hourly IBTrACS track point within the search radius, with all computed wind field columns (`site_wind_kt`, `dist_km`, `bearing_deg`, `RMW_km`, etc.).
+Useful for diagnostics and spot-checking individual storms.
 :::
-
 
 ### Workflow 3 — Generate daily wind time series {#sec-daily}
 
-The simulation above produces annual counts. To get a **daily time series**, use `generate_daily_hazard_impact()`:
+The simulation above produces annual counts.
+To get a **daily time series**, use `generate_daily_hazard_impact()`:
 
 ```{r}
 #| label: daily-single
@@ -405,38 +331,37 @@ daily <- generate_daily_hazard_impact(
 )
 ```
 
-This function bridges the gap between annual event counts and the daily time series that infrastructure and supply chain models require. For each simulated year, it:
+This function converts yearly storm counts into a daily hazard time series in five steps:
 
-1. Draws storm events from an **empirical event library** — a resampling pool of historical storms stratified by severity, preserving realistic correlations between wind speed, duration, pressure, and RMW
-2. Assigns each event a **day-of-year** based on empirical seasonality (peaking August–October)
-3. Generates a daily wind **pulse** for each event — a deterministic envelope that ramps up to peak wind and decays over the event's duration
-4. Overlays multiple events in the same year, taking the maximum daily wind
-5. Applies the **damage function** to convert daily wind into a fractional damage rate
+**Step 1 — Sample events from the event library:** For each simulated year, the model draws storm events from an empirical event library built from historical storms. The sampling is stratified by severity so the simulated mix of TS and hurricanes stays realistic. Event attributes stay paired, so wind, duration, pressure, and RMW remain internally consistent.
+
+**Step 2 — Assign a day-of-year:** Each sampled event is assigned a start date using the observed seasonal distribution of storms. This concentrates events in late summer and early fall, with a peak around August–October. The goal is realistic timing, not uniform placement through the year.
+
+**Step 3 — Create a daily wind pulse per event:** The model converts each event into a daily wind envelope. Wind ramps up to the event peak and then decays over the event duration. The pulse shape is deterministic given the event summary inputs.
+
+**Step 4 — Combine events within the same year:** If multiple events overlap in time, the model overlays them on the same daily calendar. For each day, it takes the maximum daily sustained wind across events. This avoids double-counting wind while still capturing compound seasons.
+
+**Step 5 — Convert wind to damage:** The model applies the damage function to daily wind to produce a daily fractional damage rate. It also derives supporting daily variables such as gust wind and surge from event properties. Cumulative damage is tracked within each simulated year.
 
 The output is a row for every day across the simulated period:
 
 | Column | Description |
-|--------|-------------|
-| `location` | Target site name |
-| `sim_year` | Simulated year index |
-| `scenario` | Label for the climate scenario (for downstream bookkeeping) |
+|----------------------------|--------------------------------------------|
+| `location` | Target site name. |
+| `sim_year` | Simulated year index. |
+| `scenario` | Climate-scenario label for downstream bookkeeping. |
 | `date` | Calendar date |
-| `wind_kt` | Daily sustained wind speed at the site (kt). Zero on non-storm days. |
-| `wind_gust_kt` | Estimated gust wind (`wind_kt` $\times$ `gust_factor`) |
-| `surge_m` | Estimated storm surge (m), derived from central pressure via the inverted-barometer approximation |
-| `event_id` | Identifier of the dominant storm event on this day (NA on calm days) |
-| `event_class` | Storm class of the dominant event (`TS` or `HUR`) |
-| `pressure_hpa` | Central pressure of the dominant event |
-| `pressure_deficit_hpa` | Pressure deficit of the dominant event |
-| `rmw_km` | RMW of the dominant event |
-| `damage_intensity` | Normalised hazard intensity (0–1 scale) |
-| `damage_rate` | Daily fractional damage rate from the damage function |
-| `cum_damage` | Cumulative damage within each simulated year |
-
-::: {.callout-note}
-## Disruption thresholds
-The daily output provides `wind_gust_kt` which you can threshold downstream for port closures or infrastructure disruption. For example, to flag port disruption at 40 kt gusts: `daily |> mutate(port_disrupt = wind_gust_kt >= 40)`.
-:::
+| `wind_kt` | Daily sustained wind speed at the site (kt). |
+| `wind_gust_kt` | Estimated gust wind (`wind_kt` $\times$ `gust_factor`). |
+| `surge_m` | Estimated storm surge in meters. |
+| `event_id` | Identifier of the dominant storm event on this day. |
+| `event_class` | Storm class of the dominant event (`TS` or `HUR`). |
+| `pressure_hpa` | Central pressure of the dominant even.t |
+| `pressure_deficit_hpa` | Pressure deficit of the dominant event. |
+| `rmw_km` | Radius of maximum wind of the dominant event (km). |
+| `damage_intensity` | Normalized hazard intensity on a 0–1 scale. |
+| `damage_rate` | Daily fractional damage rate from the damage function. |
+| `cum_damage` | Cumulative damage within each simulated year. |
 
 Quick summary:
 
@@ -452,69 +377,12 @@ daily |>
   )
 ```
 
-
 ## Key Parameters — What to Tune and Why {#sec-tuning}
 
-### Simulation length (`n_sim_years`)
+**`n_sim_years`: ** (simulation length). This sets how many synthetic years you generate. Use 200 for quick debugging, 1,000 as a solid default, and 5,000–10,000 when you need stable estimates for rare events (return periods above 100 years). More years reduce Monte Carlo noise but increase runtime.
 
-More years = more stable tail statistics, but slower.
+**`search_radius_km`: ** (track-point gate radius). This sets how far from the site a storm track point can be and still be considered. Large storms can produce tropical-storm winds at a site even when the center is several hundred kilometers away. The default 800 km is conservative and usually captures all relevant storms without pulling in clearly irrelevant ones.
 
-| Value | Use case |
-|-------|----------|
-| **200** | Quick exploratory runs |
-| **1,000** | Good default for most analyses |
-| **5,000–10,000** | Robust return period estimates at 100+ year return periods |
+**`damage_method` and `damage_params`: ** (damage function shape). This controls how daily wind is converted into daily fractional damage. "powerlaw" starts producing damage above a wind threshold (default 34 kt) and increases damage rapidly as wind approaches a reference speed (default 80 kt), with defaults d_ref = 0.03, p = 3, and a cap d_max = 0.10. "intensity" uses a simpler normalized intensity curve and still caps damage at d_max, which can be easier to communicate and tune.
 
-
-### Search radius (`search_radius_km`)
-
-Controls which storms are considered relevant. A storm passing 700 km away can still produce tropical storm–force winds at your site through its wind field extent. The default of 800 km is conservative — it captures essentially all storms that could affect the site without over-counting.
-
-
-### Damage function
-
-The `damage_method = "powerlaw"` option uses:
-
-$$
-\text{damage\_rate} = d_{\text{ref}} \times \left(\frac{V - V_{\text{thr}}}{V_{\text{ref}} - V_{\text{thr}}}\right)^p
-$$
-
-with defaults: $V_{\text{thr}} = 34$ kt, $V_{\text{ref}} = 80$ kt, $d_{\text{ref}} = 0.03$, $p = 3$, $d_{\max} = 0.10$.
-
-The `damage_method = "intensity"` option uses a simpler normalised intensity curve capped at `dmax`.
-
-Override parameters with:
-
-```{r}
-#| label: damage-override
-generate_daily_hazard_impact(
-  ...,
-  damage_method = "powerlaw",
-  damage_params = list(thr = 34, V_ref = 80, d_ref = 0.05, p = 3, d_max = 0.15)
-)
-```
-
-### Gust factor
-
-The model computes **sustained** winds. The `gust_factor` converts to gusts for threshold comparisons. Typical values: 1.2–1.3 for open terrain, up to 1.4 for complex terrain or urban areas.
-
-
-## Function Reference {#sec-reference}
-
-| Function | Purpose |
-|----------|---------|
-| `make_hazard_cfg()` | Create a validated configuration object with sensible defaults |
-| `run_hazard_model()` | End-to-end: read data → compute winds → estimate rates → simulate counts |
-| `generate_daily_hazard_impact()` | Convert annual counts into daily wind + damage time series |
-| `build_event_library_from_out()` | Build resampling library from model output (used internally by the daily generator) |
-| `make_sst_cfg()` | Configure climate change scenarios (Tutorial 2) |
-
-
-## What's Next {#sec-next}
-
-::: {.callout-note}
-## Tutorial series
-
-- **Tutorial 1** (this document) — Introduction, setup, and single-site baseline (all three workflows)
-- **Tutorial 2** — Multi-site application, model validation, and climate change scenarios
-:::
+**`gust_factor`: ** (sustained-to-gust conversion). The model outputs sustained wind, but many thresholds and impacts are framed in gusts. gust_factor multiplies sustained wind to estimate gust wind for comparisons and downstream rules. Typical values are 1.2–1.3 for open terrain, and up to 1.4 for complex terrain or urban exposure.

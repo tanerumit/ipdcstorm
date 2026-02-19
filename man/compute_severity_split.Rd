@@ -9,7 +9,7 @@ compute_severity_split(lambda_table, sst_anomaly, gamma = 0, p_hur_base = NULL)
 \arguments{
 \item{lambda_table}{Tibble from \code{compute_lambda_table()}.}
 
-\item{sst_anomaly}{Numeric vector of Î”SST values per simulation year.}
+\item{sst_anomaly}{Numeric vector of I"SST values per simulation year.}
 
 \item{gamma}{Numeric; intensity shift coefficient.}
 
@@ -21,7 +21,7 @@ Tibble with columns: sim_year, sst_anomaly, p_hur, lam_TS, lam_HUR.
 \description{
 Computes per-year hurricane probability and corresponding TS/HUR rates:
 
-p_HUR(t) = clamp(p_HUR_base Ã— (1 + Î³ Â· Î”SST_t), 0.01, 0.99)
-Î»_HUR(t) = Î»_total Ã— p_HUR(t)
-Î»_TS(t)  = Î»_total Ã— (1 âˆ’ p_HUR(t))
+p_HUR(t) = clamp(p_HUR_base A- (1 + I3 A. I"SST_t), 0.01, 0.99)
+I>_HUR(t) = I>_total A- p_HUR(t)
+I>_TS(t)  = I>_total A- (1 a^' p_HUR(t))
 }

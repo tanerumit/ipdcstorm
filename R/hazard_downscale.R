@@ -23,7 +23,7 @@
 #' Assign simple severity class from peak wind
 #'
 #' @param wind_max_kt Numeric; peak wind (kt).
-#' @return Character scalar in {"TD","TS","HUR"} (or NA).
+#' @return Character scalar in \code{c("TD", "TS", "HUR")} (or \code{NA}).
 #' @keywords internal
 .assign_severity_simple <- function(wind_max_kt) {
   dplyr::case_when(
@@ -48,7 +48,7 @@
 #' @param sev_levels Character vector of class levels.
 #' @param bins List of break vectors for stratification (wind, Pc, RMW).
 #' @param seed Optional integer seed.
-#' @param resampling_method Character; one of {"stratified","copula_nn"}.
+#' @param resampling_method Character; one of \code{"stratified"} or \code{"copula_nn"}.
 #'   Default "stratified" preserves existing behavior.
 #' @param copula_min_n Integer; minimum complete-case sample size per class needed to fit copula.
 #' @param copula_k Integer; number of nearest neighbours to sample from after copula proposal (>=1).

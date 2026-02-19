@@ -1,6 +1,6 @@
 
 # Load packages & parameters
-
+library(ipdcstorm)
 
 # Parameters
 cfg <- make_hazard_cfg(

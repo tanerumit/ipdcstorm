@@ -15,7 +15,7 @@ prepare_sst_data(
 \arguments{
 \item{sst_cfg}{List from \code{make_sst_cfg()}.}
 
-\item{annual_counts}{Optional tibble of annual counts for Î² and Î³ estimation.}
+\item{annual_counts}{Optional tibble of annual counts for I2 and I3 estimation.}
 
 \item{lambda_table}{Optional tibble from \code{compute_lambda_table()} for p_HUR_base.}
 
@@ -26,15 +26,15 @@ prepare_sst_data(
 \value{
 A list with:
 \item{sst_df}{Tibble of historical SST with anomalies.}
-\item{beta_sst}{Estimated or user-supplied Î²_SST.}
+\item{beta_sst}{Estimated or user-supplied I2_SST.}
 \item{beta_info}{Full output from \code{estimate_beta_sst()} (or NULL).}
-\item{gamma_intensity}{Estimated or user-supplied Î³.}
+\item{gamma_intensity}{Estimated or user-supplied I3.}
 \item{gamma_info}{Full output from \code{estimate_gamma_intensity()} (or NULL).}
 \item{p_hur_base}{Baseline hurricane fraction.}
 \item{sst_cfg}{The input configuration.}
 }
 \description{
 Reads SST data from the configured source, computes anomalies, and
-optionally estimates Î²_SST (Level 1) and Î³ (Level 2). Returns a
+optionally estimates I2_SST (Level 1) and I3 (Level 2). Returns a
 processed climate object ready for use in the hazard model.
 }

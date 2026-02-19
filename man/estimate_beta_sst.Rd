@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_climate.R
 \name{estimate_beta_sst}
 \alias{estimate_beta_sst}
-\title{Estimate the SSTâ€“activity scaling coefficient Î²_SST}
+\title{Estimate the SSTa?"activity scaling coefficient I2_SST}
 \usage{
 estimate_beta_sst(
   annual_counts,
@@ -22,33 +22,33 @@ year, storm_class, n_events.}
 
 \item{beta_prior}{Optional numeric; if provided, shrinks the estimate toward
 this prior value using a simple Bayesian-inspired weighted average:
-Î²_final = wÂ·Î²_MLE + (1-w)Â·Î²_prior, where w = min(1, n_years/50).
+I2_final = wA.I2_MLE + (1-w)A.I2_prior, where w = min(1, n_years/50).
 This stabilizes estimates when the historical record is short.}
 
 \item{verbose}{Logical; print diagnostic output.}
 }
 \value{
 A list with:
-\item{beta_sst}{Estimated (or shrunk) Î²_SST coefficient.}
-\item{beta_se}{Standard error of the MLE Î²_SST.}
+\item{beta_sst}{Estimated (or shrunk) I2_SST coefficient.}
+\item{beta_se}{Standard error of the MLE I2_SST.}
 \item{beta_mle}{Raw MLE estimate before shrinkage.}
 \item{alpha}{Intercept (log baseline rate).}
 \item{method}{Character; "negbin", "quasipoisson", or "literature_fallback".}
 \item{n_years}{Number of years used in estimation.}
-\item{r_squared_dev}{Deviance-based pseudo-RÂ² (proportion of deviance explained).}
+\item{r_squared_dev}{Deviance-based pseudo-RA2 (proportion of deviance explained).}
 \item{aic}{AIC of the fitted model (NA for quasi-Poisson).}
 \item{fit_data}{Tibble of the joined data used for fitting.}
 \item{glm_fit}{The fitted GLM object.}
 }
 \description{
 Fits a Poisson (or negative binomial) GLM of annual TC counts on MDR SST
-anomaly to estimate Î²_SST in:
+anomaly to estimate I2_SST in:
 
-\verb{E[N_t] = exp(Î± + Î²_SST Â· Î”SST_t)}
+\verb{E[N_t] = exp(I? + I2_SST A. I"SST_t)}
 
-The coefficient Î²_SST represents the log-linear sensitivity of annual TC
-activity to SST anomalies. Typical values from the literature are 0.4â€“0.8
-per Â°C for the North Atlantic (Villarini et al. 2011; Vecchi et al. 2021).
+The coefficient I2_SST represents the log-linear sensitivity of annual TC
+activity to SST anomalies. Typical values from the literature are 0.4a?"0.8
+per A?C for the North Atlantic (Villarini et al. 2011; Vecchi et al. 2021).
 
 If the \code{MASS} package is available, a negative binomial GLM is preferred
 (accounts for overdispersion). Otherwise, a quasi-Poisson GLM is used.

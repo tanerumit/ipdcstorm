@@ -10,7 +10,7 @@
 \item{bearing}{Numeric vector of bearings in degrees.}
 }
 \value{
-Character vector in {"NE","SE","SW","NW"} (or NA).
+Character vector in \code{c("NE", "SE", "SW", "NW")} (or \code{NA}).
 }
 \description{
 Convert bearing to meteorological quadrant

@@ -95,7 +95,7 @@ calculate_bearing <- function(lat, lon, t_lat, t_lon) {
 #' Convert bearing to meteorological quadrant
 #'
 #' @param bearing Numeric vector of bearings in degrees.
-#' @return Character vector in {"NE","SE","SW","NW"} (or NA).
+#' @return Character vector in \code{c("NE", "SE", "SW", "NW")} (or \code{NA}).
 #' @keywords internal
 .get_quadrant <- function(bearing) {
   b <- (bearing + 360) %% 360
@@ -848,7 +848,7 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
 #' @param ts_threshold_kt Threshold (kt) for Tropical Storm.
 #' @param hurricane_threshold_kt Threshold (kt) for Hurricane.
 #'
-#' @return Character vector with values {"TD","TS","HUR","unknown"}.
+#' @return Character vector with values \code{c("TD", "TS", "HUR", "unknown")}.
 #' @export
 classify_severity <- function(V_site_max_kt,
                               ts_threshold_kt = 34,

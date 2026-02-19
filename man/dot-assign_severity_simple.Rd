@@ -10,7 +10,7 @@
 \item{wind_max_kt}{Numeric; peak wind (kt).}
 }
 \value{
-Character scalar in {"TD","TS","HUR"} (or NA).
+Character scalar in \code{c("TD", "TS", "HUR")} (or \code{NA}).
 }
 \description{
 Assign simple severity class from peak wind

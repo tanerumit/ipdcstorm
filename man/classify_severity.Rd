@@ -18,7 +18,7 @@ classify_severity(
 \item{hurricane_threshold_kt}{Threshold (kt) for Hurricane.}
 }
 \value{
-Character vector with values {"TD","TS","HUR","unknown"}.
+Character vector with values \code{c("TD", "TS", "HUR", "unknown")}.
 }
 \description{
 Classify storm class from peak site wind

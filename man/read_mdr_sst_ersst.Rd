@@ -17,7 +17,7 @@ read_mdr_sst_ersst(
 \item{mdr_lat}{Range of latitudes for MDR (default: c(10, 20)).}
 
 \item{mdr_lon}{Range of longitudes for MDR (default: c(-80, -20)).
-Note: ERSST uses 0â€“360 longitude convention; this function converts internally.}
+Note: ERSST uses 0a?"360 longitude convention; this function converts internally.}
 
 \item{aso_months}{Integer vector of months for seasonal average (default: 8:10).}
 }
@@ -25,8 +25,8 @@ Note: ERSST uses 0â€“360 longitude convention; this function converts inter
 Tibble with columns: year, sst_mdr_aso.
 }
 \description{
-Reads monthly ERSST v5 NetCDF data, subsets to the MDR box (10â€“20Â°N, 80â€“20Â°W),
-averages spatially, then computes ASO (Augâ€“Sepâ€“Oct) seasonal means per year.
+Reads monthly ERSST v5 NetCDF data, subsets to the MDR box (10a?"20A?N, 80a?"20A?W),
+averages spatially, then computes ASO (Auga?"Sepa?"Oct) seasonal means per year.
 
 Requires the \code{ncdf4} package. If not available, falls back to the built-in
 reference data with a warning.

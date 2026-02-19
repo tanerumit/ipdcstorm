@@ -274,6 +274,8 @@ plot_doy_wind <- function(daily,
 #' @param daily Daily data frame
 #' @param probs Quantile probabilities (lower, median, upper)
 #' @param log_scale Use log y-axis
+#' @param thr_tc Tropical cyclone threshold (kt)
+#' @param thr_hur Hurricane threshold (kt)
 plot_monthly_quantiles <- function(daily,
                                    probs = c(0.50, 0.95, 0.99),
                                    log_scale = FALSE,
@@ -312,7 +314,7 @@ plot_monthly_quantiles <- function(daily,
       x = NULL, 
       y = "Wind speed (kt)",
       title = "Monthly Wind Distribution",
-      subtitle = sprintf("Ribbon: median–P%d | Dotted: P%d", 
+      subtitle = sprintf("Ribbon: median-P%d | Dotted: P%d", 
                          probs[2]*100, probs[3]*100)
     ) +
     passaat_theme()
@@ -419,7 +421,8 @@ plot_intensity_duration <- function(daily = NULL,
 #' @param daily Daily data frame
 #' @param type "histogram" or "density"
 #' @param log_scale Use log x-axis
-#' @param by_class Separate TC/HUR classes (for event days only)
+#' @param thr_tc Tropical cyclone threshold (kt)
+#' @param thr_hur Hurricane threshold (kt)
 plot_wind_distribution <- function(daily,
                                    type = c("histogram", "density"),
                                    log_scale = FALSE,

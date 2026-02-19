@@ -22,9 +22,9 @@ or "historical_resample".}
 
 \item{start_year}{Integer; first calendar year of the simulation (for labelling).}
 
-\item{delta_start}{Numeric; starting Î”SST (Â°C) for "trend" mode.}
+\item{delta_start}{Numeric; starting I"SST (A?C) for "trend" mode.}
 
-\item{delta_end}{Numeric; ending Î”SST (Â°C) for "trend" mode.}
+\item{delta_end}{Numeric; ending I"SST (A?C) for "trend" mode.}
 
 \item{sst_hist_df}{Optional tibble with historical SST anomalies (year, sst_anomaly)
 for "historical_resample" mode. If NULL, uses built-in data.}

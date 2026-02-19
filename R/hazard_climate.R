@@ -1,4 +1,4 @@
-﻿################################################################################
+################################################################################
 # hazard_climate.R
 # Climate Change Modifications (Levels 1-3)
 #
@@ -7,14 +7,14 @@
 # Level 3: Storm Characteristic Perturbation (V_peak, RMW, duration, precip)
 #
 # Modulates the annual activity factor using observed/projected SST anomalies
-# in the Main Development Region (MDR: 10â€“20Â°N, 80â€“20Â°W):
+# in the Main Development Region (MDR: 10a?"20A?N, 80a?"20A?W):
 #
-#   A_t ~ Gamma(k, k) Ã— exp(Î²_SST Â· Î”SST_t)
+#   A_t ~ Gamma(k, k) A- exp(I2_SST A. I"SST_t)
 #
 # Components:
 #   1) MDR SST data ingestion (ERSST v5 CSV/NetCDF + built-in fallback)
-#   2) Anomaly computation relative to 1991â€“2020 climatological mean
-#   3) Î²_SST estimation via Poisson/NegBin regression on historical record
+#   2) Anomaly computation relative to 1991a?"2020 climatological mean
+#   3) I2_SST estimation via Poisson/NegBin regression on historical record
 #   4) SST scenario generation (historical + CMIP6 SSP projections)
 #   5) Non-stationary count simulation
 #   6) Intensity distribution shift (Level 2: gamma estimation)
@@ -33,8 +33,8 @@
 #' Built-in MDR SST annual means from NOAA ERSST v5
 #'
 #' @description
-#' Returns a tibble of annual-mean SST (Â°C) averaged over the Main Development
-#' Region (MDR: 10â€“20Â°N, 80â€“20Â°W) for the Atlantic hurricane season (Augâ€“Oct,
+#' Returns a tibble of annual-mean SST (A?C) averaged over the Main Development
+#' Region (MDR: 10a?"20A?N, 80a?"20A?W) for the Atlantic hurricane season (Auga?"Oct,
 #' the peak months most predictive of activity).
 #'
 #' Values are derived from NOAA ERSST v5 monthly data, spatially averaged over
@@ -44,9 +44,9 @@
 #' requiring users to download and process NetCDF files.
 #'
 #' Source: NOAA/NCEI ERSST v5, accessed 2024.
-#' Reference: Huang et al. (2017), J. Climate, 30, 8179â€“8205.
+#' Reference: Huang et al. (2017), J. Climate, 30, 8179a?"8205.
 #'
-#' @return Tibble with columns: year (integer), sst_mdr_aso (numeric, Â°C).
+#' @return Tibble with columns: year (integer), sst_mdr_aso (numeric, A?C).
 #' @export
 get_mdr_sst_builtin <- function() {
   # MDR (10-20N, 80-20W) ASO mean SST from ERSST v5
@@ -112,8 +112,8 @@ read_mdr_sst_csv <- function(csv_path,
 #' Read MDR SST from ERSST v5 NetCDF (optional)
 #'
 #' @description
-#' Reads monthly ERSST v5 NetCDF data, subsets to the MDR box (10â€“20Â°N, 80â€“20Â°W),
-#' averages spatially, then computes ASO (Augâ€“Sepâ€“Oct) seasonal means per year.
+#' Reads monthly ERSST v5 NetCDF data, subsets to the MDR box (10a?"20A?N, 80a?"20A?W),
+#' averages spatially, then computes ASO (Auga?"Sepa?"Oct) seasonal means per year.
 #'
 #' Requires the `ncdf4` package. If not available, falls back to the built-in
 #' reference data with a warning.
@@ -121,7 +121,7 @@ read_mdr_sst_csv <- function(csv_path,
 #' @param nc_path Character; path to ERSST v5 NetCDF file (e.g., "sst.mnmean.nc").
 #' @param mdr_lat Range of latitudes for MDR (default: c(10, 20)).
 #' @param mdr_lon Range of longitudes for MDR (default: c(-80, -20)).
-#'   Note: ERSST uses 0â€“360 longitude convention; this function converts internally.
+#'   Note: ERSST uses 0a?"360 longitude convention; this function converts internally.
 #' @param aso_months Integer vector of months for seasonal average (default: 8:10).
 #'
 #' @return Tibble with columns: year, sst_mdr_aso.
@@ -159,7 +159,7 @@ read_mdr_sst_ersst <- function(nc_path,
                            start = c(min(lon_idx), min(lat_idx), 1),
                            count = c(length(lon_idx), length(lat_idx), -1))
 
-  # Time â†’ dates (ERSST time is days since 1800-01-01)
+  # Time a?' dates (ERSST time is days since 1800-01-01)
   time_origin <- as.Date("1800-01-01")
   dates <- time_origin + as.integer(time_nc)
   years <- as.integer(format(dates, "%Y"))
@@ -200,8 +200,8 @@ read_mdr_sst_ersst <- function(nc_path,
 #' Compute SST anomalies relative to a climatological baseline
 #'
 #' @description
-#' Computes Î”SST_t = SST_t âˆ’ SST_clim, where SST_clim is the mean SST over
-#' the specified baseline period (default: 1991â€“2020, the current WMO standard
+#' Computes I"SST_t = SST_t a^' SST_clim, where SST_clim is the mean SST over
+#' the specified baseline period (default: 1991a?"2020, the current WMO standard
 #' climatological normal).
 #'
 #' @param sst_df Tibble with columns: year, sst_mdr_aso.
@@ -209,8 +209,8 @@ read_mdr_sst_ersst <- function(nc_path,
 #'   baseline (default: 1991:2020).
 #'
 #' @return The input tibble with added columns:
-#'   \item{sst_clim}{Climatological mean SST (Â°C) over the baseline period.}
-#'   \item{sst_anomaly}{Î”SST (Â°C) relative to baseline.}
+#'   \item{sst_clim}{Climatological mean SST (A?C) over the baseline period.}
+#'   \item{sst_anomaly}{I"SST (A?C) relative to baseline.}
 #'
 #' @export
 compute_sst_anomaly <- function(sst_df, baseline_years = 1991L:2020L) {
@@ -239,20 +239,20 @@ compute_sst_anomaly <- function(sst_df, baseline_years = 1991L:2020L) {
 
 
 # =============================================================================
-# 4) Î²_SST ESTIMATION
+# 4) I2_SST ESTIMATION
 # =============================================================================
 
-#' Estimate the SSTâ€“activity scaling coefficient Î²_SST
+#' Estimate the SSTa?"activity scaling coefficient I2_SST
 #'
 #' @description
 #' Fits a Poisson (or negative binomial) GLM of annual TC counts on MDR SST
-#' anomaly to estimate Î²_SST in:
+#' anomaly to estimate I2_SST in:
 #'
-#'   `E[N_t] = exp(Î± + Î²_SST Â· Î”SST_t)`
+#'   `E[N_t] = exp(I? + I2_SST A. I"SST_t)`
 #'
-#' The coefficient Î²_SST represents the log-linear sensitivity of annual TC
-#' activity to SST anomalies. Typical values from the literature are 0.4â€“0.8
-#' per Â°C for the North Atlantic (Villarini et al. 2011; Vecchi et al. 2021).
+#' The coefficient I2_SST represents the log-linear sensitivity of annual TC
+#' activity to SST anomalies. Typical values from the literature are 0.4a?"0.8
+#' per A?C for the North Atlantic (Villarini et al. 2011; Vecchi et al. 2021).
 #'
 #' If the `MASS` package is available, a negative binomial GLM is preferred
 #' (accounts for overdispersion). Otherwise, a quasi-Poisson GLM is used.
@@ -263,18 +263,18 @@ compute_sst_anomaly <- function(sst_df, baseline_years = 1991L:2020L) {
 #' @param min_year Integer; earliest year to include (default: cfg$start_year).
 #' @param beta_prior Optional numeric; if provided, shrinks the estimate toward
 #'   this prior value using a simple Bayesian-inspired weighted average:
-#'   Î²_final = wÂ·Î²_MLE + (1-w)Â·Î²_prior, where w = min(1, n_years/50).
+#'   I2_final = wA.I2_MLE + (1-w)A.I2_prior, where w = min(1, n_years/50).
 #'   This stabilizes estimates when the historical record is short.
 #' @param verbose Logical; print diagnostic output.
 #'
 #' @return A list with:
-#'   \item{beta_sst}{Estimated (or shrunk) Î²_SST coefficient.}
-#'   \item{beta_se}{Standard error of the MLE Î²_SST.}
+#'   \item{beta_sst}{Estimated (or shrunk) I2_SST coefficient.}
+#'   \item{beta_se}{Standard error of the MLE I2_SST.}
 #'   \item{beta_mle}{Raw MLE estimate before shrinkage.}
 #'   \item{alpha}{Intercept (log baseline rate).}
 #'   \item{method}{Character; "negbin", "quasipoisson", or "literature_fallback".}
 #'   \item{n_years}{Number of years used in estimation.}
-#'   \item{r_squared_dev}{Deviance-based pseudo-RÂ² (proportion of deviance explained).}
+#'   \item{r_squared_dev}{Deviance-based pseudo-RA2 (proportion of deviance explained).}
 #'   \item{aic}{AIC of the fitted model (NA for quasi-Poisson).}
 #'   \item{fit_data}{Tibble of the joined data used for fitting.}
 #'   \item{glm_fit}{The fitted GLM object.}
@@ -311,11 +311,11 @@ estimate_beta_sst <- function(annual_counts,
 
   if (n_years < 15) {
     warning("Only ", n_years, " years of overlapping data. ",
-            "Î²_SST estimate will be unreliable. Consider using beta_prior.")
+            "I2_SST estimate will be unreliable. Consider using beta_prior.")
   }
 
   if (n_years < 5) {
-    message("[Î²_SST] Insufficient data (", n_years, " years). Using literature fallback: Î² = 0.6")
+    message("[I2_SST] Insufficient data (", n_years, " years). Using literature fallback: I2 = 0.6")
     return(list(
       beta_sst = 0.6,
       beta_se = NA_real_,
@@ -330,7 +330,7 @@ estimate_beta_sst <- function(annual_counts,
     ))
   }
 
-  # Fit GLM: N ~ exp(Î± + Î²Â·Î”SST)
+  # Fit GLM: N ~ exp(I? + I2A.I"SST)
   # Prefer negative binomial (handles overdispersion); fall back to quasi-Poisson
   glm_fit <- NULL
   method <- "quasipoisson"
@@ -358,7 +358,7 @@ estimate_beta_sst <- function(annual_counts,
     error = function(e) NA_real_
   )
 
-  # Deviance pseudo-RÂ²
+  # Deviance pseudo-RA2
   dev_null <- glm_fit$null.deviance
   dev_resid <- glm_fit$deviance
   r2_dev <- if (is.finite(dev_null) && dev_null > 0) {
@@ -374,15 +374,15 @@ estimate_beta_sst <- function(annual_counts,
     w <- min(1.0, n_years / 50)
     beta_final <- w * beta_mle + (1 - w) * beta_prior
     if (verbose) {
-      message(sprintf("[Î²_SST] Shrinkage: Î²_MLE=%.3f, Î²_prior=%.3f, w=%.2f â†’ Î²_final=%.3f",
+      message(sprintf("[I2_SST] Shrinkage: I2_MLE=%.3f, I2_prior=%.3f, w=%.2f a?' I2_final=%.3f",
                       beta_mle, beta_prior, w, beta_final))
     }
   }
 
   if (verbose) {
-    message(sprintf("[Î²_SST] Method: %s | n_years: %d | Î²_SST: %.3f (SE: %.3f) | pseudo-RÂ²: %.3f",
+    message(sprintf("[I2_SST] Method: %s | n_years: %d | I2_SST: %.3f (SE: %.3f) | pseudo-RA2: %.3f",
                     method, n_years, beta_final, se, r2_dev))
-    message(sprintf("[Î²_SST] Interpretation: +1Â°C SST â†’ %.0f%% change in annual rate",
+    message(sprintf("[I2_SST] Interpretation: +1A?C SST a?' %.0f%% change in annual rate",
                     100 * (exp(beta_final) - 1)))
   }
 
@@ -408,9 +408,9 @@ estimate_beta_sst <- function(annual_counts,
 #' Estimate the historical hurricane fraction from annual counts
 #'
 #' @description
-#' Computes p_HUR_base = Î»_HUR / (Î»_TS + Î»_HUR) from the historical record.
+#' Computes p_HUR_base = I>_HUR / (I>_TS + I>_HUR) from the historical record.
 #' This is the baseline probability that an event reaching TS intensity or
-#' above becomes a hurricane (â‰¥64 kt).
+#' above becomes a hurricane (a?Y64 kt).
 #'
 #' @param lambda_table Tibble from `compute_lambda_table()` with severities
 #'   "TS" and "HUR64plus".
@@ -428,33 +428,33 @@ compute_p_hur_base <- function(lambda_table) {
 }
 
 
-#' Estimate Î³ (intensity shift coefficient) from historical data
+#' Estimate I3 (intensity shift coefficient) from historical data
 #'
 #' @description
 #' Fits a logistic regression of annual hurricane fraction on SST anomaly
-#' to estimate the intensification trend coefficient Î³ in:
+#' to estimate the intensification trend coefficient I3 in:
 #'
-#'   p_HUR(t) = p_HUR_base Ã— (1 + Î³ Â· Î”SST_t)
+#'   p_HUR(t) = p_HUR_base A- (1 + I3 A. I"SST_t)
 #'
-#' The coefficient Î³ captures how the fraction of storms reaching hurricane
-#' intensity shifts with SST warming. Literature estimates suggest 5â€“8% increase
-#' in Cat 4â€“5 fraction per Â°C of tropical SST warming (Knutson et al. 2020;
+#' The coefficient I3 captures how the fraction of storms reaching hurricane
+#' intensity shifts with SST warming. Literature estimates suggest 5a?"8% increase
+#' in Cat 4a?"5 fraction per A?C of tropical SST warming (Knutson et al. 2020;
 #' Kossin et al. 2020).
 #'
 #' Uses a binomial GLM: cbind(n_HUR, n_TS) ~ sst_anomaly, then converts the
-#' logistic coefficient to the linear Î³ parameterization.
+#' logistic coefficient to the linear I3 parameterization.
 #'
 #' @param annual_counts Tibble with columns: year, storm_class, n_events.
 #' @param sst_df Tibble with columns: year, sst_anomaly.
 #' @param min_year Integer; earliest year to include.
 #' @param gamma_prior Optional numeric; prior value for shrinkage (default: 0.065,
-#'   i.e. 6.5% increase in HUR fraction per Â°C).
+#'   i.e. 6.5% increase in HUR fraction per A?C).
 #' @param verbose Logical.
 #'
 #' @return A list with:
-#'   \item{gamma}{Estimated (or shrunk) Î³ coefficient.}
+#'   \item{gamma}{Estimated (or shrunk) I3 coefficient.}
 #'   \item{gamma_mle}{Raw MLE from logistic regression (converted to linear scale).}
-#'   \item{gamma_se}{Approximate standard error on Î³.}
+#'   \item{gamma_se}{Approximate standard error on I3.}
 #'   \item{p_hur_base}{Baseline hurricane fraction.}
 #'   \item{method}{Character; estimation method used.}
 #'   \item{n_years}{Number of years in fit.}
@@ -547,11 +547,11 @@ estimate_gamma_intensity <- function(annual_counts,
     ))
   }
 
-  # Extract logistic coefficient and convert to linear Î³
-  # In logistic model: logit(p) = Î± + Î²_logistic Â· Î”SST
-  # At the baseline: p_base = logistic(Î±)
-  # Linear approximation: dp/dSST â‰ˆ p_base(1-p_base) Â· Î²_logistic
-  # So: Î³ = dp/dSST / p_base = (1-p_base) Â· Î²_logistic
+  # Extract logistic coefficient and convert to linear I3
+  # In logistic model: logit(p) = I? + I2_logistic A. I"SST
+  # At the baseline: p_base = logistic(I?)
+  # Linear approximation: dp/dSST a?^ p_base(1-p_base) A. I2_logistic
+  # So: I3 = dp/dSST / p_base = (1-p_base) A. I2_logistic
   beta_logistic <- stats::coef(glm_fit)["sst_anomaly"]
   gamma_mle <- as.numeric((1 - p_hur_base) * beta_logistic)
 
@@ -591,12 +591,12 @@ estimate_gamma_intensity <- function(annual_counts,
 #' @description
 #' Computes per-year hurricane probability and corresponding TS/HUR rates:
 #'
-#'   p_HUR(t) = clamp(p_HUR_base Ã— (1 + Î³ Â· Î”SST_t), 0.01, 0.99)
-#'   Î»_HUR(t) = Î»_total Ã— p_HUR(t)
-#'   Î»_TS(t)  = Î»_total Ã— (1 âˆ’ p_HUR(t))
+#'   p_HUR(t) = clamp(p_HUR_base A- (1 + I3 A. I"SST_t), 0.01, 0.99)
+#'   I>_HUR(t) = I>_total A- p_HUR(t)
+#'   I>_TS(t)  = I>_total A- (1 a^' p_HUR(t))
 #'
 #' @param lambda_table Tibble from `compute_lambda_table()`.
-#' @param sst_anomaly Numeric vector of Î”SST values per simulation year.
+#' @param sst_anomaly Numeric vector of I"SST values per simulation year.
 #' @param gamma Numeric; intensity shift coefficient.
 #' @param p_hur_base Optional numeric; if NULL, computed from lambda_table.
 #'
@@ -648,8 +648,8 @@ compute_severity_split <- function(lambda_table,
 #' @param mode Character; one of "stationary", "trend", "ssp245", "ssp585",
 #'   or "historical_resample".
 #' @param start_year Integer; first calendar year of the simulation (for labelling).
-#' @param delta_start Numeric; starting Î”SST (Â°C) for "trend" mode.
-#' @param delta_end Numeric; ending Î”SST (Â°C) for "trend" mode.
+#' @param delta_start Numeric; starting I"SST (A?C) for "trend" mode.
+#' @param delta_end Numeric; ending I"SST (A?C) for "trend" mode.
 #' @param sst_hist_df Optional tibble with historical SST anomalies (year, sst_anomaly)
 #'   for "historical_resample" mode. If NULL, uses built-in data.
 #' @param baseline_years Baseline period for anomaly computation (default 1991:2020).
@@ -727,7 +727,7 @@ generate_sst_scenario <- function(n_years,
     },
     
     ssp245 = {
-      # Targets relative to 1991â€“2020 (typical AR6 order of magnitude):
+      # Targets relative to 1991a?"2020 (typical AR6 order of magnitude):
       # ~+0.5C by 2050, ~+1.0C by 2100 (median-ish)
       a0 <- .get_start_anom(start_year)
       y0 <- start_year
@@ -747,7 +747,7 @@ generate_sst_scenario <- function(n_years,
     },
     
     ssp585 = {
-      # Targets relative to 1991â€“2020:
+      # Targets relative to 1991a?"2020:
       # ~+1.0C by 2050, ~+2.5C by 2100 (median-ish)
       a0 <- .get_start_anom(start_year)
       y0 <- start_year
@@ -802,13 +802,13 @@ generate_sst_scenario <- function(n_years,
 #' two levels of climate modification:
 #'
 #' **Level 1 (Rate scaling):** Each year's activity factor is modulated by SST:
-#'   A_t = activity_factor Ã— exp(Î²_SST Â· Î”SST_t)
+#'   A_t = activity_factor A- exp(I2_SST A. I"SST_t)
 #'
 #' **Level 2 (Intensity shift):** The storm-class split varies with SST:
-#'   p_HUR(t) = clamp(p_HUR_base Ã— (1 + Î³ Â· Î”SST_t), 0.01, 0.99)
-#'   N_total_t ~ Poisson(Î»_total Ã— A_t)
+#'   p_HUR(t) = clamp(p_HUR_base A- (1 + I3 A. I"SST_t), 0.01, 0.99)
+#'   N_total_t ~ Poisson(I>_total A- A_t)
 #'   n_HUR_t ~ Binomial(N_total_t, p_HUR(t))
-#'   n_ts_t = N_total_t âˆ’ n_hur_t
+#'   n_ts_t = N_total_t a^' n_hur_t
 #'
 #' When gamma_intensity is 0, class split is constant (Level 1 only).
 #' When both beta_sst and gamma_intensity are 0, reduces to stationary model.
@@ -816,12 +816,15 @@ generate_sst_scenario <- function(n_years,
 #' @param lambda_table Tibble from `compute_lambda_table()`.
 #' @param k_hat Numeric; Gamma shape parameter for overdispersion.
 #' @param n_years_sim Integer; number of years to simulate.
-#' @param sst_anomaly Optional numeric vector of Î”SST values (Â°C) per year.
+#' @param sst_anomaly Optional numeric vector of I"SST values (A?C) per year.
 #' @param beta_sst Numeric; SST rate scaling coefficient (Level 1).
 #' @param gamma_intensity Numeric; intensity shift coefficient (Level 2).
-#'   Represents fractional change in p_HUR per Â°C of SST warming.
+#'   Represents fractional change in p_HUR per A?C of SST warming.
 #' @param p_hur_base Optional numeric; baseline hurricane fraction. If NULL,
 #'   computed from lambda_table.
+#' @param .sst_abs_max Numeric guardrail for absolute SST anomaly magnitude.
+#' @param .sst_scale_max Numeric guardrail for \code{exp(beta_sst * sst_anomaly)}.
+#' @param .mu_total_max Numeric guardrail for annual Poisson mean.
 #'
 #' @return Tibble with columns: sim_year, activity_factor, sst_anomaly,
 #'   climate_scale, activity_combined, p_hurricane, n_total, n_ts, n_hur.
@@ -865,7 +868,7 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
       # Do not silently convert dates to numeric; that always means the wrong thing.
       stop(
         "sst_anomaly is Date/POSIX. You passed a time column, not anomalies.\n",
-        "Fix caller: pass numeric Î”SST in Â°C (typically within about Â±0â€“3).",
+        "Fix caller: pass numeric delta SST in degC (typically within about +/-3).",
         call. = FALSE
       )
     }
@@ -901,7 +904,7 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
     if (mx > 20 && mx < 300) {
       return(paste0(
         msg, "\n",
-        "This looks like a 'years since baseline' index (e.g., year-2005) or another trend index, not Â°C anomalies."
+        "This looks like a 'years since baseline' index (e.g., year-2005) or another trend index, not A?C anomalies."
       ))
     }
     paste0(msg, "\nLikely wrong units/column (absolute SST, Kelvin, Fahrenheit, etc.).")
@@ -950,7 +953,7 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
   abs_max <- max(abs(sst_vec[fin]))
   if (is.finite(abs_max) && abs_max > .sst_abs_max) {
     stop(
-      "SST anomaly looks corrupt. Expected Î”SST in Â°C (typically within Â±0â€“3; hard guard Â±10).\n",
+      "SST anomaly looks corrupt. Expected delta SST in degC (typically within +/-3; hard guard +/-10).\n",
       .diagnose_corruption(sst_vec), "\n",
       "Fix caller: pass `sst_scenario$sst_anomaly` (NOT calendar_year/sim_year/years_from_2005).",
       call. = FALSE
@@ -1239,20 +1242,20 @@ print.sst_cfg <- function(x, ...) {
 #'
 #' @description
 #' Reads SST data from the configured source, computes anomalies, and
-#' optionally estimates Î²_SST (Level 1) and Î³ (Level 2). Returns a
+#' optionally estimates I2_SST (Level 1) and I3 (Level 2). Returns a
 #' processed climate object ready for use in the hazard model.
 #'
 #' @param sst_cfg List from `make_sst_cfg()`.
-#' @param annual_counts Optional tibble of annual counts for Î² and Î³ estimation.
+#' @param annual_counts Optional tibble of annual counts for I2 and I3 estimation.
 #' @param lambda_table Optional tibble from `compute_lambda_table()` for p_HUR_base.
 #' @param min_year Integer; passed to estimation functions.
 #' @param verbose Logical.
 #'
 #' @return A list with:
 #'   \item{sst_df}{Tibble of historical SST with anomalies.}
-#'   \item{beta_sst}{Estimated or user-supplied Î²_SST.}
+#'   \item{beta_sst}{Estimated or user-supplied I2_SST.}
 #'   \item{beta_info}{Full output from `estimate_beta_sst()` (or NULL).}
-#'   \item{gamma_intensity}{Estimated or user-supplied Î³.}
+#'   \item{gamma_intensity}{Estimated or user-supplied I3.}
 #'   \item{gamma_info}{Full output from `estimate_gamma_intensity()` (or NULL).}
 #'   \item{p_hur_base}{Baseline hurricane fraction.}
 #'   \item{sst_cfg}{The input configuration.}

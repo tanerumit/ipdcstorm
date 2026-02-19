@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_climate.R
 \name{estimate_gamma_intensity}
 \alias{estimate_gamma_intensity}
-\title{Estimate Î³ (intensity shift coefficient) from historical data}
+\title{Estimate I3 (intensity shift coefficient) from historical data}
 \usage{
 estimate_gamma_intensity(
   annual_counts,
@@ -20,15 +20,15 @@ estimate_gamma_intensity(
 \item{min_year}{Integer; earliest year to include.}
 
 \item{gamma_prior}{Optional numeric; prior value for shrinkage (default: 0.065,
-i.e. 6.5\% increase in HUR fraction per Â°C).}
+i.e. 6.5\% increase in HUR fraction per A?C).}
 
 \item{verbose}{Logical.}
 }
 \value{
 A list with:
-\item{gamma}{Estimated (or shrunk) Î³ coefficient.}
+\item{gamma}{Estimated (or shrunk) I3 coefficient.}
 \item{gamma_mle}{Raw MLE from logistic regression (converted to linear scale).}
-\item{gamma_se}{Approximate standard error on Î³.}
+\item{gamma_se}{Approximate standard error on I3.}
 \item{p_hur_base}{Baseline hurricane fraction.}
 \item{method}{Character; estimation method used.}
 \item{n_years}{Number of years in fit.}
@@ -36,15 +36,15 @@ A list with:
 }
 \description{
 Fits a logistic regression of annual hurricane fraction on SST anomaly
-to estimate the intensification trend coefficient Î³ in:
+to estimate the intensification trend coefficient I3 in:
 
-p_HUR(t) = p_HUR_base Ã— (1 + Î³ Â· Î”SST_t)
+p_HUR(t) = p_HUR_base A- (1 + I3 A. I"SST_t)
 
-The coefficient Î³ captures how the fraction of storms reaching hurricane
-intensity shifts with SST warming. Literature estimates suggest 5â€“8\% increase
-in Cat 4â€“5 fraction per Â°C of tropical SST warming (Knutson et al. 2020;
+The coefficient I3 captures how the fraction of storms reaching hurricane
+intensity shifts with SST warming. Literature estimates suggest 5a?"8\% increase
+in Cat 4a?"5 fraction per A?C of tropical SST warming (Knutson et al. 2020;
 Kossin et al. 2020).
 
 Uses a binomial GLM: cbind(n_HUR, n_TS) ~ sst_anomaly, then converts the
-logistic coefficient to the linear Î³ parameterization.
+logistic coefficient to the linear I3 parameterization.
 }

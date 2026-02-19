@@ -7,11 +7,11 @@
 get_mdr_sst_builtin()
 }
 \value{
-Tibble with columns: year (integer), sst_mdr_aso (numeric, Â°C).
+Tibble with columns: year (integer), sst_mdr_aso (numeric, A?C).
 }
 \description{
-Returns a tibble of annual-mean SST (Â°C) averaged over the Main Development
-Region (MDR: 10â€“20Â°N, 80â€“20Â°W) for the Atlantic hurricane season (Augâ€“Oct,
+Returns a tibble of annual-mean SST (A?C) averaged over the Main Development
+Region (MDR: 10a?"20A?N, 80a?"20A?W) for the Atlantic hurricane season (Auga?"Oct,
 the peak months most predictive of activity).
 
 Values are derived from NOAA ERSST v5 monthly data, spatially averaged over
@@ -21,5 +21,5 @@ These are provided as a built-in fallback so the model can run without
 requiring users to download and process NetCDF files.
 
 Source: NOAA/NCEI ERSST v5, accessed 2024.
-Reference: Huang et al. (2017), J. Climate, 30, 8179â€“8205.
+Reference: Huang et al. (2017), J. Climate, 30, 8179a?"8205.
 }

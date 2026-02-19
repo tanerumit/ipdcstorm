@@ -18,6 +18,10 @@ plot_monthly_quantiles(
 \item{probs}{Quantile probabilities (lower, median, upper)}
 
 \item{log_scale}{Use log y-axis}
+
+\item{thr_tc}{Tropical cyclone threshold (kt)}
+
+\item{thr_hur}{Hurricane threshold (kt)}
 }
 \description{
 Plot monthly wind quantile ribbon

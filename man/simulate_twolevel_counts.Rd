@@ -24,15 +24,21 @@ simulate_twolevel_counts(
 
 \item{n_years_sim}{Integer; number of years to simulate.}
 
-\item{sst_anomaly}{Optional numeric vector of Î”SST values (Â°C) per year.}
+\item{sst_anomaly}{Optional numeric vector of I"SST values (A?C) per year.}
 
 \item{beta_sst}{Numeric; SST rate scaling coefficient (Level 1).}
 
 \item{gamma_intensity}{Numeric; intensity shift coefficient (Level 2).
-Represents fractional change in p_HUR per Â°C of SST warming.}
+Represents fractional change in p_HUR per A?C of SST warming.}
 
 \item{p_hur_base}{Optional numeric; baseline hurricane fraction. If NULL,
 computed from lambda_table.}
+
+\item{.sst_abs_max}{Numeric guardrail for absolute SST anomaly magnitude.}
+
+\item{.sst_scale_max}{Numeric guardrail for \code{exp(beta_sst * sst_anomaly)}.}
+
+\item{.mu_total_max}{Numeric guardrail for annual Poisson mean.}
 }
 \value{
 Tibble with columns: sim_year, activity_factor, sst_anomaly,
@@ -43,13 +49,13 @@ Non-stationary extension of the Poisson-Gamma annual count model with
 two levels of climate modification:
 
 \strong{Level 1 (Rate scaling):} Each year's activity factor is modulated by SST:
-A_t = activity_factor Ã— exp(Î²_SST Â· Î”SST_t)
+A_t = activity_factor A- exp(I2_SST A. I"SST_t)
 
 \strong{Level 2 (Intensity shift):} The storm-class split varies with SST:
-p_HUR(t) = clamp(p_HUR_base Ã— (1 + Î³ Â· Î”SST_t), 0.01, 0.99)
-N_total_t ~ Poisson(Î»_total Ã— A_t)
+p_HUR(t) = clamp(p_HUR_base A- (1 + I3 A. I"SST_t), 0.01, 0.99)
+N_total_t ~ Poisson(I>_total A- A_t)
 n_HUR_t ~ Binomial(N_total_t, p_HUR(t))
-n_ts_t = N_total_t âˆ’ n_hur_t
+n_ts_t = N_total_t a^' n_hur_t
 
 When gamma_intensity is 0, class split is constant (Level 1 only).
 When both beta_sst and gamma_intensity are 0, reduces to stationary model.

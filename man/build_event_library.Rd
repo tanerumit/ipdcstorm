@@ -30,7 +30,7 @@ Recommended: \code{peak_wind_kt}, \code{storm_intensity_kt}, \code{min_pressure_
 
 \item{seed}{Optional integer seed.}
 
-\item{resampling_method}{Character; one of {"stratified","copula_nn"}.
+\item{resampling_method}{Character; one of \code{"stratified"} or \code{"copula_nn"}.
 Default "stratified" preserves existing behavior.}
 
 \item{copula_min_n}{Integer; minimum complete-case sample size per class needed to fit copula.}

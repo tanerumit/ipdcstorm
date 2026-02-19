@@ -19,7 +19,9 @@ plot_wind_distribution(
 
 \item{log_scale}{Use log x-axis}
 
-\item{by_class}{Separate TC/HUR classes (for event days only)}
+\item{thr_tc}{Tropical cyclone threshold (kt)}
+
+\item{thr_hur}{Hurricane threshold (kt)}
 }
 \description{
 Plot wind speed distribution

@@ -14,11 +14,11 @@ baseline (default: 1991:2020).}
 }
 \value{
 The input tibble with added columns:
-\item{sst_clim}{Climatological mean SST (Â°C) over the baseline period.}
-\item{sst_anomaly}{Î”SST (Â°C) relative to baseline.}
+\item{sst_clim}{Climatological mean SST (A?C) over the baseline period.}
+\item{sst_anomaly}{I"SST (A?C) relative to baseline.}
 }
 \description{
-Computes Î”SST_t = SST_t âˆ’ SST_clim, where SST_clim is the mean SST over
-the specified baseline period (default: 1991â€“2020, the current WMO standard
+Computes I"SST_t = SST_t a^' SST_clim, where SST_clim is the mean SST over
+the specified baseline period (default: 1991a?"2020, the current WMO standard
 climatological normal).
 }
