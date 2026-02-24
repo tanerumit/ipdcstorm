@@ -65,7 +65,7 @@ out <- run_hazard_model(
   cfg = cfg,
   targets = targets,
   per_target_cfg = per_target_cfg,
-  severities = c("TS", "HUR64plus")
+  severities = c("TC", "HUR")
 )
 
 # =============================================================================

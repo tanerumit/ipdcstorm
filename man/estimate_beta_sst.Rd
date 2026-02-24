@@ -41,12 +41,12 @@ A list with:
 \item{glm_fit}{The fitted GLM object.}
 }
 \description{
-Fits a Poisson (or negative binomial) GLM of annual TC counts on MDR SST
+Fits a Poisson (or negative binomial) GLM of annual TS counts on MDR SST
 anomaly to estimate I2_SST in:
 
 \verb{E[N_t] = exp(I? + I2_SST A. I"SST_t)}
 
-The coefficient I2_SST represents the log-linear sensitivity of annual TC
+The coefficient I2_SST represents the log-linear sensitivity of annual TS
 activity to SST anomalies. Typical values from the literature are 0.4a?"0.8
 per A?C for the North Atlantic (Villarini et al. 2011; Vecchi et al. 2021).
 

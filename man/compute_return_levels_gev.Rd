@@ -15,7 +15,7 @@ compute_return_levels_gev(
 
 \item{return_periods}{Numeric vector of return periods (years).}
 
-\item{xi_bounds}{Bounds on GEV shape parameter (default: c(-0.3, 0.4) for TCs).}
+\item{xi_bounds}{Bounds on GEV shape parameter (default: c(-0.3, 0.4) for TSs).}
 }
 \value{
 A list with:

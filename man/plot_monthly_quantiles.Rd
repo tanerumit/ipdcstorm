@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_viz.R
 \name{plot_monthly_quantiles}
 \alias{plot_monthly_quantiles}
-\title{Plot monthly wind quantile ribbon}
+\title{Plot monthly wind quantile summary}
 \usage{
 plot_monthly_quantiles(
   daily,
@@ -13,16 +13,36 @@ plot_monthly_quantiles(
 )
 }
 \arguments{
-\item{daily}{Daily data frame}
+\item{daily}{A data frame or tibble with columns \code{date} (\code{Date}) and
+\code{wind_kt} (numeric, knots; \code{NA} allowed and ignored in quantiles).}
 
-\item{probs}{Quantile probabilities (lower, median, upper)}
+\item{probs}{Numeric vector of length 3 with probabilities in \verb{[0, 1]}, used
+in
+order \code{probs[1]}, \code{probs[2]}, \code{probs[3]}.}
 
-\item{log_scale}{Use log y-axis}
+\item{log_scale}{Logical scalar; if \code{TRUE}, use a log10 y-axis.}
 
-\item{thr_tc}{Tropical cyclone threshold (kt)}
+\item{thr_tc}{Numeric scalar; tropical-cyclone threshold in knots.}
 
-\item{thr_hur}{Hurricane threshold (kt)}
+\item{thr_hur}{Numeric scalar; hurricane threshold in knots.}
+}
+\value{
+A \code{ggplot} object.
 }
 \description{
-Plot monthly wind quantile ribbon
+Computes monthly wind quantiles and plots a median-to-upper
+ribbon with upper and extreme quantile lines.
+}
+\details{
+\code{probs} is indexed as lower/median display (\code{probs[1]}), ribbon
+upper bound (\code{probs[2]}), and extreme line (\code{probs[3]}). If \code{log_scale} is
+\code{TRUE}, quantile values are floored at 0.5 before \code{scale_y_log10()} to
+avoid non-positive values.
+}
+\examples{
+d <- data.frame(
+  date = as.Date("2001-01-01") + 0:59,
+  wind_kt = pmax(1, 20 + rnorm(60, sd = 5))
+)
+plot_monthly_quantiles(d)
 }

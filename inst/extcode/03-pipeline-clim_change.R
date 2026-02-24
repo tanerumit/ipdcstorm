@@ -188,8 +188,8 @@ activity_summary <- sim_compare |>
   summarise(
     mean_total = mean(n_total),
     mean_TS = mean(n_TS),
-    mean_HUR = mean(n_HUR64plus),
-    mean_p_hur = mean(n_HUR64plus / pmax(1, n_total)),
+    mean_HUR = mean(n_HUR),
+    mean_p_hur = mean(n_HUR / pmax(1, n_total)),
     mean_A = mean(A),
     .groups = "drop"
   ) |>
@@ -203,7 +203,7 @@ print(knitr::kable(activity_summary |> mutate(across(where(is.numeric), ~round(.
 split_summary <- sim_compare |>
   group_by(scenario, island) |>
   summarise(
-    p_hur_sim = mean(n_HUR64plus / pmax(1, n_total)),
+    p_hur_sim = mean(n_HUR / pmax(1, n_total)),
     mean_p_hur_param = mean(p_hur),
     .groups = "drop"
   ) |>
@@ -218,7 +218,7 @@ change_table <- sim_compare |>
   group_by(scenario, island) |>
   summarise(
     mean_total = mean(n_total),
-    mean_HUR = mean(n_HUR64plus),
+    mean_HUR = mean(n_HUR),
     .groups = "drop"
   ) |>
   pivot_wider(names_from = scenario,

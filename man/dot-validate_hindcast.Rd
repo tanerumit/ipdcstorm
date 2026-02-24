@@ -10,7 +10,7 @@
   holdout_years = 10,
   n_sim = 5000,
   return_periods = c(5, 10, 25, 50),
-  severities = c("TS", "HUR64plus"),
+  severities = c("TS", "HUR"),
   seed = 42,
   sst_df = NULL,
   beta_sst = 0,

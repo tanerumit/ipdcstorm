@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_viz.R
 \name{plot_wind_distribution}
 \alias{plot_wind_distribution}
-\title{Plot wind speed distribution}
+\title{Plot distribution of daily wind speed}
 \usage{
 plot_wind_distribution(
   daily,
@@ -13,16 +13,30 @@ plot_wind_distribution(
 )
 }
 \arguments{
-\item{daily}{Daily data frame}
+\item{daily}{A data frame or tibble with column \code{wind_kt} (numeric, knots;
+\code{NA} values are ignored by ggplot stat layers).}
 
-\item{type}{"histogram" or "density"}
+\item{type}{Character scalar; one of \code{"histogram"} or \code{"density"}.}
 
-\item{log_scale}{Use log x-axis}
+\item{log_scale}{Logical scalar; if \code{TRUE}, use a log10 x-axis.}
 
-\item{thr_tc}{Tropical cyclone threshold (kt)}
+\item{thr_tc}{Numeric scalar; tropical-cyclone threshold in knots.}
 
-\item{thr_hur}{Hurricane threshold (kt)}
+\item{thr_hur}{Numeric scalar; hurricane threshold in knots.}
+}
+\value{
+A \code{ggplot} object.
 }
 \description{
-Plot wind speed distribution
+Plots daily wind speed as either a histogram or kernel density
+estimate with TS/HUR threshold reference lines.
+}
+\details{
+\code{type} is matched with \code{match.arg()}. If \code{log_scale = TRUE},
+\code{scale_x_log10()} is applied; non-positive \code{wind_kt} values are therefore
+not displayable on the transformed axis.
+}
+\examples{
+d <- data.frame(wind_kt = c(5, 10, 15, 20, 35, 40, 65, 70))
+plot_wind_distribution(d, type = "histogram")
 }

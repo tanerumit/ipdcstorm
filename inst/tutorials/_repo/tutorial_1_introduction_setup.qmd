@@ -247,7 +247,7 @@ The result is a `V_site_kt` value — estimated sustained wind in knots at the s
 Track points are grouped by storm ID (`SID`) into event-level summaries via `make_storm_events()`. Each event record captures the **peak site wind** (`V_site_max_kt`), the storm's overall maximum intensity, minimum central pressure, mean RMW, start/end times, and the number of track points within the gate. Events are classified by severity:
 
   - **Tropical storm** (`TS`): peak site wind 34–63 kt
-  - **Hurricane** (`HUR64plus`): peak site wind ≥64 kt
+  - **Hurricane** (`HUR`): peak site wind ≥64 kt
 
 Events from before `min_year` (1970) and those with unknown site winds are excluded.
 
@@ -284,7 +284,7 @@ The Poisson rate estimates derived from the historical record:
 | Column | Description |
 |--------|-------------|
 | `island` | Target site name |
-| `severity` | `TS` (tropical storm, 34–63 kt) or `HUR64plus` (hurricane, ≥64 kt) |
+| `severity` | `TS` (tropical storm, 34–63 kt) or `HUR` (hurricane, ≥64 kt) |
 | `lambda` | Mean annual rate — average number of events per year of this severity |
 | `n_years` | Number of historical years in the estimate (typically ~54 for 1970–2023) |
 | `p_at_least_one` | Probability of ≥1 event in any given year: $1 - e^{-\lambda}$ |
@@ -325,7 +325,7 @@ The main simulation output — 1,000 synthetic hurricane seasons:
 | `sim_year` | Simulated year index (1 to `n_years_sim`) |
 | `n_total` | Total storms with ≥34 kt at the site this year |
 | `n_TS` | Tropical storm–only events (34–63 kt) |
-| `n_HUR64plus` | Hurricane-strength events (≥64 kt) |
+| `n_HUR` | Hurricane-strength events (≥64 kt) |
 | `A` | Activity multiplier from $\text{Gamma}(k, k)$ — values >1 are hyperactive seasons, <1 are quiet |
 | `p_hur` | Probability each storm is hurricane-strength (constant in baseline mode) |
 
@@ -349,7 +349,7 @@ One row per historical storm that affected the site:
 | `wind_max_kt` | Storm's **lifetime peak intensity** — the maximum sustained wind regardless of location |
 | `Pc_min_hPa` | Minimum central pressure |
 | `RMW_mean_km` | Mean radius of maximum wind |
-| `severity` | Classification based on site-level wind: `TS` or `HUR64plus` |
+| `severity` | Classification based on site-level wind: `TS` or `HUR` |
 
 The distinction between `V_site_max_kt` and `wind_max_kt` is important: a Category 5 storm (155 kt peak) passing 400 km from your site might only produce Category 1 winds (70 kt) there. The model captures this attenuation through the Holland wind profile.
 

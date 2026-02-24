@@ -2593,7 +2593,7 @@ What these parameters mean
 <pre><code>#&gt; # A tibble: 2 × 6
 #&gt;   location storm_class lambda n_years prob_annual prob_none
 #&gt;   &lt;chr&gt;    &lt;chr&gt;        &lt;dbl&gt;   &lt;int&gt;       &lt;dbl&gt;     &lt;dbl&gt;
-#&gt; 1 Saba     HUR64plus    0.196      56       0.178     0.822
+#&gt; 1 Saba     HUR    0.196      56       0.178     0.822
 #&gt; 2 Saba     TS           0.607      56       0.455     0.545</code></pre>
 </div>
 </div>
@@ -2616,7 +2616,7 @@ What these parameters mean
 </tr>
 <tr class="even">
 <td><code>storm_class</code></td>
-<td><code>TS</code> (tropical storm, 34–63 kt) or <code>HUR64plus</code> (hurricane, ≥64 kt)</td>
+<td><code>TS</code> (tropical storm, 34–63 kt) or <code>HUR</code> (hurricane, ≥64 kt)</td>
 </tr>
 <tr class="odd">
 <td><code>lambda</code></td>
@@ -2815,7 +2815,7 @@ What these parameters mean
 </tr>
 <tr class="even">
 <td><code>storm_class</code></td>
-<td>Classification based on site-level wind: <code>TS</code> or <code>HUR64plus</code></td>
+<td>Classification based on site-level wind: <code>TS</code> or <code>HUR</code></td>
 </tr>
 <tr class="odd">
 <td><code>location</code></td>
@@ -3657,7 +3657,7 @@ What these parameters mean
 <span id="cb21-240"><a href="#cb21-240" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Column <span class="pp">|</span> Description <span class="pp">|</span></span>
 <span id="cb21-241"><a href="#cb21-241" aria-hidden="true" tabindex="-1"></a><span class="pp">|----------------------------|--------------------------------------------|</span></span>
 <span id="cb21-242"><a href="#cb21-242" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`location`</span> <span class="pp">|</span> Target site name <span class="pp">|</span></span>
-<span id="cb21-243"><a href="#cb21-243" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`storm_class`</span> <span class="pp">|</span> <span class="in">`TS`</span> (tropical storm, 34–63 kt) or <span class="in">`HUR64plus`</span> (hurricane, ≥64 kt) <span class="pp">|</span></span>
+<span id="cb21-243"><a href="#cb21-243" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`storm_class`</span> <span class="pp">|</span> <span class="in">`TS`</span> (tropical storm, 34–63 kt) or <span class="in">`HUR`</span> (hurricane, ≥64 kt) <span class="pp">|</span></span>
 <span id="cb21-244"><a href="#cb21-244" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`lambda`</span> <span class="pp">|</span> Mean annual rate — average number of events per year of this class <span class="pp">|</span></span>
 <span id="cb21-245"><a href="#cb21-245" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`n_years`</span> <span class="pp">|</span> Number of historical years in the estimate (typically \~54 for 1970–2023) <span class="pp">|</span></span>
 <span id="cb21-246"><a href="#cb21-246" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`prob_annual`</span> <span class="pp">|</span> Probability of ≥1 event in any given year: $1 - e^{-\lambda}$ <span class="pp">|</span></span>
@@ -3726,7 +3726,7 @@ What these parameters mean
 <span id="cb21-315"><a href="#cb21-315" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`min_pressure_hpa`</span> <span class="pp">|</span> Minimum central pressure <span class="pp">|</span></span>
 <span id="cb21-316"><a href="#cb21-316" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`pressure_deficit_hpa`</span> <span class="pp">|</span> Maximum pressure deficit (environment minus centre) <span class="pp">|</span></span>
 <span id="cb21-317"><a href="#cb21-317" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`rmw_mean_km`</span> <span class="pp">|</span> Mean radius of maximum wind <span class="pp">|</span></span>
-<span id="cb21-318"><a href="#cb21-318" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`storm_class`</span> <span class="pp">|</span> Classification based on site-level wind: <span class="in">`TS`</span> or <span class="in">`HUR64plus`</span> <span class="pp">|</span></span>
+<span id="cb21-318"><a href="#cb21-318" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`storm_class`</span> <span class="pp">|</span> Classification based on site-level wind: <span class="in">`TS`</span> or <span class="in">`HUR`</span> <span class="pp">|</span></span>
 <span id="cb21-319"><a href="#cb21-319" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`location`</span> <span class="pp">|</span> Target site name <span class="pp">|</span></span>
 <span id="cb21-320"><a href="#cb21-320" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb21-321"><a href="#cb21-321" aria-hidden="true" tabindex="-1"></a>The distinction between <span class="in">`peak_wind_kt`</span> and <span class="in">`storm_intensity_kt`</span> is important: a Category 5 storm (155 kt peak) passing 400 km from your site might only produce Category 1 winds (70 kt) there.</span>

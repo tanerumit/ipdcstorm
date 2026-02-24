@@ -110,7 +110,7 @@ print.hazard_cfg <- function(x, ...) {
 #' @param cfg Hazard configuration from `make_hazard_cfg()`.
 #' @param targets Data frame/tibble with columns: name, lat, lon.
 #' @param per_target_cfg Named list of per-target options (currently unused).
-#' @param severities Character vector of storm classes to model (default TS and HUR64plus).
+#' @param severities Character vector of storm classes to model (default TS and HUR).
 #' @param sst_cfg Optional SST configuration from `make_sst_cfg()`. When provided
 #'   and enabled, the annual count simulation uses SST-conditioned rate scaling.
 #'
@@ -120,7 +120,7 @@ print.hazard_cfg <- function(x, ...) {
 #'
 #' @export
 run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
-                             severities = c("TS", "HUR64plus"),
+                             severities = c("TS", "HUR"),
                              sst_cfg = NULL) {
   if (!inherits(cfg, "hazard_cfg")) {
     stop("cfg must be created by make_hazard_cfg().", call. = FALSE)

@@ -76,7 +76,7 @@ out <- run_hazard_model(
   cfg = cfg,
   targets = targets,
   per_target_cfg = per_target_cfg,
-  severities = c("TS", "HUR64plus")
+  severities = c("TS", "HUR")
 )
 
 # -----------------------------------------------------------------------------
@@ -102,7 +102,7 @@ ev <- out$events_all  # or out$events_by_island[["Saba"]]
 
 # 1) What year window is actually present for the severities you count?
 ev %>%
-  filter(severity %in% c("TS", "HUR64plus")) %>%
+  filter(severity %in% c("TS", "HUR")) %>%
   summarise(
     min_year = min(year, na.rm = TRUE),
     max_year = max(year, na.rm = TRUE),

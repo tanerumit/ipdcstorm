@@ -524,7 +524,7 @@ classify_severity <- function(V_site_max_kt, thr_ts = 34, thr_hur = 64) {
     is.na(V_site_max_kt) ~ "unknown",
     V_site_max_kt < thr_ts ~ "none",
     V_site_max_kt < thr_hur ~ "TS",
-    TRUE ~ "HUR64plus"
+    TRUE ~ "HUR"
   )
 }
 
@@ -598,7 +598,7 @@ make_storm_events <- function(df, thresholds) {
 # 5) Rate model helpers
 # =============================================================================
 
-compute_annual_counts <- function(events, severities = c("TS", "HUR64plus")) {
+compute_annual_counts <- function(events, severities = c("TS", "HUR")) {
   events %>%
     filter(severity %in% severities) %>%
     distinct(year, severity, SID) %>%
@@ -636,7 +636,7 @@ estimate_k_hat <- function(annual_counts) {
 
 simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim = 1000) {
   lam_TS  <- lambda_table$lambda[lambda_table$severity == "TS"]
-  lam_HUR <- lambda_table$lambda[lambda_table$severity == "HUR64plus"]
+  lam_HUR <- lambda_table$lambda[lambda_table$severity == "HUR"]
   
   A <- rgamma(n_years_sim, shape = k_hat, rate = k_hat)
   
@@ -644,7 +644,7 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim = 1000) {
     sim_year = 1:n_years_sim,
     A = A,
     n_TS = rpois(n_years_sim, lam_TS * A),
-    n_HUR64plus = rpois(n_years_sim, lam_HUR * A)
+    n_HUR = rpois(n_years_sim, lam_HUR * A)
   )
 }
 
@@ -652,7 +652,7 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim = 1000) {
 # 6) Orchestrator: run hazard model for all islands + return tidy outputs
 # =============================================================================
 
-run_hazard_model <- function(cfg, targets, per_target_cfg = list(), severities = c("TS", "HUR64plus")) {
+run_hazard_model <- function(cfg, targets, per_target_cfg = list(), severities = c("TS", "HUR")) {
   
   # read once
   ib_sub <- read_ibtracs_clean(cfg$ibtracs_path, cfg)

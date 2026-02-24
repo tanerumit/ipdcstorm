@@ -2652,7 +2652,7 @@ Runtime
 <p><strong>Step 4 — Aggregate into storm events.</strong> Track points are grouped by storm ID (<code>SID</code>) into event-level summaries via <code>make_storm_events()</code>. Each event record captures the <strong>peak site wind</strong> (<code>V_site_max_kt</code>), the storm’s overall maximum intensity, minimum central pressure, mean RMW, start/end times, and the number of track points within the gate. Events are classified by severity:</p>
 <ul>
 <li><strong>Tropical storm</strong> (<code>TS</code>): peak site wind 34–63 kt</li>
-<li><strong>Hurricane</strong> (<code>HUR64plus</code>): peak site wind ≥64 kt</li>
+<li><strong>Hurricane</strong> (<code>HUR</code>): peak site wind ≥64 kt</li>
 </ul>
 <p>Events from before <code>min_year</code> (1970) and those with unknown site winds are excluded.</p>
 <p><strong>Step 5 — Estimate annual rates.</strong> Historical events are counted by year and severity (<code>compute_annual_counts()</code>, <code>compute_lambda_table()</code>). The result is a Poisson rate <span class="math inline">\(\lambda\)</span> for each severity class — for example, <span class="math inline">\(\lambda_{\text{TS}} = 1.2\)</span> means on average 1.2 tropical storm events per year produce ≥34 kt winds at this site.</p>
@@ -2695,7 +2695,7 @@ Runtime
 </tr>
 <tr class="even">
 <td><code>severity</code></td>
-<td><code>TS</code> (tropical storm, 34–63 kt) or <code>HUR64plus</code> (hurricane, ≥64 kt)</td>
+<td><code>TS</code> (tropical storm, 34–63 kt) or <code>HUR</code> (hurricane, ≥64 kt)</td>
 </tr>
 <tr class="odd">
 <td><code>lambda</code></td>
@@ -2783,7 +2783,7 @@ Runtime
 <td>Tropical storm–only events (34–63 kt)</td>
 </tr>
 <tr class="odd">
-<td><code>n_HUR64plus</code></td>
+<td><code>n_HUR</code></td>
 <td>Hurricane-strength events (≥64 kt)</td>
 </tr>
 <tr class="even">
@@ -2841,7 +2841,7 @@ Runtime
 </tr>
 <tr class="odd">
 <td><code>severity</code></td>
-<td>Classification based on site-level wind: <code>TS</code> or <code>HUR64plus</code></td>
+<td>Classification based on site-level wind: <code>TS</code> or <code>HUR</code></td>
 </tr>
 </tbody>
 </table>
@@ -3765,7 +3765,7 @@ Tutorial series
 <span id="cb15-261"><a href="#cb15-261" aria-hidden="true" tabindex="-1"></a>Track points are grouped by storm ID (<span class="in">`SID`</span>) into event-level summaries via <span class="in">`make_storm_events()`</span>. Each event record captures the **peak site wind** (<span class="in">`V_site_max_kt`</span>), the storm&#39;s overall maximum intensity, minimum central pressure, mean RMW, start/end times, and the number of track points within the gate. Events are classified by severity:</span>
 <span id="cb15-262"><a href="#cb15-262" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb15-263"><a href="#cb15-263" aria-hidden="true" tabindex="-1"></a><span class="ss">  - </span>**Tropical storm** (<span class="in">`TS`</span>): peak site wind 34–63 kt</span>
-<span id="cb15-264"><a href="#cb15-264" aria-hidden="true" tabindex="-1"></a><span class="ss">  - </span>**Hurricane** (<span class="in">`HUR64plus`</span>): peak site wind ≥64 kt</span>
+<span id="cb15-264"><a href="#cb15-264" aria-hidden="true" tabindex="-1"></a><span class="ss">  - </span>**Hurricane** (<span class="in">`HUR`</span>): peak site wind ≥64 kt</span>
 <span id="cb15-265"><a href="#cb15-265" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb15-266"><a href="#cb15-266" aria-hidden="true" tabindex="-1"></a>Events from before <span class="in">`min_year`</span> (1970) and those with unknown site winds are excluded.</span>
 <span id="cb15-267"><a href="#cb15-267" aria-hidden="true" tabindex="-1"></a></span>
@@ -3802,7 +3802,7 @@ Tutorial series
 <span id="cb15-300"><a href="#cb15-300" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Column <span class="pp">|</span> Description <span class="pp">|</span></span>
 <span id="cb15-301"><a href="#cb15-301" aria-hidden="true" tabindex="-1"></a><span class="pp">|--------|-------------|</span></span>
 <span id="cb15-302"><a href="#cb15-302" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`island`</span> <span class="pp">|</span> Target site name <span class="pp">|</span></span>
-<span id="cb15-303"><a href="#cb15-303" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`severity`</span> <span class="pp">|</span> <span class="in">`TS`</span> (tropical storm, 34–63 kt) or <span class="in">`HUR64plus`</span> (hurricane, ≥64 kt) <span class="pp">|</span></span>
+<span id="cb15-303"><a href="#cb15-303" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`severity`</span> <span class="pp">|</span> <span class="in">`TS`</span> (tropical storm, 34–63 kt) or <span class="in">`HUR`</span> (hurricane, ≥64 kt) <span class="pp">|</span></span>
 <span id="cb15-304"><a href="#cb15-304" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`lambda`</span> <span class="pp">|</span> Mean annual rate — average number of events per year of this severity <span class="pp">|</span></span>
 <span id="cb15-305"><a href="#cb15-305" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`n_years`</span> <span class="pp">|</span> Number of historical years in the estimate (typically ~54 for 1970–2023) <span class="pp">|</span></span>
 <span id="cb15-306"><a href="#cb15-306" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`p_at_least_one`</span> <span class="pp">|</span> Probability of ≥1 event in any given year: $1 - e^{-\lambda}$ <span class="pp">|</span></span>
@@ -3843,7 +3843,7 @@ Tutorial series
 <span id="cb15-345"><a href="#cb15-345" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`sim_year`</span> <span class="pp">|</span> Simulated year index (1 to <span class="in">`n_years_sim`</span>) <span class="pp">|</span></span>
 <span id="cb15-346"><a href="#cb15-346" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`n_total`</span> <span class="pp">|</span> Total storms with ≥34 kt at the site this year <span class="pp">|</span></span>
 <span id="cb15-347"><a href="#cb15-347" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`n_TS`</span> <span class="pp">|</span> Tropical storm–only events (34–63 kt) <span class="pp">|</span></span>
-<span id="cb15-348"><a href="#cb15-348" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`n_HUR64plus`</span> <span class="pp">|</span> Hurricane-strength events (≥64 kt) <span class="pp">|</span></span>
+<span id="cb15-348"><a href="#cb15-348" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`n_HUR`</span> <span class="pp">|</span> Hurricane-strength events (≥64 kt) <span class="pp">|</span></span>
 <span id="cb15-349"><a href="#cb15-349" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`A`</span> <span class="pp">|</span> Activity multiplier from $\text{Gamma}(k, k)$ — values &gt;1 are hyperactive seasons, &lt;1 are quiet <span class="pp">|</span></span>
 <span id="cb15-350"><a href="#cb15-350" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`p_hur`</span> <span class="pp">|</span> Probability each storm is hurricane-strength (constant in baseline mode) <span class="pp">|</span></span>
 <span id="cb15-351"><a href="#cb15-351" aria-hidden="true" tabindex="-1"></a></span>
@@ -3867,7 +3867,7 @@ Tutorial series
 <span id="cb15-371"><a href="#cb15-371" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`wind_max_kt`</span> <span class="pp">|</span> Storm&#39;s **lifetime peak intensity** — the maximum sustained wind regardless of location <span class="pp">|</span></span>
 <span id="cb15-372"><a href="#cb15-372" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`Pc_min_hPa`</span> <span class="pp">|</span> Minimum central pressure <span class="pp">|</span></span>
 <span id="cb15-373"><a href="#cb15-373" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`RMW_mean_km`</span> <span class="pp">|</span> Mean radius of maximum wind <span class="pp">|</span></span>
-<span id="cb15-374"><a href="#cb15-374" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`severity`</span> <span class="pp">|</span> Classification based on site-level wind: <span class="in">`TS`</span> or <span class="in">`HUR64plus`</span> <span class="pp">|</span></span>
+<span id="cb15-374"><a href="#cb15-374" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`severity`</span> <span class="pp">|</span> Classification based on site-level wind: <span class="in">`TS`</span> or <span class="in">`HUR`</span> <span class="pp">|</span></span>
 <span id="cb15-375"><a href="#cb15-375" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb15-376"><a href="#cb15-376" aria-hidden="true" tabindex="-1"></a>The distinction between <span class="in">`V_site_max_kt`</span> and <span class="in">`wind_max_kt`</span> is important: a Category 5 storm (155 kt peak) passing 400 km from your site might only produce Category 1 winds (70 kt) there. The model captures this attenuation through the Holland wind profile.</span>
 <span id="cb15-377"><a href="#cb15-377" aria-hidden="true" tabindex="-1"></a></span>

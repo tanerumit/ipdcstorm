@@ -8,7 +8,7 @@ compute_p_hur_base(lambda_table)
 }
 \arguments{
 \item{lambda_table}{Tibble from \code{compute_lambda_table()} with severities
-"TS" and "HUR64plus".}
+"TS" and "HUR".}
 }
 \value{
 Numeric scalar: baseline hurricane fraction p_HUR_base.

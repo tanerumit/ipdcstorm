@@ -2,13 +2,21 @@
 % Please edit documentation in R/hazard_viz.R
 \name{prep_events}
 \alias{prep_events}
-\title{Extract event-level summary from daily data}
+\title{Summarize event-level features from daily rows}
 \usage{
 prep_events(daily)
 }
 \arguments{
-\item{daily}{Daily data with event_id column}
+\item{daily}{A data frame or tibble containing daily rows with columns
+\code{location}, \code{sim_year}, \code{event_id}, \code{event_class}, \code{date}, and \code{wind_kt}.
+Rows with \code{NA} in \code{event_id} are excluded.}
+}
+\value{
+A tibble with one row per unique (\code{location}, \code{sim_year}, \code{event_id})
+and columns \code{event_class}, \code{start_date}, \code{end_date}, \code{dur_days},
+\code{max_wind_kt}, \code{start_doy}, and \code{start_month}.
 }
 \description{
-Extract event-level summary from daily data
+Summarize event-level features from daily rows
 }
+\keyword{internal}

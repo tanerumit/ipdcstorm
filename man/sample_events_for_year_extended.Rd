@@ -29,7 +29,7 @@ atmospheric attributes (Pc, dP, RMW) and event metadata needed by
 For each sampled event, extracts from the event library row:
 \itemize{
 \item \code{event_id}: unique identifier (SID or generated).
-\item \code{event_class}: "TC" or "HUR64plus" (for the daily dominant-event tracker).
+\item \code{event_class}: "TS" or "HUR" (for the daily dominant-event tracker).
 \item \code{Pc_min_hPa}: minimum central pressure.
 \item \code{dP_max_hPa}: maximum pressure deficit.
 \item \code{RMW_mean_km}: mean radius of maximum wind.

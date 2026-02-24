@@ -22,7 +22,7 @@
 #'   ibtracs_path, gate_km, thr_ts, thr_hur, min_year, n_years_sim.
 #' @param targets Data frame/tibble with columns: name, lat, lon.
 #' @param per_target_cfg Named list of per-target threshold overrides (optional).
-#' @param severities Character vector of event severities to model (default TS and HUR64plus).
+#' @param severities Character vector of event severities to model (default TS and HUR).
 #'
 #' @return A list with elements:
 #'   trackpoints (list by island),
@@ -30,7 +30,7 @@
 #'   events_all, annual_counts_all, lambda_all, sim_all, kinfo_all.
 #'
 #' @export
-run_hazard_model <- function(cfg, targets, per_target_cfg = list(), severities = c("TS", "HUR64plus")) {
+run_hazard_model <- function(cfg, targets, per_target_cfg = list(), severities = c("TC", "HUR")) {
   if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
   

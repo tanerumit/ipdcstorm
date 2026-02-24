@@ -2,15 +2,37 @@
 % Please edit documentation in R/hazard_viz.R
 \name{plot_monthly_events}
 \alias{plot_monthly_events}
-\title{Plot monthly summary of event starts}
+\title{Plot monthly counts of event starts}
 \usage{
 plot_monthly_events(daily, normalize = FALSE)
 }
 \arguments{
-\item{daily}{Daily data frame}
+\item{daily}{A data frame or tibble with columns required by \code{prep_events()}
+(\code{location}, \code{sim_year}, \code{event_id}, \code{event_class}, \code{date}, \code{wind_kt}).
+Rows with \code{NA} \code{event_id} are excluded during event extraction.}
 
-\item{normalize}{Divide by number of years to show annual rate}
+\item{normalize}{Logical scalar; if \code{TRUE}, plot events per year.}
+}
+\value{
+A \code{ggplot} object.
 }
 \description{
-Plot monthly summary of event starts
+Summarizes event starts by calendar month and plots grouped bars
+by event class, optionally normalized to an annual rate.
+}
+\details{
+Event starts are computed from \code{prep_events()}. Missing month/class
+combinations are filled with zero. When \code{normalize = TRUE}, counts are
+divided by \code{n_distinct(daily$sim_year)}.
+}
+\examples{
+d <- data.frame(
+  date = as.Date("2001-08-01") + 0:9,
+  wind_kt = c(10, 20, 40, 55, 30, 15, 5, 10, 12, 8),
+  event_id = c(NA, NA, 1, 1, 1, NA, NA, 2, 2, NA),
+  event_class = c(NA, NA, "TS", "TS", "TS", NA, NA, "HUR", "HUR", NA),
+  location = "A",
+  sim_year = 2001
+)
+plot_monthly_events(d)
 }

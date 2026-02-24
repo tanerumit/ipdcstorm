@@ -2513,8 +2513,8 @@ Runtime
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(island) <span class="sc">|&gt;</span></span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
 <span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_storms =</span> <span class="fu">mean</span>(n_total),</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_hur    =</span> <span class="fu">mean</span>(n_HUR64plus),</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_hur       =</span> <span class="fu">mean</span>(n_HUR64plus <span class="sc">/</span> <span class="fu">pmax</span>(<span class="dv">1</span>, n_total)),</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_hur    =</span> <span class="fu">mean</span>(n_HUR),</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_hur       =</span> <span class="fu">mean</span>(n_HUR <span class="sc">/</span> <span class="fu">pmax</span>(<span class="dv">1</span>, n_total)),</span>
 <span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">&quot;drop&quot;</span></span>
 <span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
@@ -3107,8 +3107,8 @@ What changes in the output
 <span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(scenario) <span class="sc">|&gt;</span></span>
 <span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
 <span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_total =</span> <span class="fu">mean</span>(n_total),</span>
-<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_hur   =</span> <span class="fu">mean</span>(n_HUR64plus),</span>
-<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_hur      =</span> <span class="fu">mean</span>(n_HUR64plus <span class="sc">/</span> <span class="fu">pmax</span>(<span class="dv">1</span>, n_total)),</span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_hur   =</span> <span class="fu">mean</span>(n_HUR),</span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_hur      =</span> <span class="fu">mean</span>(n_HUR <span class="sc">/</span> <span class="fu">pmax</span>(<span class="dv">1</span>, n_total)),</span>
 <span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">&quot;drop&quot;</span></span>
 <span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
@@ -3922,8 +3922,8 @@ Interpreting scenario differences
 <span id="cb21-166"><a href="#cb21-166" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(island) <span class="sc">|&gt;</span></span>
 <span id="cb21-167"><a href="#cb21-167" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
 <span id="cb21-168"><a href="#cb21-168" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_storms =</span> <span class="fu">mean</span>(n_total),</span>
-<span id="cb21-169"><a href="#cb21-169" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_hur    =</span> <span class="fu">mean</span>(n_HUR64plus),</span>
-<span id="cb21-170"><a href="#cb21-170" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_hur       =</span> <span class="fu">mean</span>(n_HUR64plus <span class="sc">/</span> <span class="fu">pmax</span>(<span class="dv">1</span>, n_total)),</span>
+<span id="cb21-169"><a href="#cb21-169" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_hur    =</span> <span class="fu">mean</span>(n_HUR),</span>
+<span id="cb21-170"><a href="#cb21-170" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_hur       =</span> <span class="fu">mean</span>(n_HUR <span class="sc">/</span> <span class="fu">pmax</span>(<span class="dv">1</span>, n_total)),</span>
 <span id="cb21-171"><a href="#cb21-171" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">&quot;drop&quot;</span></span>
 <span id="cb21-172"><a href="#cb21-172" aria-hidden="true" tabindex="-1"></a>  )</span>
 <span id="cb21-173"><a href="#cb21-173" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
@@ -4313,8 +4313,8 @@ Interpreting scenario differences
 <span id="cb21-581"><a href="#cb21-581" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(scenario) <span class="sc">|&gt;</span></span>
 <span id="cb21-582"><a href="#cb21-582" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(</span>
 <span id="cb21-583"><a href="#cb21-583" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_total =</span> <span class="fu">mean</span>(n_total),</span>
-<span id="cb21-584"><a href="#cb21-584" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_hur   =</span> <span class="fu">mean</span>(n_HUR64plus),</span>
-<span id="cb21-585"><a href="#cb21-585" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_hur      =</span> <span class="fu">mean</span>(n_HUR64plus <span class="sc">/</span> <span class="fu">pmax</span>(<span class="dv">1</span>, n_total)),</span>
+<span id="cb21-584"><a href="#cb21-584" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_hur   =</span> <span class="fu">mean</span>(n_HUR),</span>
+<span id="cb21-585"><a href="#cb21-585" aria-hidden="true" tabindex="-1"></a>    <span class="at">p_hur      =</span> <span class="fu">mean</span>(n_HUR <span class="sc">/</span> <span class="fu">pmax</span>(<span class="dv">1</span>, n_total)),</span>
 <span id="cb21-586"><a href="#cb21-586" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">&quot;drop&quot;</span></span>
 <span id="cb21-587"><a href="#cb21-587" aria-hidden="true" tabindex="-1"></a>  )</span>
 <span id="cb21-588"><a href="#cb21-588" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>

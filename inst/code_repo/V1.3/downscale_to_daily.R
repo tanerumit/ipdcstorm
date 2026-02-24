@@ -17,7 +17,7 @@
 #'   \code{events_all} and \code{trackpoints}.
 #' @param island Character string giving the target island/location name.
 #' @param severities Character vector of severity classes to include
-#'   (default: \code{c("TS", "HUR64plus")}).
+#'   (default: \code{c("TS", "HUR")}).
 #' @param thr_ts Numeric wind threshold (kt) used to identify the first
 #'   site-impact timing for seasonality estimation (default: 34 kt).
 #'
@@ -38,7 +38,7 @@
 #'
 #' @export
 build_event_library <- function(out, island,
-                                severities = c("TS", "HUR64plus"),
+                                severities = c("TS", "HUR"),
                                 thr_ts = 34) {
   stopifnot(is.list(out))
   
@@ -123,12 +123,12 @@ sample_events_for_year <- function(lib, year,
     start_date <- as.Date(sprintf("%d-01-01", year)) + (doy0 - 1)
     
     # duration choice
-    dur_days <- if (sev == "HUR64plus") row$dur_days_64 else row$dur_days_34
+    dur_days <- if (sev == "HUR") row$dur_days_64 else row$dur_days_34
     dur_days <- max(1L, as.integer(dur_days))
     
     # peak choice
     V_peak <- as.numeric(row$V_site_max_kt)
-    if (!is.finite(V_peak) || V_peak <= 0) V_peak <- if (sev == "HUR64plus") 80 else 40
+    if (!is.finite(V_peak) || V_peak <= 0) V_peak <- if (sev == "HUR") 80 else 40
     
     list(
       severity = sev,
@@ -140,7 +140,7 @@ sample_events_for_year <- function(lib, year,
   
   events <- c(
     replicate(n_ts,  sample_one("TS"),        simplify = FALSE),
-    replicate(n_hur, sample_one("HUR64plus"), simplify = FALSE)
+    replicate(n_hur, sample_one("HUR"), simplify = FALSE)
   )
   
   tibble::tibble(
@@ -314,7 +314,7 @@ generate_daily_from_hazard <- function(out, island,
       lib = lib,
       year = yr,
       n_ts = sim$n_TS[i],
-      n_hur = sim$n_HUR64plus[i]
+      n_hur = sim$n_HUR[i]
     )
     
     daily_list[[i]] <- generate_daily_year(

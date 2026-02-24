@@ -134,7 +134,7 @@ out_simple <- run_hazard_model_enhanced(
   cfg = cfg,
   targets = targets %>% filter(name == "Saba"),  # Just Saba for demo
   severity_scheme = "simple"
-  # This will use: TS, HUR64plus
+  # This will use: TS, HUR
 )
 
 cat("\nSimple scheme lambdas (Saba only):\n")

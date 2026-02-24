@@ -226,7 +226,7 @@ The Poisson rate estimates derived from the historical record:
 | Column | Description |
 |----------------------------|--------------------------------------------|
 | `location` | Target site name |
-| `storm_class` | `TS` (tropical storm, 34–63 kt) or `HUR64plus` (hurricane, ≥64 kt) |
+| `storm_class` | `TS` (tropical storm, 34–63 kt) or `HUR` (hurricane, ≥64 kt) |
 | `lambda` | Mean annual rate — average number of events per year of this class |
 | `n_years` | Number of historical years in the estimate (typically \~54 for 1970–2023) |
 | `prob_annual` | Probability of ≥1 event in any given year: $1 - e^{-\lambda}$ |
@@ -295,7 +295,7 @@ One row per historical storm that affected the site:
 | `min_pressure_hpa` | Minimum central pressure |
 | `pressure_deficit_hpa` | Maximum pressure deficit (environment minus centre) |
 | `rmw_mean_km` | Mean radius of maximum wind |
-| `storm_class` | Classification based on site-level wind: `TS` or `HUR64plus` |
+| `storm_class` | Classification based on site-level wind: `TS` or `HUR` |
 | `location` | Target site name |
 
 The distinction between `peak_wind_kt` and `storm_intensity_kt` is important: a Category 5 storm (155 kt peak) passing 400 km from your site might only produce Category 1 winds (70 kt) there.

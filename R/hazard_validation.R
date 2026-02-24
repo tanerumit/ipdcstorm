@@ -438,7 +438,7 @@ fit_gev_lmom <- function(x, xi_bounds = c(-0.5, 0.5)) {
 #'
 #' @param annual_max Numeric vector of annual maxima (including zeros).
 #' @param return_periods Numeric vector of return periods (years).
-#' @param xi_bounds Bounds on GEV shape parameter (default: c(-0.3, 0.4) for TCs).
+#' @param xi_bounds Bounds on GEV shape parameter (default: c(-0.3, 0.4) for TSs).
 #'
 #' @return A list with:
 #'   \item{return_levels}{Named numeric vector of return levels.}
@@ -485,7 +485,7 @@ compute_return_levels_gev <- function(annual_max,
     .qgev(p_cond, gev$mu, gev$sigma, gev$xi)
   }, numeric(1))
 
-  # Physical cap: TC winds can't exceed ~185 kt
+  # Physical cap: TS winds can't exceed ~185 kt
   rl <- pmin(rl, 185)
 
   names(rl) <- paste0("RL_", return_periods, "yr")
@@ -560,7 +560,7 @@ bootstrap_return_level_ci <- function(annual_max,
                                holdout_years = 10,
                                n_sim = 5000,
                                return_periods = c(5, 10, 25, 50),
-                               severities = c("TS", "HUR64plus"),
+                               severities = c("TS", "HUR"),
                                seed = 42,
                                sst_df = NULL,
                                beta_sst = 0,
@@ -626,7 +626,7 @@ bootstrap_return_level_ci <- function(annual_max,
     (\(x) x[is.finite(x)])()
 
   train_V_hur <- ev_train |>
-    dplyr::filter(.data$storm_class == "HUR64plus") |>
+    dplyr::filter(.data$storm_class == "HUR") |>
     dplyr::pull(.data$peak_wind_kt) |>
     (\(x) x[is.finite(x)])()
 
@@ -645,7 +645,7 @@ bootstrap_return_level_ci <- function(annual_max,
                   n_hur_obs, if (n_hur_obs > 0) mean(train_V_hur) else NA))
 
   # Fallback intensities if KDE can't be fit
-  fallback_V <- list(TS = 45, HUR64plus = 85)
+  fallback_V <- list(TS = 45, HUR = 85)
 
   # --- SIMULATE ANNUAL MAXIMA WITH KDE SAMPLING ---
   sst_anomaly_sim <- NULL
@@ -687,7 +687,7 @@ bootstrap_return_level_ci <- function(annual_max,
       if (n_hur_obs >= 3) {
         winds <- c(winds, .sample_intensity_kde(kde_hur, n_hur))
       } else {
-        winds <- c(winds, rep(fallback_V$HUR64plus, n_hur) +
+        winds <- c(winds, rep(fallback_V$HUR, n_hur) +
                      stats::rnorm(n_hur, 0, 10))
       }
     }
@@ -764,7 +764,7 @@ bootstrap_return_level_ci <- function(annual_max,
     sim_rl_ci = sim_rl_ci,
     comparison = comparison,
     gev_fit = sim_gev,
-    kde_fits = list(TS = kde_ts, HUR64plus = kde_hur),
+    kde_fits = list(TS = kde_ts, HUR = kde_hur),
     diagnostics = list(
       n_ts_pool = n_ts_obs,
       n_hur_pool = n_hur_obs,
@@ -838,7 +838,7 @@ bootstrap_return_level_ci <- function(annual_max,
 #' Reference HURDAT2/literature annual rates for Leeward Islands region
 #'
 #' @description
-#' Returns a tibble of published annual TC passage rates from literature,
+#' Returns a tibble of published annual TS passage rates from literature,
 #' for comparison against model-fitted lambdas.
 #'
 #' @return Tibble with columns: region, storm_class, lambda_ref, source, gate_approx_nm, period.
@@ -847,13 +847,13 @@ get_reference_rates <- function() {
   tibble::tribble(
     ~region,            ~storm_class,    ~lambda_ref, ~source,                           ~gate_approx_nm, ~period,
     "Leeward_Islands",  "TS34plus",   2.0,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
-    "Leeward_Islands",  "HUR64plus",  0.55,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
+    "Leeward_Islands",  "HUR",  0.55,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
     "St_Martin",        "TS34plus",   1.2,         "NOAA TC Climo (65nm, 1970-2023)", 65,              "1970-2023",
-    "St_Martin",        "HUR64plus",  0.40,        "NOAA TC Climo (65nm, 1970-2023)", 65,              "1970-2023",
+    "St_Martin",        "HUR",  0.40,        "NOAA TC Climo (65nm, 1970-2023)", 65,              "1970-2023",
     "Puerto_Rico",      "TS34plus",   1.8,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
-    "Puerto_Rico",      "HUR64plus",  0.45,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
+    "Puerto_Rico",      "HUR",  0.45,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
     "Miami",            "TS34plus",   1.5,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
-    "Miami",            "HUR64plus",  0.35,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020"
+    "Miami",            "HUR",  0.35,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020"
   )
 }
 
@@ -879,8 +879,8 @@ validate_rates <- function(out, ref_rates = NULL) {
 
   model_rates2 <- model_rates |>
     tidyr::pivot_wider(names_from = storm_class, values_from = lambda_model, values_fill = 0) |>
-    dplyr::mutate(TS34plus = TS + HUR64plus) |>
-    tidyr::pivot_longer(c("TS34plus","HUR64plus"), names_to="storm_class", values_to="lambda_model")
+    dplyr::mutate(TS34plus = TS + HUR) |>
+    tidyr::pivot_longer(c("TS34plus","HUR"), names_to="storm_class", values_to="lambda_model")
 
   island_to_region <- tibble::tribble(
     ~location,        ~region,
@@ -900,8 +900,8 @@ validate_rates <- function(out, ref_rates = NULL) {
       expected_ratio = dplyr::case_when(
         .data$storm_class == "TS34plus"  & .data$gate_approx_nm >= 100 ~ 0.55,
         .data$storm_class == "TS34plus"  & .data$gate_approx_nm < 100  ~ 0.75,
-        .data$storm_class == "HUR64plus" & .data$gate_approx_nm >= 100 ~ 0.30,
-        .data$storm_class == "HUR64plus" & .data$gate_approx_nm < 100  ~ 0.45,
+        .data$storm_class == "HUR" & .data$gate_approx_nm >= 100 ~ 0.30,
+        .data$storm_class == "HUR" & .data$gate_approx_nm < 100  ~ 0.45,
         TRUE ~ 0.50
       ),
 
@@ -1301,7 +1301,7 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 validate_hazard_model <- function(cfg,
                                   targets,
                                   validation_cfg = make_validation_cfg(),
-                                  severities = c("TS", "HUR64plus"),
+                                  severities = c("TS", "HUR"),
                                   sst_cfg = NULL) {
   if (!inherits(validation_cfg, "validation_cfg")) {
     stop("validation_cfg must be created by make_validation_cfg().", call. = FALSE)

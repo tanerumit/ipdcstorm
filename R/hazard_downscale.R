@@ -1,6 +1,6 @@
 # =============================================================================
 # Script overview: temporal downscaling and impact forcing
-# - .assign_severity_simple(): simple TD/TS/HUR64plus class from peak wind.
+# - .assign_severity_simple(): simple TD/TS/HUR class from peak wind.
 # - build_event_library(): empirical seasonality + stratified event resampling.
 # - build_event_library_from_out(): convenience wrapper using run_hazard_model() output.
 # - event_pulse(): deterministic within-event daily wind profile.
@@ -20,12 +20,12 @@
 #' Assign simple severity class from peak wind
 #'
 #' @param wind_max_kt Numeric; peak wind (kt).
-#' @return Character scalar in \code{c("TD", "TS", "HUR64plus")} (or \code{NA}).
+#' @return Character scalar in \code{c("TD", "TS", "HUR")} (or \code{NA}).
 #' @keywords internal
 .assign_severity_simple <- function(wind_max_kt) {
   dplyr::case_when(
     !is.finite(wind_max_kt) ~ NA_character_,
-    wind_max_kt >= 64 ~ "HUR64plus",
+    wind_max_kt >= 64 ~ "HUR",
     wind_max_kt >= 34 ~ "TS",
     TRUE ~ "TD"
   )
@@ -62,7 +62,7 @@
 # - FIX consistency: dur_days (copula_nn) computed as inclusive day count (>=1)
 # =============================================================================
 build_event_library <- function(track_df, event_df,
-                                sev_levels = c("TD", "TS", "HUR64plus"),
+                                sev_levels = c("TD", "TS", "HUR"),
                                 bins = list(
                                   wind = c(0, 34, 64, 83, 96, 113, Inf),
                                   Pc   = c(850, 900, 940, 970, 1000, 1050),
@@ -398,13 +398,13 @@ disruption_flags <- function(daily,
 #' @return Logical vector.
 #' @export
 is_tc_day <- function(daily) {
-  daily$event_class %in% c("TC", "HUR64plus")
+  daily$event_class %in% c("TS", "HUR")
 }
 
 #' @rdname is_tc_day
 #' @export
 is_hur_day <- function(daily) {
-  daily$event_class == "HUR64plus"
+  daily$event_class == "HUR"
 }
 
 #' Compute daily exposure hours above a wind threshold
@@ -483,7 +483,7 @@ build_event_library_from_out <- function(out, location, ..., seed = NULL) {
 #' For each sampled event, extracts from the event library row:
 #' \itemize{
 #'   \item \code{event_id}: unique identifier (SID or generated).
-#'   \item \code{event_class}: "TC" or "HUR64plus" (for the daily dominant-event tracker).
+#'   \item \code{event_class}: "TS" or "HUR" (for the daily dominant-event tracker).
 #'   \item \code{Pc_min_hPa}: minimum central pressure.
 #'   \item \code{dP_max_hPa}: maximum pressure deficit.
 #'   \item \code{RMW_mean_km}: mean radius of maximum wind.
@@ -525,7 +525,7 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
     v <- NA_real_
     if ("V_site_max_kt" %in% names(row)) v <- row$V_site_max_kt
     if (!is.finite(v) && "wind_max_kt" %in% names(row)) v <- row$wind_max_kt
-    if (!is.finite(v) || v <= 0) v <- if (sev == "HUR64plus") 80 else if (sev == "TS") 40 else 25
+    if (!is.finite(v) || v <= 0) v <- if (sev == "HUR") 80 else if (sev == "TS") 40 else 25
     as.numeric(v)
   }
 
@@ -560,7 +560,7 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
     }
 
     # Event class for dominant-event tracking
-    event_class <- if (sev == "HUR64plus") "HUR64plus" else "TC"
+    event_class <- if (sev == "HUR") "HUR" else "TS"
 
     tibble::tibble(
       severity    = sev,
@@ -577,7 +577,7 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
 
   out <- dplyr::bind_rows(
     if (n_ts  > 0) dplyr::bind_rows(replicate(n_ts,  sample_one("TS"),  simplify = FALSE)) else NULL,
-    if (n_hur > 0) dplyr::bind_rows(replicate(n_hur, sample_one("HUR64plus"), simplify = FALSE)) else NULL
+    if (n_hur > 0) dplyr::bind_rows(replicate(n_hur, sample_one("HUR"), simplify = FALSE)) else NULL
   )
 
   if (nrow(out) == 0) {

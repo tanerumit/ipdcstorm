@@ -2,13 +2,19 @@
 % Please edit documentation in R/hazard_viz.R
 \name{prep_daily}
 \alias{prep_daily}
-\title{Prepare daily data with time keys}
+\title{Add day/month/year fields to daily hazard data}
 \usage{
 prep_daily(daily_impact)
 }
 \arguments{
-\item{daily_impact}{Daily impact data frame (requires: date, wind_kt)}
+\item{daily_impact}{A data frame or tibble with at least a \code{date} column coercible
+by \code{format()} (typically \code{Date}), one row per day.}
+}
+\value{
+\code{daily_impact} with three added integer columns: \code{doy} (1-366), \code{month}
+(1-12), and \code{year} (4-digit calendar year).
 }
 \description{
-Prepare daily data with time keys
+Add day/month/year fields to daily hazard data
 }
+\keyword{internal}

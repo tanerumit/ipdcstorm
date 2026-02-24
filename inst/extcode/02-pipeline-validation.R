@@ -73,7 +73,7 @@ sst_cfg <- make_sst_cfg(
 res <- validate_hazard_model(
   cfg = cfg,
   targets = targets,
-  severities = c("TS", "HUR64plus"),
+  severities = c("TS", "HUR"),
   sst_cfg = sst_cfg,
   holdout_years = 10,
   sim_years = 5000,

@@ -637,7 +637,7 @@
     #       is.finite(.data$Vmax_kt) & .data$Vmax_kt >= 64 ~ 250,                     # HUR typical order
     #       TRUE ~ NA_real_
     #     ),
-    #     # Optional: infill R50/R64 if missing for hurricanes (helps HUR64plus rates)
+    #     # Optional: infill R50/R64 if missing for hurricanes (helps HUR rates)
     #     R50_km = dplyr::case_when(
     #       is.finite(.data$R50_km) ~ .data$R50_km,
     #       is.finite(.data$Vmax_kt) & .data$Vmax_kt >= 64 & is.finite(.data$R34_km) ~ 0.60 * .data$R34_km,
@@ -705,7 +705,7 @@
 #' @param thr_ts Threshold (kt) for Tropical Storm.
 #' @param thr_hur Threshold (kt) for Hurricane.
 #'
-#' @return Character vector with values {"TD","TS","HUR","unknown"}.
+#' @return Character vector with values {"TD","TC","HUR","unknown"}.
 #' @export
   classify_severity <- function(V_site_max_kt, thr_ts = 34, thr_hur = 64) {
     v <- V_site_max_kt
@@ -713,8 +713,8 @@
     ok <- is.finite(v)
     if (!any(ok)) return(out)
     out[ok & v < thr_ts] <- "TD"
-    out[ok & v >= thr_ts & v < thr_hur] <- "TS"
-    out[ok & v >= thr_hur] <- "HUR64plus"
+    out[ok & v >= thr_ts & v < thr_hur] <- "TC"
+    out[ok & v >= thr_hur] <- "HUR"
     out
   }
   
@@ -795,7 +795,7 @@
   #'   all years and severities with zeros.
   #'
   #' @export
-  compute_annual_counts <- function(events, severities = c("TS", "HUR64plus")) {
+  compute_annual_counts <- function(events, severities = c("TC", "HUR")) {
     if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
     if (!requireNamespace("tidyr", quietly = TRUE)) stop("Package `tidyr` is required.")
     
@@ -853,23 +853,23 @@
     list(k_hat = k_hat, annual_total = annual_total, mu = mu, var = va)
   }
   
-  #' Simulate two-level annual counts (shared activity factor) for TS and HUR64plus
+  #' Simulate two-level annual counts (shared activity factor) for TS and HUR
   #'
   #' @description
   #' Draws A ~ Gamma(k_hat, k_hat) then n_TS ~ Poisson(A*lambda_TS),
-  #' n_HUR64plus ~ Poisson(A*lambda_HUR).
+  #' n_HUR ~ Poisson(A*lambda_HUR).
   #'
-  #' @param lambda_table Output from \code{compute_lambda_table()} with severities TS and HUR64plus.
+  #' @param lambda_table Output from \code{compute_lambda_table()} with severities TS and HUR.
   #' @param k_hat Numeric; overdispersion shape parameter.
   #' @param n_years_sim Integer; simulation length.
   #'
-  #' @return Tibble with sim_year, A, n_TS, n_HUR64plus.
+  #' @return Tibble with sim_year, A, n_TS, n_HUR.
   #' @export
   simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim = 1000) {
     if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
     
-    lam_TS  <- lambda_table$lambda[lambda_table$severity == "TS"]
-    lam_HUR <- lambda_table$lambda[lambda_table$severity == "HUR64plus"]
+    lam_TS  <- lambda_table$lambda[lambda_table$severity == "TC"]
+    lam_HUR <- lambda_table$lambda[lambda_table$severity == "HUR"]
     
     A <- stats::rgamma(n_years_sim, shape = k_hat, rate = k_hat)
     
@@ -877,7 +877,7 @@
       sim_year = seq_len(n_years_sim),
       A = A,
       n_TS = stats::rpois(n_years_sim, lam_TS * A),
-      n_HUR64plus = stats::rpois(n_years_sim, lam_HUR * A)
+      n_HUR = stats::rpois(n_years_sim, lam_HUR * A)
     )
   }
   

@@ -413,13 +413,13 @@ estimate_beta_sst <- function(annual_counts,
 #' above becomes a hurricane (a?Y64 kt).
 #'
 #' @param lambda_table Tibble from `compute_lambda_table()` with severities
-#'   "TS" and "HUR64plus".
+#'   "TC" and "HUR".
 #'
 #' @return Numeric scalar: baseline hurricane fraction p_HUR_base.
 #' @export
 compute_p_hur_base <- function(lambda_table) {
-  lam_TS  <- lambda_table$lambda[lambda_table$storm_class == "TS"]
-  lam_HUR <- lambda_table$lambda[lambda_table$storm_class == "HUR64plus"]
+  lam_TS  <- lambda_table$lambda[lambda_table$storm_class == "TC"]
+  lam_HUR <- lambda_table$lambda[lambda_table$storm_class == "HUR"]
   if (length(lam_TS) == 0)  lam_TS  <- 0
   if (length(lam_HUR) == 0) lam_HUR <- 0
   lam_total <- lam_TS + lam_HUR
@@ -491,8 +491,8 @@ estimate_gamma_intensity <- function(annual_counts,
     )
 
   # Ensure both columns exist
-  if (!("TS" %in% names(wide))) wide$TS <- 0L
-  if (!("HUR64plus" %in% names(wide))) wide$HUR64plus <- 0L
+  if (!("TC" %in% names(wide))) wide$TS <- 0L
+  if (!("HUR" %in% names(wide))) wide$HUR <- 0L
 
   # Join with SST
   fit_data <- wide |>
@@ -502,8 +502,8 @@ estimate_gamma_intensity <- function(annual_counts,
     ) |>
     dplyr::filter(is.finite(.data$sst_anomaly)) |>
     dplyr::mutate(
-      n_total = .data$TS + .data$HUR64plus,
-      p_hur = ifelse(.data$n_total > 0, .data$HUR64plus / .data$n_total, NA_real_)
+      n_total = .data$TS + .data$HUR,
+      p_hur = ifelse(.data$n_total > 0, .data$HUR / .data$n_total, NA_real_)
     ) |>
     dplyr::filter(.data$n_total > 0)  # need at least 1 event to estimate fraction
 
@@ -523,12 +523,12 @@ estimate_gamma_intensity <- function(annual_counts,
   }
 
   # Baseline hurricane fraction (overall)
-  p_hur_base <- sum(fit_data$HUR64plus) / sum(fit_data$n_total)
+  p_hur_base <- sum(fit_data$HUR) / sum(fit_data$n_total)
 
   # Binomial GLM: logit(p_HUR) ~ sst_anomaly
   glm_fit <- tryCatch({
     stats::glm(
-      cbind(HUR64plus, TS) ~ sst_anomaly,
+      cbind(HUR, TS) ~ sst_anomaly,
       data = fit_data,
       family = stats::binomial(link = "logit")
     )
@@ -606,8 +606,8 @@ compute_severity_split <- function(lambda_table,
                                    sst_anomaly,
                                    gamma = 0,
                                    p_hur_base = NULL) {
-  lam_TS  <- lambda_table$lambda[lambda_table$storm_class == "TS"]
-  lam_HUR <- lambda_table$lambda[lambda_table$storm_class == "HUR64plus"]
+  lam_TS  <- lambda_table$lambda[lambda_table$storm_class == "TC"]
+  lam_HUR <- lambda_table$lambda[lambda_table$storm_class == "HUR"]
   if (length(lam_TS) == 0)  lam_TS  <- 0
   if (length(lam_HUR) == 0) lam_HUR <- 0
   lam_total <- lam_TS + lam_HUR
@@ -938,8 +938,8 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
   lt <- dplyr::as_tibble(lambda_table)
   lt$storm_class <- as.character(lt$storm_class)
   
-  lambda_ts  <- lt$lambda[match("TS", lt$storm_class)]
-  lambda_hur <- lt$lambda[match("HUR64plus", lt$storm_class)]
+  lambda_ts  <- lt$lambda[match("TC", lt$storm_class)]
+  lambda_hur <- lt$lambda[match("HUR", lt$storm_class)]
   if (!is.finite(lambda_ts))  lambda_ts <- 0
   if (!is.finite(lambda_hur)) lambda_hur <- 0
   lambda_total <- pmax(0, lambda_ts) + pmax(0, lambda_hur)

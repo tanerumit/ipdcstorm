@@ -4,7 +4,7 @@
 \alias{compute_annual_counts}
 \title{Compute annual counts of unique storm events by storm class}
 \usage{
-compute_annual_counts(events, severities = c("TS", "HUR64plus"))
+compute_annual_counts(events, severities = c("TS", "HUR"))
 }
 \arguments{
 \item{events}{Tibble with at least columns: year, storm_class, storm_id.}

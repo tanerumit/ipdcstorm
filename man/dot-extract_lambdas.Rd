@@ -8,7 +8,7 @@
 }
 \arguments{
 \item{lambda_table}{Tibble from \code{compute_lambda_table()} with
-severities "TS" and "HUR64plus".}
+severities "TS" and "HUR".}
 }
 \value{
 List with elements \code{ts}, \code{hur}, \code{total}.

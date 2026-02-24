@@ -359,7 +359,7 @@ classify_severity_simple <- function(V_site_max_kt) {
     is.na(V_site_max_kt) ~ "unknown",
     V_site_max_kt < 34   ~ "none",
     V_site_max_kt < 64   ~ "TS",
-    TRUE                 ~ "HUR64plus"
+    TRUE                 ~ "HUR"
   )
 }
 
@@ -609,7 +609,7 @@ run_hazard_model_enhanced <- function(
     severity_classes <- switch(
       severity_scheme,
       "saffir_simpson" = c("TS", "CAT1", "CAT2", "CAT3", "CAT4", "CAT5"),
-      "simple" = c("TS", "HUR64plus"),
+      "simple" = c("TS", "HUR"),
       "major" = c("TS", "HUR", "MAJOR"),
       c("TS", "CAT1", "CAT2", "CAT3", "CAT4", "CAT5")  # default
     )

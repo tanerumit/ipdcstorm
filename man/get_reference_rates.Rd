@@ -10,6 +10,6 @@ get_reference_rates()
 Tibble with columns: region, storm_class, lambda_ref, source, gate_approx_nm, period.
 }
 \description{
-Returns a tibble of published annual TC passage rates from literature,
+Returns a tibble of published annual TS passage rates from literature,
 for comparison against model-fitted lambdas.
 }

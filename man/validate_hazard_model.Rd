@@ -8,7 +8,7 @@ validate_hazard_model(
   cfg,
   targets,
   validation_cfg = make_validation_cfg(),
-  severities = c("TS", "HUR64plus"),
+  severities = c("TS", "HUR"),
   sst_cfg = NULL
 )
 }

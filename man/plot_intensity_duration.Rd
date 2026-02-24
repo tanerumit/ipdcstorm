@@ -2,19 +2,40 @@
 % Please edit documentation in R/hazard_viz.R
 \name{plot_intensity_duration}
 \alias{plot_intensity_duration}
-\title{Scatter plot of event intensity vs duration}
+\title{Plot event intensity versus duration}
 \usage{
 plot_intensity_duration(daily = NULL, events = NULL, thr_tc = 34, thr_hur = 64)
 }
 \arguments{
-\item{daily}{Daily data frame (or events table directly)}
+\item{daily}{Optional data frame/tibble of daily rows used only when
+\code{events = NULL}; must contain columns required by \code{prep_events()}.}
 
-\item{events}{Pre-computed events table (optional)}
+\item{events}{Optional data frame/tibble with columns \code{dur_days} (integer
+days), \code{max_wind_kt} (numeric, knots), and \code{event_class} (\code{"TS"}/\code{"HUR"}).}
 
-\item{thr_tc}{TC threshold}
+\item{thr_tc}{Numeric scalar; tropical-cyclone threshold in knots.}
 
-\item{thr_hur}{Hurricane threshold}
+\item{thr_hur}{Numeric scalar; hurricane threshold in knots.}
+}
+\value{
+A \code{ggplot} object.
 }
 \description{
-Scatter plot of event intensity vs duration
+Creates a scatter plot of event duration (days) against event
+peak wind speed, colored by event class.
+}
+\details{
+If \code{events} is \code{NULL}, \code{daily} must be supplied and is summarized via
+\code{prep_events()}. The function errors if both are \code{NULL}.
+}
+\examples{
+d <- data.frame(
+  date = as.Date("2001-08-01") + 0:9,
+  wind_kt = c(10, 20, 40, 55, 30, 15, 5, 10, 70, 65),
+  event_id = c(NA, NA, 1, 1, 1, NA, NA, NA, 2, 2),
+  event_class = c(NA, NA, "TS", "TS", "TS", NA, NA, NA, "HUR", "HUR"),
+  location = "A",
+  sim_year = 2001
+)
+plot_intensity_duration(daily = d)
 }

@@ -584,7 +584,7 @@ classify_severity <- function(V_site_max_kt, thr_ts = 34, thr_hur = 64) {
     is.na(V_site_max_kt) ~ "unknown",
     V_site_max_kt < thr_ts ~ "none",
     V_site_max_kt < thr_hur ~ "TS",
-    TRUE ~ "HUR64plus"
+    TRUE ~ "HUR"
   )
 }
 
@@ -716,7 +716,7 @@ compute_location_trackpoints <- function(ib_sub, loc, cfg) {
 # 6. RATES + TWO-LEVEL SIMULATION
 ################################################################################
 
-compute_annual_counts <- function(haz_loc, severities = c("TS", "HUR64plus")) {
+compute_annual_counts <- function(haz_loc, severities = c("TS", "HUR")) {
   haz_loc %>%
     filter(severity %in% severities) %>%
     distinct(year, severity, SID) %>%
@@ -754,7 +754,7 @@ estimate_k_hat <- function(haz_loc_counts) {
 
 simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim = 1000) {
   lam_TS  <- lambda_table$lambda[lambda_table$severity == "TS"]
-  lam_HUR <- lambda_table$lambda[lambda_table$severity == "HUR64plus"]
+  lam_HUR <- lambda_table$lambda[lambda_table$severity == "HUR"]
   
   A <- rgamma(n_years_sim, shape = k_hat, rate = k_hat)
   
@@ -762,7 +762,7 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim = 1000) {
     sim_year = 1:n_years_sim,
     A = A,
     n_TS = rpois(n_years_sim, lam_TS * A),
-    n_HUR64plus = rpois(n_years_sim, lam_HUR * A)
+    n_HUR = rpois(n_years_sim, lam_HUR * A)
   )
 }
 
@@ -803,7 +803,7 @@ diagnostics_events <- function(haz_loc) {
       summarise(
         years = n_distinct(year),
         n_TS = sum(severity == "TS"),
-        n_HUR = sum(severity == "HUR64plus"),
+        n_HUR = sum(severity == "HUR"),
         .groups = "drop"
       )
   )
@@ -847,7 +847,7 @@ haz_loc <- hazard_events[[loc_name]] %>%
   filter(severity != "unknown")
 
 # 8.5 Annual counts + rate model
-haz_loc_counts <- compute_annual_counts(haz_loc, severities = c("TS", "HUR64plus"))
+haz_loc_counts <- compute_annual_counts(haz_loc, severities = c("TS", "HUR"))
 lambda_table <- compute_lambda_table(haz_loc_counts)
 
 k_info <- estimate_k_hat(haz_loc_counts)
@@ -857,9 +857,9 @@ k_hat <- k_info$k_hat
 sim_twolevel <- simulate_twolevel_counts(lambda_table, k_hat, n_years_sim = 1000)
 
 p_any_event <- sim_twolevel %>%
-  summarise(p_at_least_one = mean((n_TS + n_HUR64plus) >= 1), .groups = "drop")
+  summarise(p_at_least_one = mean((n_TS + n_HUR) >= 1), .groups = "drop")
 
-corr_TS_HUR <- cor(sim_twolevel$n_TS, sim_twolevel$n_HUR64plus)
+corr_TS_HUR <- cor(sim_twolevel$n_TS, sim_twolevel$n_HUR)
 
 ################################################################################
 # 9. OUTPUTS (minimal prints; expand later to writing files)

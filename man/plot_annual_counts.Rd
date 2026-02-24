@@ -2,17 +2,36 @@
 % Please edit documentation in R/hazard_viz.R
 \name{plot_annual_counts}
 \alias{plot_annual_counts}
-\title{Plot histogram of annual event counts}
+\title{Plot distribution of annual event totals}
 \usage{
 plot_annual_counts(daily, metric = c("events", "days"), show_poisson = TRUE)
 }
 \arguments{
-\item{daily}{Daily data frame}
+\item{daily}{A data frame or tibble with columns \code{sim_year} and \code{event_id}
+(\code{NA} means no event that day).}
 
-\item{metric}{"events" (distinct events) or "days" (event-days)}
+\item{metric}{Character scalar; one of \code{"events"} or \code{"days"}.}
 
-\item{show_poisson}{Overlay Poisson distribution}
+\item{show_poisson}{Logical scalar; if \code{TRUE}, add Poisson expected points for
+the \code{"events"} metric.}
+}
+\value{
+A \code{ggplot} object.
 }
 \description{
-Plot histogram of annual event counts
+Computes annual totals from daily event flags and plots a
+histogram of either distinct events or event-days.
+}
+\details{
+Annual \code{n_events} counts distinct non-\code{NA} \code{event_id} values per
+\code{sim_year}; annual \code{n_days} counts daily rows with non-\code{NA} \code{event_id}. A
+Poisson expected-count overlay is added only when \code{metric = "events"} and
+\code{show_poisson = TRUE}.
+}
+\examples{
+d <- data.frame(
+  sim_year = rep(2001:2003, each = 5),
+  event_id = c(NA, 1, 1, NA, 2, NA, NA, 3, 3, 3, NA, 4, NA, 5, NA)
+)
+plot_annual_counts(d, metric = "events")
 }

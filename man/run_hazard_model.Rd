@@ -8,7 +8,7 @@ run_hazard_model(
   cfg,
   targets,
   per_target_cfg = list(),
-  severities = c("TS", "HUR64plus"),
+  severities = c("TS", "HUR"),
   sst_cfg = NULL
 )
 }
@@ -19,7 +19,7 @@ run_hazard_model(
 
 \item{per_target_cfg}{Named list of per-target options (currently unused).}
 
-\item{severities}{Character vector of storm classes to model (default TS and HUR64plus).}
+\item{severities}{Character vector of storm classes to model (default TS and HUR).}
 
 \item{sst_cfg}{Optional SST configuration from \code{make_sst_cfg()}. When provided
 and enabled, the annual count simulation uses SST-conditioned rate scaling.}

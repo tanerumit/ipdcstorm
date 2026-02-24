@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_viz.R
 \name{plot_wind_timeseries}
 \alias{plot_wind_timeseries}
-\title{Plot daily wind time series with event segments}
+\title{Plot daily wind speed with event-duration overlays}
 \usage{
 plot_wind_timeseries(
   daily,
@@ -10,22 +10,49 @@ plot_wind_timeseries(
   thr_tc = 34,
   thr_hur = 64,
   show_thresholds = TRUE,
-  title = "Daily Wind with TC/Hurricane Events"
+  title = "Daily Wind with TS/Hurricane Events"
 )
 }
 \arguments{
-\item{daily}{Daily data frame (date, wind_kt, event_id, event_class)}
+\item{daily}{A data frame or tibble of daily records with columns \code{date}
+(\code{Date}), \code{wind_kt} (numeric, knots), \code{event_id} (event identifier; \code{NA}
+means no event), and \code{event_class} (character/factor).}
 
-\item{events}{Optional pre-computed events table; computed if NULL}
+\item{events}{Optional precomputed event table (data frame/tibble) with
+columns \code{start_date}, \code{end_date} (\code{Date}), \code{max_wind_kt} (numeric, knots),
+and \code{event_class} (\code{"TS"}/\code{"HUR"}). If \code{NULL}, it is derived from \code{daily}.}
 
-\item{thr_tc}{Tropical cyclone threshold (kt)}
+\item{thr_tc}{Numeric scalar; tropical-cyclone threshold in knots.}
 
-\item{thr_hur}{Hurricane threshold (kt)}
+\item{thr_hur}{Numeric scalar; hurricane threshold in knots.}
 
-\item{show_thresholds}{Show threshold lines}
+\item{show_thresholds}{Logical scalar; if \code{TRUE}, dashed horizontal threshold
+lines are added.}
 
-\item{title}{Plot title}
+\item{title}{Character scalar used as plot title.}
+}
+\value{
+A \code{ggplot} object.
 }
 \description{
-Plot daily wind time series with event segments
+Draws a daily wind time series and overlays each event as a
+horizontal segment spanning event start-to-end dates at that event's peak
+wind speed.
+}
+\details{
+If \code{events} is \code{NULL}, event summaries are computed from \code{daily}.
+Segment colors collapse event classes to \code{TS} and \code{HUR} (anything not equal
+to \code{"HUR"} is treated as \code{TS}). \code{NA} values in \code{event_id} are ignored when
+computing events.
+}
+\examples{
+d <- data.frame(
+  date = as.Date("2001-08-01") + 0:9,
+  wind_kt = c(10, 20, 40, 55, 30, 15, 5, 10, 12, 8),
+  event_id = c(NA, NA, 1, 1, 1, NA, NA, NA, NA, NA),
+  event_class = c(NA, NA, "TS", "TS", "TS", NA, NA, NA, NA, NA),
+  location = "A",
+  sim_year = 2001
+)
+plot_wind_timeseries(d)
 }

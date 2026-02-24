@@ -245,12 +245,12 @@ compute_sst_anomaly <- function(sst_df, baseline_years = 1991L:2020L) {
 #' Estimate the SSTa?"activity scaling coefficient I2_SST
 #'
 #' @description
-#' Fits a Poisson (or negative binomial) GLM of annual TC counts on MDR SST
+#' Fits a Poisson (or negative binomial) GLM of annual TS counts on MDR SST
 #' anomaly to estimate I2_SST in:
 #'
 #'   `E[N_t] = exp(I? + I2_SST A. I"SST_t)`
 #'
-#' The coefficient I2_SST represents the log-linear sensitivity of annual TC
+#' The coefficient I2_SST represents the log-linear sensitivity of annual TS
 #' activity to SST anomalies. Typical values from the literature are 0.4a?"0.8
 #' per A?C for the North Atlantic (Villarini et al. 2011; Vecchi et al. 2021).
 #'
@@ -406,13 +406,13 @@ estimate_beta_sst <- function(annual_counts,
 #' Extract TS/HUR lambdas from a lambda table
 #'
 #' @param lambda_table Tibble from \code{compute_lambda_table()} with
-#'   severities "TS" and "HUR64plus".
+#'   severities "TS" and "HUR".
 #'
 #' @return List with elements \code{ts}, \code{hur}, \code{total}.
 #' @keywords internal
 .extract_lambdas <- function(lambda_table) {
   lam_ts  <- lambda_table$lambda[lambda_table$storm_class == "TS"]
-  lam_hur <- lambda_table$lambda[lambda_table$storm_class == "HUR64plus"]
+  lam_hur <- lambda_table$lambda[lambda_table$storm_class == "HUR"]
   if (length(lam_ts) == 0)  lam_ts  <- 0
   if (length(lam_hur) == 0) lam_hur <- 0
   list(
@@ -430,7 +430,7 @@ estimate_beta_sst <- function(annual_counts,
 #' above becomes a hurricane (a?Y64 kt).
 #'
 #' @param lambda_table Tibble from `compute_lambda_table()` with severities
-#'   "TS" and "HUR64plus".
+#'   "TS" and "HUR".
 #'
 #' @return Numeric scalar: baseline hurricane fraction p_HUR_base.
 #' @export
@@ -505,7 +505,7 @@ estimate_gamma_intensity <- function(annual_counts,
 
   # Ensure both columns exist
   if (!("TS" %in% names(wide))) wide$TS <- 0L
-  if (!("HUR64plus" %in% names(wide))) wide$HUR64plus <- 0L
+  if (!("HUR" %in% names(wide))) wide$HUR <- 0L
 
   # Join with SST
   fit_data <- wide |>
@@ -515,8 +515,8 @@ estimate_gamma_intensity <- function(annual_counts,
     ) |>
     dplyr::filter(is.finite(.data$sst_anomaly)) |>
     dplyr::mutate(
-      n_total = .data$TS + .data$HUR64plus,
-      p_hur = ifelse(.data$n_total > 0, .data$HUR64plus / .data$n_total, NA_real_)
+      n_total = .data$TS + .data$HUR,
+      p_hur = ifelse(.data$n_total > 0, .data$HUR / .data$n_total, NA_real_)
     ) |>
     dplyr::filter(.data$n_total > 0)  # need at least 1 event to estimate fraction
 
@@ -536,12 +536,12 @@ estimate_gamma_intensity <- function(annual_counts,
   }
 
   # Baseline hurricane fraction (overall)
-  p_hur_base <- sum(fit_data$HUR64plus) / sum(fit_data$n_total)
+  p_hur_base <- sum(fit_data$HUR) / sum(fit_data$n_total)
 
   # Binomial GLM: logit(p_HUR) ~ sst_anomaly
   glm_fit <- tryCatch({
     stats::glm(
-      cbind(HUR64plus, TS) ~ sst_anomaly,
+      cbind(HUR, TS) ~ sst_anomaly,
       data = fit_data,
       family = stats::binomial(link = "logit")
     )

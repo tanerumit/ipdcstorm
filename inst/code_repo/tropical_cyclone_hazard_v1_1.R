@@ -358,7 +358,7 @@ hazard_events <- lapply(hazard_events, function(df) {
         is.na(V_site_max_kt) ~ "unknown",
         V_site_max_kt < 34   ~ "none",
         V_site_max_kt < 64   ~ "TS",
-        TRUE                 ~ "HUR64plus"
+        TRUE                 ~ "HUR"
       )
     )
 })
@@ -376,12 +376,12 @@ haz_loc <- hazard_events[[loc_name]] %>%
 
 # This MUST be 1 now.
 haz_loc_counts <- haz_loc %>%
-  filter(severity %in% c("TS", "HUR64plus")) %>%
+  filter(severity %in% c("TS", "HUR")) %>%
   distinct(year, severity, SID) %>%
   count(year, severity, name = "n_events") %>%
   tidyr::complete(
     year = full_seq(range(year), 1),
-    severity = c("TS", "HUR64plus"),
+    severity = c("TS", "HUR"),
     fill = list(n_events = 0)
   )
 
@@ -462,7 +462,7 @@ n_years_sim <- 1000
 
 # Baseline lambdas
 lam_TS  <- lambda_table$lambda[lambda_table$severity == "TS"]
-lam_HUR <- lambda_table$lambda[lambda_table$severity == "HUR64plus"]
+lam_HUR <- lambda_table$lambda[lambda_table$severity == "HUR"]
 
 # Shared annual activity factor A_y ~ Gamma(k, k)  (mean=1, var=1/k)
 A <- rgamma(n_years_sim, shape = k_hat, rate = k_hat)
@@ -471,17 +471,17 @@ sim_twolevel <- tibble::tibble(
   sim_year = 1:n_years_sim,
   A = A,
   n_TS = rpois(n_years_sim, lam_TS  * A),
-  n_HUR64plus = rpois(n_years_sim, lam_HUR * A)
+  n_HUR = rpois(n_years_sim, lam_HUR * A)
 )
 
 # Any-event probability
 p_any_event <- sim_twolevel %>%
-  summarise(p_at_least_one = mean((n_TS + n_HUR64plus) >= 1))
+  summarise(p_at_least_one = mean((n_TS + n_HUR) >= 1))
 
 p_any_event
 
 #compute implied correlation (sanity check)
-cor(sim_twolevel$n_TS, sim_twolevel$n_HUR64plus)
+cor(sim_twolevel$n_TS, sim_twolevel$n_HUR)
 
 
 annual_total %>% summarise(mean=mean(N), var=var(N))
@@ -493,7 +493,7 @@ out <- haz_loc %>%
   summarise(
     years = n_distinct(year),
     n_TS = sum(severity == "TS"),
-    n_HUR = sum(severity == "HUR64plus")
+    n_HUR = sum(severity == "HUR")
   )
 
 out$n_TS / out$years #≈ 0.8–1.0

@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_viz.R
 \name{plot_seasonality_doy}
 \alias{plot_seasonality_doy}
-\title{Plot day-of-year distribution of event activity}
+\title{Plot day-of-year distribution of event timing}
 \usage{
 plot_seasonality_doy(
   daily,
@@ -12,14 +12,38 @@ plot_seasonality_doy(
 )
 }
 \arguments{
-\item{daily}{Daily data with event_id, event_class}
+\item{daily}{A data frame or tibble with at least \code{date} (\code{Date}),
+\code{event_id}, \code{event_class}, plus fields required by \code{prep_events()} when
+\code{metric = "starts"} (\code{location}, \code{sim_year}, \code{wind_kt}).}
 
-\item{metric}{One of "event_days" (duration-weighted) or "starts" (initiation)}
+\item{metric}{Character scalar; one of \code{"event_days"} or \code{"starts"}.}
 
-\item{facet_class}{Facet by event class (TC/HUR)}
+\item{facet_class}{Logical scalar; if \code{TRUE}, create one panel per class.}
 
-\item{binwidth}{DOY bin width in days}
+\item{binwidth}{Numeric scalar > 0; histogram bin width in day-of-year units
+(days).}
+}
+\value{
+A \code{ggplot} object.
 }
 \description{
-Plot day-of-year distribution of event activity
+Plots a day-of-year histogram for either event-active days or
+event starts, optionally faceted by event class.
+}
+\details{
+For \code{metric = "event_days"}, each day with non-\code{NA} \code{event_id}
+contributes one count. For \code{metric = "starts"}, counts are based on event
+start dates derived from grouped events. Event classes are collapsed to
+\code{TS}/\code{HUR} using the same rule as \code{prep_events()}.
+}
+\examples{
+d <- data.frame(
+  date = as.Date("2001-08-01") + 0:9,
+  wind_kt = c(10, 20, 40, 55, 30, 15, 5, 10, 12, 8),
+  event_id = c(NA, NA, 1, 1, 1, NA, NA, 2, 2, NA),
+  event_class = c(NA, NA, "TS", "TS", "TS", NA, NA, "HUR", "HUR", NA),
+  location = "A",
+  sim_year = 2001
+)
+plot_seasonality_doy(d, metric = "event_days")
 }

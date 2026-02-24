@@ -2,17 +2,43 @@
 % Please edit documentation in R/hazard_viz.R
 \name{plot_summary_panel}
 \alias{plot_summary_panel}
-\title{Generate multi-panel summary figure}
+\title{Build a four-panel hurricane hazard summary figure}
 \usage{
 plot_summary_panel(daily, thr_tc = 34, thr_hur = 64)
 }
 \arguments{
-\item{daily}{Daily data frame}
+\item{daily}{A data frame or tibble with columns needed by
+\code{plot_seasonality_doy()}, \code{plot_monthly_quantiles()},
+\code{plot_annual_counts()}, and \code{plot_intensity_duration()}.}
 
-\item{thr_tc}{TC threshold}
+\item{thr_tc}{Numeric scalar; tropical-cyclone threshold in knots passed to
+component plots.}
 
-\item{thr_hur}{Hurricane threshold}
+\item{thr_hur}{Numeric scalar; hurricane threshold in knots passed to
+component plots.}
+}
+\value{
+A \code{patchwork}/\code{ggplot} composed plot object.
 }
 \description{
-Generate multi-panel summary figure
+Combines seasonality, monthly quantiles, annual event counts,
+and intensity-duration plots into a single 2x2 patchwork layout.
+}
+\details{
+Requires the \code{patchwork} package at runtime (\code{requireNamespace()} is
+called). Input requirements combine those of the component plotting
+functions.
+}
+\examples{
+\dontrun{
+d <- data.frame(
+  date = as.Date("2001-01-01") + 0:364,
+  wind_kt = pmax(1, 20 + rnorm(365, sd = 8)),
+  event_id = sample(c(NA, 1:8), 365, replace = TRUE),
+  event_class = sample(c(NA, "TS", "HUR"), 365, replace = TRUE),
+  location = "A",
+  sim_year = 2001
+)
+plot_summary_panel(d)
+}
 }

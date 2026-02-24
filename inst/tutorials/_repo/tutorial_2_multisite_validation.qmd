@@ -152,8 +152,8 @@ out$sim_all |>
   group_by(island) |>
   summarise(
     mean_storms = mean(n_total),
-    mean_hur    = mean(n_HUR64plus),
-    p_hur       = mean(n_HUR64plus / pmax(1, n_total)),
+    mean_hur    = mean(n_HUR),
+    p_hur       = mean(n_HUR / pmax(1, n_total)),
     .groups = "drop"
   )
 ```

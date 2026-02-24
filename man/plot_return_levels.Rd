@@ -2,17 +2,38 @@
 % Please edit documentation in R/hazard_viz.R
 \name{plot_return_levels}
 \alias{plot_return_levels}
-\title{Plot empirical return levels}
+\title{Plot empirical wind return levels}
 \usage{
 plot_return_levels(daily, block_maxima = TRUE, threshold = NULL)
 }
 \arguments{
-\item{daily}{Daily data frame}
+\item{daily}{A data frame or tibble with columns \code{sim_year} and \code{wind_kt}
+(numeric, knots).}
 
-\item{block_maxima}{Use annual maxima (TRUE) or all exceedances (FALSE}
+\item{block_maxima}{Logical scalar; if \code{TRUE}, use annual maxima, otherwise
+use exceedances over \code{threshold}.}
 
-\item{threshold}{Threshold for POT approach (if block_maxima = FALSE)}
+\item{threshold}{Optional numeric scalar (knots); required when
+\code{block_maxima = FALSE}.}
+}
+\value{
+A \code{ggplot} object.
 }
 \description{
-Plot empirical return levels
+Computes empirical return-period points using either annual block
+maxima or peaks-over-threshold exceedances and plots them on a log-scaled
+return-period axis.
+}
+\details{
+For \code{block_maxima = TRUE}, one annual maximum is taken per
+\code{sim_year}. For \code{block_maxima = FALSE}, \code{threshold} must be non-\code{NULL}, and
+only rows with \code{wind_kt > threshold} are used. Wind summaries use
+\code{na.rm = TRUE}.
+}
+\examples{
+d <- data.frame(
+  sim_year = rep(2001:2005, each = 3),
+  wind_kt = c(20, 35, 50, 15, 30, 70, 10, 25, 45, 18, 40, 55, 22, 60, 65)
+)
+plot_return_levels(d, block_maxima = TRUE)
 }

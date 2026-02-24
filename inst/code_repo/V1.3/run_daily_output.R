@@ -6,7 +6,7 @@
 #June 1 – Nov 30 (DOY 152–334)
 
 #TS: 1–3 days
-#HUR64plus: 1–2 days (site exceedance is often brief),
+#HUR: 1–2 days (site exceedance is often brief),
 
 # Run for single location
 saba_target <- targets %>% filter(name == "Saba")
@@ -15,7 +15,7 @@ out <- run_hazard_model(
   cfg = cfg,
   targets = saba_target,
   per_target_cfg = per_target_cfg,
-  severities = c("TS", "HUR64plus")
+  severities = c("TS", "HUR")
 )
 
 # Lamda table

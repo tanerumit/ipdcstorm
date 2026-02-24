@@ -37,19 +37,19 @@
 dist_to_target <- function(lat, lon, t_lat, t_lon) {
   lat <- as.numeric(lat)
   lon <- as.numeric(lon)
-  
+
   n <- length(lat)
   if (n == 0L) return(numeric(0))
-  
+
   ok <- is.finite(lat) & is.finite(lon)
   out <- rep(NA_real_, n)
-  
+
   if (any(ok)) {
     p1 <- cbind(lon[ok], lat[ok])
     p2 <- cbind(rep(t_lon, sum(ok)), rep(t_lat, sum(ok)))
     out[ok] <- geosphere::distHaversine(p1, p2) / 1000
   }
-  
+
   out
 }
 
@@ -71,19 +71,19 @@ dist_to_target <- function(lat, lon, t_lat, t_lon) {
 calculate_bearing <- function(lat, lon, t_lat, t_lon) {
   lat <- as.numeric(lat)
   lon <- as.numeric(lon)
-  
+
   n <- length(lat)
   if (n == 0L) return(numeric(0))
-  
+
   ok <- is.finite(lat) & is.finite(lon)
   out <- rep(NA_real_, n)
-  
+
   if (any(ok)) {
     p1 <- cbind(lon[ok], lat[ok])
     p2 <- cbind(rep(t_lon, sum(ok)), rep(t_lat, sum(ok)))
     out[ok] <- geosphere::bearing(p1, p2)
   }
-  
+
   out
 }
 
@@ -116,7 +116,7 @@ calculate_bearing <- function(lat, lon, t_lat, t_lon) {
   r_se <- suppressWarnings(as.numeric(r_se))
   r_sw <- suppressWarnings(as.numeric(r_sw))
   r_nw <- suppressWarnings(as.numeric(r_nw))
-  
+
   dplyr::case_when(
     quadrant == "NE" ~ r_ne,
     quadrant == "SE" ~ r_se,
@@ -168,17 +168,17 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
   b <- 1.6   # linear expansion with intensity
   c <- -0.012 # quadratic contraction at high intensity (compact storms)
   d <- -0.8  # latitude correction (smaller at low latitudes)
-  
+
   dV <- pmax(0, Vmax_kt - 34)
   R34_nm <- a + b * dV + c * dV^2 + d * abs(lat - 25)
-  
+
   # Floor and cap
-  
+
   R34_nm <- pmax(30, pmin(300, R34_nm))
-  
+
   # Below TS threshold: no 34-kt radius
   R34_nm[!is.finite(Vmax_kt) | Vmax_kt < 34] <- NA_real_
-  
+
   R34_nm * 1.852  # convert to km
 }
 
@@ -204,15 +204,15 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   # Knaff & Zehr (2007) Eq. 1 (simplified, Atlantic):
   #   RMW_nm = 66.785 - 0.09102Ãƒâ€šÃ‚Â·Vmax + 1.0619Ãƒâ€šÃ‚Â·(lat - 25)
   # Valid for Vmax in [30, 185] kt
-  
+
   Vmax_clamped <- pmax(30, pmin(185, Vmax_kt))
   RMW_nm <- 66.785 - 0.09102 * Vmax_clamped + 1.0619 * (lat - 25)
-  
+
   # Floor/cap in nm: [5, 100]
   RMW_nm <- pmax(5, pmin(100, RMW_nm))
-  
+
   RMW_nm[!is.finite(Vmax_kt)] <- NA_real_
-  
+
   RMW_nm * 1.852  # convert to km
 }
 
@@ -258,20 +258,20 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   n <- length(Vmax_kt)
   # recycle scalars safely (base R recycling rules assumed by caller)
   out <- rep(NA_real_, n)
-  
+
   ok <- is.finite(Vmax_kt) & Vmax_kt > 0 &
     is.finite(r_km) & r_km >= 0 &
     is.finite(RMW_km) & RMW_km > 0
-  
+
   if (!any(ok)) return(out)
-  
+
   Vmax_kt0 <- Vmax_kt
   r_km0 <- r_km
   RMW_km0 <- pmax(5, pmin(200, RMW_km))
-  
+
   # --- FIX 1: Holland B parameterization ---
   B <- rep(NA_real_, n)
-  
+
   okP <- ok & is.finite(Pc) & is.finite(Pn) & (Pc < Pn)
   if (any(okP)) {
     deltaP <- Pn[okP] - Pc[okP]
@@ -279,7 +279,7 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
     Bp <- 1.881 - 0.00557 * RMW_nm - 0.01097 * lat[okP] + 0.0016 * deltaP
     B[okP] <- pmax(1.0, pmin(2.5, Bp))
   }
-  
+
   okH <- ok & !okP
   if (any(okH)) {
     V <- Vmax_kt0[okH]
@@ -287,50 +287,50 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
     i1 <- V >= 100
     i2 <- (V >= 64) & !i1
     i3 <- !i1 & !i2
-    
+
     if (any(i1)) Bh[i1] <- 1.4 + (V[i1] - 100) * 0.008
     if (any(i2)) Bh[i2] <- 1.3 + (V[i2] - 64)  * 0.003
     if (any(i3)) Bh[i3] <- 1.1 + (V[i3] - 20)  * 0.005
-    
+
     B[okH] <- pmax(1.0, pmin(2.5, Bh))
   }
-  
+
   # --- FIX 3: Climatological R34 infill ---
   R34_eff <- R34_km
   R34_is_climo <- rep(FALSE, n)
-  
+
   ##################################
   lat0 <- lat
   lat0[!is.finite(lat0)] <- 18
-  
+
   need_R34 <- ok & (!is.finite(R34_eff) | R34_eff <= 0) & (Vmax_kt0 >= 34)
   if (any(need_R34)) {
     R34_eff[need_R34] <- estimate_R34_climo(Vmax_kt0[need_R34], lat = lat0[need_R34])
     R34_is_climo[need_R34] <- TRUE
   }
-  
+
   # center handling (keep same semantics)
   at_center <- ok & (r_km0 < 0.1)
   out[at_center] <- pmax(0, Vmax_kt0[at_center])
-  
+
   # Remaining points
   use <- ok & !at_center & is.finite(B)
   if (!any(use)) return(out)
-  
+
   r_norm <- r_km0[use] / RMW_km0[use]
-  
+
   # Holland gradient wind (vector)
   inv_r <- 1 / r_norm
   term1 <- (inv_r) ^ B[use]
   term2 <- (RMW_km0[use] / r_km0[use]) ^ B[use]
-  
+
   V_gradient <- rep(NA_real_, length(r_norm))
   inside <- r_norm < 1.0
   if (any(inside)) V_gradient[inside] <- sqrt(term1[inside] * exp(1 - term1[inside]))
   if (any(!inside)) V_gradient[!inside] <- sqrt(term2[!inside] * exp(1 - term2[!inside]))
-  
+
   V_site_kt <- Vmax_kt0[use] * V_gradient
-  
+
   # --- Gradient-to-surface wind correction (Powell et al. 2003, Kepert 2001) ---
   # The Holland profile follows gradient wind decay, which is slower than surface
   # wind decay. The surface/gradient ratio decreases with radius due to boundary
@@ -344,7 +344,7 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   srf_beta  <- 0.5
   srf <- 1 - srf_alpha * (1 - exp(-srf_beta * pmax(0, r_norm - 1)))
   V_site_kt <- V_site_kt * srf
-  
+
   # --- Vmax-dependent profile steepening ---
   # The Holland profile systematically overpredicts wind at 1-4x RMW for intense
   # storms. Validation diagnostic: Irma at Saba (r~1.5x RMW) gives 113 kt vs 80 kt
@@ -370,7 +370,7 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   f_dist <- pmin(2.0, pmax(0, (r_norm - 1) * 5))    # 0 at RMW, 1.0 at 1.2x, 2.0 at 1.4x+
   steep_factor <- pmax(0.55, 1 - steep_gamma * f_int * f_dist)
   V_site_kt <- V_site_kt * steep_factor
-  
+
   # --- FIX 2: R34 calibration (patched for overprediction) ---
   # The R34 calibration adjusts the Holland profile to match 34 kt at the observed
   # R34 distance. However, the calibration factor can be very large (>2x) for
@@ -389,34 +389,34 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
     Bu <- B[use][can_cal]
     Vmaxu <- Vmax_kt0[use][can_cal]
     RMWu <- RMW_km0[use][can_cal]
-    
+
     V_at_R34_model <- Vmaxu * sqrt((RMWu / R34u) ^ Bu * exp(1 - (RMWu / R34u) ^ Bu))
     # Apply same SRF at R34 distance (consistent with profile correction above)
     r_norm_R34 <- R34u / RMWu
     srf_R34 <- 1 - srf_alpha * (1 - exp(-srf_beta * pmax(0, r_norm_R34 - 1)))
     V_at_R34_model <- V_at_R34_model * srf_R34
     good <- is.finite(V_at_R34_model) & (V_at_R34_model > 5) & (V_at_R34_model < 60)
-    
+
     if (any(good)) {
       cal_factor <- rep(1, length(V_at_R34_model))
       cal_factor[good] <- 34 / V_at_R34_model[good]
-      
+
       # (b) Cap calibration factor to prevent extreme inflation
       cal_factor <- pmin(cal_factor, 1.4)
-      
+
       # (a) Quadratic taper: effect concentrates near R34, minimal at intermediate r
       r_site <- r_km0[use][can_cal]
       R34u_safe <- pmax(R34u, RMWu * 1.5)
       taper_linear <- pmin(1.0, pmax(0.0, (r_site - RMWu * 1.2) / (R34u_safe - RMWu * 1.2)))
       taper <- taper_linear^2  # quadratic: 0.55 linear â†’ 0.30 quadratic
       cal_factor[good] <- 1 + taper[good] * (cal_factor[good] - 1)
-      
+
       # (c) Intensity-dependent damping: reduce calibration for strong hurricanes
       # For Vmax > 96 kt (Cat 3+), the inner core dominates and R34 calibration
       # should not inflate intermediate-distance winds
       intensity_damp <- pmin(1.0, pmax(0.3, 1.0 - (Vmaxu - 64) / 120))
       cal_factor[good] <- 1 + intensity_damp[good] * (cal_factor[good] - 1)
-      
+
       # Blend if climatological R34: reduce calibration weight since
       # climo R34 tends to overestimate (represents mean, not storm-specific
       # structure). Reduced from 0.7 to 0.5 based on validation showing
@@ -426,19 +426,19 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
       if (any(blend)) {
         cal_factor[blend] <- 1 + 0.5 * (cal_factor[blend] - 1)
       }
-      
+
       idx <- which(can_cal)
       V_site_kt[idx] <- V_site_kt[idx] * cal_factor
     }
   }
-  
+
   # Outer cutoff â€” tightened to reduce wind exposure footprint
   # Previous: 1.8Ã— observed, 2.4Ã— climo; typical R34~200km â†’ 360-480 km exposure
   # New: 1.5Ã— observed, 1.8Ã— climo; â†’ 300-360 km, closer to NHC wind field extent
   R_outer <- rep(300, length(r_norm))
   has_R34 <- is.finite(R34_eff[use]) & (R34_eff[use] > 0)
   R_outer[has_R34] <- 1.8 * R34_eff[use][has_R34]
-  
+
   # climo extension (stable indexing)
   if (any(has_R34)) {
     idx_has <- which(has_R34)
@@ -447,13 +447,13 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
       R_outer[idx_has[is_cl]] <- 2.4 * R34_eff[use][has_R34][is_cl]
     }
   }
-  
+
   beyond <- r_km0[use] > R_outer
   if (any(beyond)) {
     # Exponential decay beyond R_outer
     V_site_kt[beyond] <- V_site_kt[beyond] * exp(-2 * (r_km0[use][beyond] - R_outer[beyond]) / R_outer[beyond])
   }
-  
+
   out[use] <- pmax(0, pmin(Vmax_kt0[use], V_site_kt))
   out
 }
@@ -471,23 +471,23 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
 #' @export
 compute_storm_heading <- function(df) {
   stopifnot(all(c("SID", "iso_time", "lat", "lon") %in% names(df)))
-  
+
   deg2rad <- function(x) x * pi / 180
   rad2deg <- function(x) x * 180 / pi
-  
+
   bearing_gc <- function(lat1, lon1, lat2, lon2) {
     phi1 <- deg2rad(lat1); phi2 <- deg2rad(lat2)
     lam1 <- deg2rad(lon1); lam2 <- deg2rad(lon2)
     dlam <- lam2 - lam1
     dlam <- (dlam + pi) %% (2 * pi) - pi
-    
+
     y <- sin(dlam) * cos(phi2)
     x <- cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dlam)
-    
+
     brng <- atan2(y, x)
     (rad2deg(brng) + 360) %% 360
   }
-  
+
   df |>
     dplyr::arrange(.data$SID, .data$iso_time) |>
     dplyr::group_by(.data$SID) |>
@@ -496,21 +496,21 @@ compute_storm_heading <- function(df) {
       lon_next = dplyr::lead(.data$lon),
       lat_prev = dplyr::lag(.data$lat),
       lon_prev = dplyr::lag(.data$lon),
-      
+
       heading_fwd = dplyr::if_else(
         is.finite(.data$lat) & is.finite(.data$lon) &
           is.finite(.data$lat_next) & is.finite(.data$lon_next),
         bearing_gc(.data$lat, .data$lon, .data$lat_next, .data$lon_next),
         NA_real_
       ),
-      
+
       heading_bwd = dplyr::if_else(
         is.finite(.data$lat_prev) & is.finite(.data$lon_prev) &
           is.finite(.data$lat) & is.finite(.data$lon),
         bearing_gc(.data$lat_prev, .data$lon_prev, .data$lat, .data$lon),
         NA_real_
       ),
-      
+
       heading_deg = dplyr::case_when(
         is.finite(.data$heading_fwd) ~ .data$heading_fwd,
         is.finite(.data$heading_bwd) ~ .data$heading_bwd,
@@ -547,23 +547,23 @@ compute_storm_heading <- function(df) {
 ) {
   n <- length(V_site_base_kt)
   out <- V_site_base_kt
-  
+
   ok <- is.finite(V_site_base_kt) & is.finite(storm_speed_kt) &
     is.finite(bearing_to_target) & is.finite(storm_heading) &
     is.finite(r_km) & is.finite(RMW_km) & (RMW_km > 0)
-  
+
   if (!any(ok)) return(out)
-  
+
   slow <- ok & (storm_speed_kt < 0.1)
   if (any(slow)) out[slow] <- V_site_base_kt[slow]
-  
+
   use <- ok & !slow
   if (!any(use)) return(out)
-  
+
   angle_diff <- bearing_to_target[use] - storm_heading[use]
   angle_diff <- ((angle_diff + 180) %% 360) - 180
   theta_rad <- angle_diff * pi / 180
-  
+
   r_norm <- r_km[use] / RMW_km[use]
   bad_r <- !is.finite(r_norm) | (r_norm <= 0)
   if (any(bad_r)) {
@@ -571,17 +571,17 @@ compute_storm_heading <- function(df) {
     idx_use <- which(use)
     out[idx_use[bad_r]] <- V_site_base_kt[idx_use[bad_r]]
   }
-  
+
   good <- is.finite(r_norm) & (r_norm > 0)
   if (!any(good)) return(out)
-  
+
   rn <- r_norm[good]
   K <- rep(NA_real_, length(rn))
-  
+
   i1 <- rn < 1.0
   i2 <- (rn >= 1.0) & (rn <= 3.0)
   i3 <- rn > 3.0
-  
+
   # K profile: peaks ~0.40 at RMW (Lin & Chavas 2012 surface-level estimates)
   # Previous values (0.50 peak) overestimated due to not accounting for the
   # gradient-to-surface correction that the asymmetry component should also
@@ -590,12 +590,12 @@ compute_storm_heading <- function(df) {
   if (any(i1)) K[i1] <- 0.25 + 0.15 * rn[i1]           # 0.25 to 0.40 at RMW
   if (any(i2)) K[i2] <- 0.40 - 0.08 * (rn[i2] - 1.0) / 2.0  # 0.40 to 0.32 at 3Ãƒâ€”RMW
   if (any(i3)) K[i3] <- 0.32 * exp(-0.2 * (rn[i3] - 3.0))   # decays from 0.32
-  
+
   K <- pmax(0.05, pmin(0.45, K))
-  
+
   idx_use <- which(use)
   idx_good <- idx_use[good]
-  
+
   V_motion_kt <- K * storm_speed_kt[idx_good] * cos(theta_rad[good])
   out[idx_good] <- pmax(0, V_site_base_kt[idx_good] + V_motion_kt)
   out
@@ -623,7 +623,7 @@ compute_storm_heading <- function(df) {
 #' @return The input data frame with added site-wind columns.
 #' @export
 compute_site_winds_full <- function(df, target_lat, target_lon) {
-  
+
   df <- df |>
     dplyr::mutate(
       dist_km = dplyr::if_else(
@@ -633,27 +633,27 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
       ),
       bearing_to_target = calculate_bearing(.data$lat, .data$lon, target_lat, target_lon),
       quadrant = .get_quadrant(.data$bearing_to_target),
-      
+
       R34_nm = .get_directional_radius(.data$quadrant, .data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
       R50_nm = .get_directional_radius(.data$quadrant, .data$r50_ne_nm, .data$r50_se_nm, .data$r50_sw_nm, .data$r50_nw_nm),
       R64_nm = .get_directional_radius(.data$quadrant, .data$r64_ne_nm, .data$r64_se_nm, .data$r64_sw_nm, .data$r64_nw_nm),
-      
+
       R34_km = .data$R34_nm * 1.852,
       R50_km = .data$R50_nm * 1.852,
       R64_km = .data$R64_nm * 1.852,
-      
+
       Vmax_kt = .data$wind_kt
     )
-  
-  
+
+
   mm <- .enforce_monotone_radii(df$R34_km, df$R50_km, df$R64_km)
   df <- df |>
     dplyr::mutate(R34_km = mm$R34_km, R50_km = mm$R50_km, R64_km = mm$R64_km)
-  
+
   df <- compute_storm_heading(df)
-  
+
   if (!("storm_speed_kt" %in% names(df))) df$storm_speed_kt <- NA_real_
-  
+
 # --- Knaff & Zehr RMW with latitude dependence ---
   df <- df |>
     dplyr::mutate(
@@ -667,9 +667,9 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
         TRUE ~ estimate_RMW_knaff(.data$Vmax_kt, .data$lat)
       )
     )
-  
+
   stopifnot(nrow(df) == length(df$storm_speed_kt), nrow(df) == length(df$heading_deg))
-  
+
   # --- Use patched Holland profile (vectorized; removes mapply bottleneck) ---
   df |>
     dplyr::mutate(
@@ -715,7 +715,7 @@ classify_severity <- function(V_site_max_kt,
   if (!any(ok)) return(out)
   out[ok & v < ts_threshold_kt] <- "TD"
   out[ok & v >= ts_threshold_kt & v < hurricane_threshold_kt] <- "TS"
-  out[ok & v >= hurricane_threshold_kt] <- "HUR64plus"
+  out[ok & v >= hurricane_threshold_kt] <- "HUR"
   out
 }
 
@@ -729,17 +729,17 @@ classify_severity <- function(V_site_max_kt,
 #' @export
 make_storm_events <- function(track_df) {
   if (!requireNamespace('lubridate', quietly = TRUE)) stop('Package `lubridate` is required.')
-  
+
   df <- track_df
-  
+
   if (!("V_site_kt" %in% names(df))) df$V_site_kt <- NA_real_
   if (!("wind_kt"   %in% names(df))) df$wind_kt   <- NA_real_
   if (!("pres_hpa"  %in% names(df))) df$pres_hpa  <- NA_real_
   if (!("poci_hpa"  %in% names(df))) df$poci_hpa  <- NA_real_
   if (!("rmw_km"    %in% names(df))) df$rmw_km    <- NA_real_
-  
+
   df <- df |> dplyr::filter(!is.na(.data$iso_time))
-  
+
   out <- df |>
     dplyr::mutate(
       dP_hpa = dplyr::if_else(
@@ -753,17 +753,17 @@ make_storm_events <- function(track_df) {
       start_time = suppressWarnings(min(.data$iso_time, na.rm = TRUE)),
       end_time   = suppressWarnings(max(.data$iso_time, na.rm = TRUE)),
       n_points   = dplyr::n(),
-      
+
       peak_wind_kt = suppressWarnings(max(.data$V_site_kt, na.rm = TRUE)),
-      
+
       storm_intensity_kt = suppressWarnings(max(.data$wind_kt, na.rm = TRUE)),
-      
+
       min_pressure_hpa  = suppressWarnings(min(.data$pres_hpa, na.rm = TRUE)),
       pressure_deficit_hpa  = suppressWarnings(max(.data$dP_hpa, na.rm = TRUE)),
-      
+
       rmw_min_km  = suppressWarnings(min(.data$rmw_km, na.rm = TRUE)),
       rmw_mean_km = suppressWarnings(mean(.data$rmw_km, na.rm = TRUE)),
-      
+
       .groups = "drop"
     ) |>
     dplyr::rename(storm_id = "SID") |>
@@ -777,7 +777,7 @@ make_storm_events <- function(track_df) {
       year = lubridate::year(.data$start_time)
     ) |>
     tibble::as_tibble()
-  
+
   out
 }
 
@@ -794,9 +794,9 @@ make_storm_events <- function(track_df) {
 #'   all years and classes with zeros.
 #'
 #' @export
-compute_annual_counts <- function(events, severities = c("TS", "HUR64plus")) {
+compute_annual_counts <- function(events, severities = c("TS", "HUR")) {
   if (!requireNamespace("tidyr", quietly = TRUE)) stop("Package `tidyr` is required.")
-  
+
   events |>
     dplyr::filter(.data$storm_class %in% severities) |>
     dplyr::distinct(.data$year, .data$storm_class, .data$storm_id) |>
@@ -814,7 +814,7 @@ compute_annual_counts <- function(events, severities = c("TS", "HUR64plus")) {
 #' @return Tibble with lambda, n_years, prob_annual, prob_none by storm_class.
 #' @export
 compute_lambda_table <- function(annual_counts) {
-  
+
   annual_counts |>
     dplyr::group_by(.data$storm_class) |>
     dplyr::summarise(
@@ -867,14 +867,14 @@ get_annual_counts <- function(out) {
 #' @return List with k_hat, annual_total (year,N), mu, var.
 #' @export
 estimate_k_hat <- function(annual_counts) {
-  
+
   annual_total <- annual_counts |>
     dplyr::group_by(.data$year) |>
     dplyr::summarise(N = sum(.data$n_events), .groups = "drop")
-  
+
   mu <- mean(annual_total$N)
   va <- stats::var(annual_total$N)
-  
+
   k_hat <- if (is.finite(va) && va > mu && mu > 0) mu^2 / (va - mu) else 1e6
   list(k_hat = k_hat, annual_total = annual_total, mu = mu, var = va)
 }

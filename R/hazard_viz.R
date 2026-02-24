@@ -2,15 +2,11 @@
 # Visualization functions for hurricane hazard model
 # =============================================================================
 
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-
 # -----------------------------------------------------------------------------
 # Theme and palette
 # -----------------------------------------------------------------------------
 
-passaat_theme <- function(base_size = 11) {
+plot_theme <- function(base_size = 11) {
 
   theme_light(base_size = base_size) +
     theme(
@@ -21,19 +17,25 @@ passaat_theme <- function(base_size = 11) {
     )
 }
 
-passaat_colors <- list(
-  event = c(TC = "#E69F00", HUR = "#D55E00"),
-  wind = c(mean = "grey40", max = "steelblue"),
-  threshold = c(tc = "#E69F00", hur = "#D55E00"),
-  quantile = c(median = "grey30", p95 = "steelblue", p99 = "#D55E00")
+plot_colors <- list(
+  event = c(TS = "#E69F00", HUR = "#d73027"),
+  wind = c(mean = "grey40", max = "#a50026"),
+  threshold = c(TS = "#E69F00", HUR = "#d73027"),
+  quantile = c(median = "grey30", p95 = "#91bfdb", p99 = "#4575b4")
 )
 
 # -----------------------------------------------------------------------------
 # Data preparation helpers
 # -----------------------------------------------------------------------------
 
-#' Prepare daily data with time keys
-#' @param daily_impact Daily impact data frame (requires: date, wind_kt)
+#' Add day/month/year fields to daily hazard data
+#'
+#' @param daily_impact A data frame or tibble with at least a `date` column coercible
+#'   by `format()` (typically `Date`), one row per day.
+#'
+#' @return `daily_impact` with three added integer columns: `doy` (1-366), `month`
+#'   (1-12), and `year` (4-digit calendar year).
+#' @keywords internal
 prep_daily <- function(daily_impact) {
 
   daily_impact %>%
@@ -45,8 +47,16 @@ prep_daily <- function(daily_impact) {
     )
 }
 
-#' Extract event-level summary from daily data
-#' @param daily Daily data with event_id column
+#' Summarize event-level features from daily rows
+#'
+#' @param daily A data frame or tibble containing daily rows with columns
+#'   `location`, `sim_year`, `event_id`, `event_class`, `date`, and `wind_kt`.
+#'   Rows with `NA` in `event_id` are excluded.
+#'
+#' @return A tibble with one row per unique (`location`, `sim_year`, `event_id`)
+#'   and columns `event_class`, `start_date`, `end_date`, `dur_days`,
+#'   `max_wind_kt`, `start_doy`, and `start_month`.
+#' @keywords internal
 prep_events <- function(daily) {
   daily %>%
     filter(!is.na(event_id)) %>%
@@ -60,7 +70,7 @@ prep_events <- function(daily) {
       .groups = "drop"
     ) %>%
     mutate(
-      event_class = ifelse(event_class == "HUR", "HUR", "TC"),
+      event_class = ifelse(event_class == "HUR", "HUR", "TS"),
       start_doy   = as.integer(format(start_date, "%j")),
       start_month = as.integer(format(start_date, "%m"))
     )
@@ -70,20 +80,48 @@ prep_events <- function(daily) {
 # Plot 1: Wind time series with event overlay
 # -----------------------------------------------------------------------------
 
-#' Plot daily wind time series with event segments
+#' Plot daily wind speed with event-duration overlays
 #'
-#' @param daily Daily data frame (date, wind_kt, event_id, event_class)
-#' @param events Optional pre-computed events table; computed if NULL
-#' @param thr_tc Tropical cyclone threshold (kt)
-#' @param thr_hur Hurricane threshold (kt)
-#' @param show_thresholds Show threshold lines
-#' @param title Plot title
+#' @description Draws a daily wind time series and overlays each event as a
+#'   horizontal segment spanning event start-to-end dates at that event's peak
+#'   wind speed.
+#'
+#' @details If `events` is `NULL`, event summaries are computed from `daily`.
+#'   Segment colors collapse event classes to `TS` and `HUR` (anything not equal
+#'   to `"HUR"` is treated as `TS`). `NA` values in `event_id` are ignored when
+#'   computing events.
+#'
+#' @param daily A data frame or tibble of daily records with columns `date`
+#'   (`Date`), `wind_kt` (numeric, knots), `event_id` (event identifier; `NA`
+#'   means no event), and `event_class` (character/factor).
+#' @param events Optional precomputed event table (data frame/tibble) with
+#'   columns `start_date`, `end_date` (`Date`), `max_wind_kt` (numeric, knots),
+#'   and `event_class` (`"TS"`/`"HUR"`). If `NULL`, it is derived from `daily`.
+#' @param thr_tc Numeric scalar; tropical-cyclone threshold in knots.
+#' @param thr_hur Numeric scalar; hurricane threshold in knots.
+#' @param show_thresholds Logical scalar; if `TRUE`, dashed horizontal threshold
+#'   lines are added.
+#' @param title Character scalar used as plot title.
+#'
+#' @return A `ggplot` object.
+#'
+#' @examples
+#' d <- data.frame(
+#'   date = as.Date("2001-08-01") + 0:9,
+#'   wind_kt = c(10, 20, 40, 55, 30, 15, 5, 10, 12, 8),
+#'   event_id = c(NA, NA, 1, 1, 1, NA, NA, NA, NA, NA),
+#'   event_class = c(NA, NA, "TS", "TS", "TS", NA, NA, NA, NA, NA),
+#'   location = "A",
+#'   sim_year = 2001
+#' )
+#' plot_wind_timeseries(d)
+#' @export
 plot_wind_timeseries <- function(daily,
                                  events = NULL,
                                  thr_tc = 34,
                                  thr_hur = 64,
                                  show_thresholds = TRUE,
-                                 title = "Daily Wind with TC/Hurricane Events") {
+                                 title = "Daily Wind with TS/Hurricane Events") {
 
   if (is.null(events)) events <- prep_events(daily)
 
@@ -98,19 +136,19 @@ plot_wind_timeseries <- function(daily,
       linewidth = 1.5, lineend = "round",
       inherit.aes = FALSE, alpha = 0.85
     ) +
-    scale_color_manual(values = passaat_colors$event, name = "Event") +
+    scale_color_manual(values = plot_colors$event, name = "Event") +
     scale_x_date(expand = expansion(mult = 0.01)) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
     labs(x = NULL, y = "Wind speed (kt)", title = title,
          subtitle = "Segments show event duration at peak intensity") +
-    passaat_theme()
+    plot_theme()
 
   if (show_thresholds) {
     p <- p +
       geom_hline(yintercept = thr_tc,  linetype = "dashed",
-                 color = passaat_colors$threshold["tc"], alpha = 0.7) +
+                 color = plot_colors$threshold["TS"], alpha = 0.7) +
       geom_hline(yintercept = thr_hur, linetype = "dashed",
-                 color = passaat_colors$threshold["hur"], alpha = 0.7)
+                 color = plot_colors$threshold["HUR"], alpha = 0.7)
   }
 
   p
@@ -120,12 +158,37 @@ plot_wind_timeseries <- function(daily,
 # Plot 2: Seasonal distribution (DOY histogram)
 # -----------------------------------------------------------------------------
 
-#' Plot day-of-year distribution of event activity
+#' Plot day-of-year distribution of event timing
 #'
-#' @param daily Daily data with event_id, event_class
-#' @param metric One of "event_days" (duration-weighted) or "starts" (initiation)
-#' @param facet_class Facet by event class (TC/HUR)
-#' @param binwidth DOY bin width in days
+#' @description Plots a day-of-year histogram for either event-active days or
+#'   event starts, optionally faceted by event class.
+#'
+#' @details For `metric = "event_days"`, each day with non-`NA` `event_id`
+#'   contributes one count. For `metric = "starts"`, counts are based on event
+#'   start dates derived from grouped events. Event classes are collapsed to
+#'   `TS`/`HUR` using the same rule as `prep_events()`.
+#'
+#' @param daily A data frame or tibble with at least `date` (`Date`),
+#'   `event_id`, `event_class`, plus fields required by `prep_events()` when
+#'   `metric = "starts"` (`location`, `sim_year`, `wind_kt`).
+#' @param metric Character scalar; one of `"event_days"` or `"starts"`.
+#' @param facet_class Logical scalar; if `TRUE`, create one panel per class.
+#' @param binwidth Numeric scalar > 0; histogram bin width in day-of-year units
+#'   (days).
+#'
+#' @return A `ggplot` object.
+#'
+#' @examples
+#' d <- data.frame(
+#'   date = as.Date("2001-08-01") + 0:9,
+#'   wind_kt = c(10, 20, 40, 55, 30, 15, 5, 10, 12, 8),
+#'   event_id = c(NA, NA, 1, 1, 1, NA, NA, 2, 2, NA),
+#'   event_class = c(NA, NA, "TS", "TS", "TS", NA, NA, "HUR", "HUR", NA),
+#'   location = "A",
+#'   sim_year = 2001
+#' )
+#' plot_seasonality_doy(d, metric = "event_days")
+#' @export
 plot_seasonality_doy <- function(daily,
                                  metric = c("event_days", "starts"),
                                  facet_class = TRUE,
@@ -140,7 +203,7 @@ plot_seasonality_doy <- function(daily,
       filter(!is.na(event_id), !is.na(event_class)) %>%
       mutate(
         doy = as.integer(format(date, "%j")),
-        event_class = ifelse(event_class == "HUR", "HUR", "TC")
+        event_class = ifelse(event_class == "HUR", "HUR", "TS")
       )
     ylab <- "Event-days"
     subtitle <- "Duration-weighted: each day of event exposure counted"
@@ -155,8 +218,8 @@ plot_seasonality_doy <- function(daily,
   }
 
   p <- ggplot(plot_data, aes(x = doy, fill = event_class)) +
-    geom_histogram(binwidth = binwidth, boundary = 0, color = "white", linewidth = 0.2) +
-    scale_fill_manual(values = passaat_colors$event, name = "Class") +
+    geom_histogram(position = "dodge", binwidth = binwidth, boundary = 0, color = "white", linewidth = 0.2) +
+    scale_fill_manual(values = plot_colors$event, name = "Class") +
     scale_x_continuous(
       breaks = c(1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335),
       labels = month.abb,
@@ -165,9 +228,9 @@ plot_seasonality_doy <- function(daily,
     ) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
     labs(x = NULL, y = ylab,
-         title = "Seasonality of TC Activity",
+         title = "Seasonality of TS/HUR Activity",
          subtitle = subtitle) +
-    passaat_theme()
+    plot_theme()
 
   if (facet_class) {
     p <- p + facet_wrap(~ event_class, ncol = 1, scales = "free_y")
@@ -180,10 +243,33 @@ plot_seasonality_doy <- function(daily,
 # Plot 3: Monthly event counts (bar chart)
 # -----------------------------------------------------------------------------
 
-#' Plot monthly summary of event starts
+#' Plot monthly counts of event starts
 #'
-#' @param daily Daily data frame
-#' @param normalize Divide by number of years to show annual rate
+#' @description Summarizes event starts by calendar month and plots grouped bars
+#'   by event class, optionally normalized to an annual rate.
+#'
+#' @details Event starts are computed from `prep_events()`. Missing month/class
+#'   combinations are filled with zero. When `normalize = TRUE`, counts are
+#'   divided by `n_distinct(daily$sim_year)`.
+#'
+#' @param daily A data frame or tibble with columns required by `prep_events()`
+#'   (`location`, `sim_year`, `event_id`, `event_class`, `date`, `wind_kt`).
+#'   Rows with `NA` `event_id` are excluded during event extraction.
+#' @param normalize Logical scalar; if `TRUE`, plot events per year.
+#'
+#' @return A `ggplot` object.
+#'
+#' @examples
+#' d <- data.frame(
+#'   date = as.Date("2001-08-01") + 0:9,
+#'   wind_kt = c(10, 20, 40, 55, 30, 15, 5, 10, 12, 8),
+#'   event_id = c(NA, NA, 1, 1, 1, NA, NA, 2, 2, NA),
+#'   event_class = c(NA, NA, "TS", "TS", "TS", NA, NA, "HUR", "HUR", NA),
+#'   location = "A",
+#'   sim_year = 2001
+#' )
+#' plot_monthly_events(d)
+#' @export
 plot_monthly_events <- function(daily, normalize = FALSE) {
 
   events <- prep_events(daily)
@@ -192,7 +278,7 @@ plot_monthly_events <- function(daily, normalize = FALSE) {
   # Count by month, fill zeros
   monthly <- events %>%
     count(event_class, start_month, name = "n") %>%
-    complete(event_class = c("TC", "HUR"), start_month = 1:12, fill = list(n = 0))
+    complete(event_class = c("TS", "HUR"), start_month = 1:12, fill = list(n = 0))
 
   if (normalize) {
     monthly <- monthly %>% mutate(n = n / n_years)
@@ -204,23 +290,42 @@ plot_monthly_events <- function(daily, normalize = FALSE) {
   ggplot(monthly, aes(x = factor(start_month), y = n, fill = event_class)) +
     geom_col(position = "dodge", width = 0.7) +
     scale_x_discrete(labels = month.abb) +
-    scale_fill_manual(values = passaat_colors$event, name = "Class") +
+    scale_fill_manual(values = plot_colors$event, name = "Class") +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
     labs(x = NULL, y = ylab, title = "Monthly Distribution of Event Starts") +
-    passaat_theme()
+    plot_theme()
 }
 
 # -----------------------------------------------------------------------------
 # Plot 4: DOY wind summary (mean + max)
 # -----------------------------------------------------------------------------
 
-#' Plot mean and maximum wind speed by day of year
+#' Plot mean and maximum wind by day of year
 #'
-#' @param daily Daily data frame
-#' @param smooth Apply loess smoothing
-#' @param span Loess span (if smooth = TRUE)
-#' @param thr_tc TC threshold
-#' @param thr_hur Hurricane threshold
+#' @description Aggregates daily wind by day-of-year and plots mean and maximum
+#'   wind speed curves with optional loess smoothing.
+#'
+#' @details Summary statistics use `na.rm = TRUE`; all-`NA` day groups propagate
+#'   non-finite summaries. Threshold lines are always drawn at `thr_tc` and
+#'   `thr_hur`.
+#'
+#' @param daily A data frame or tibble with columns `date` (`Date`) and
+#'   `wind_kt` (numeric, knots).
+#' @param smooth Logical scalar; if `TRUE`, use `geom_smooth(method = "loess")`,
+#'   otherwise plot unsmoothed lines.
+#' @param span Numeric scalar in `(0, 1]`; loess span used when `smooth = TRUE`.
+#' @param thr_tc Numeric scalar; tropical-cyclone threshold in knots.
+#' @param thr_hur Numeric scalar; hurricane threshold in knots.
+#'
+#' @return A `ggplot` object.
+#'
+#' @examples
+#' d <- data.frame(
+#'   date = as.Date("2001-01-01") + 0:29,
+#'   wind_kt = 15 + sin((1:30) / 5) * 10
+#' )
+#' plot_doy_wind(d, smooth = FALSE)
+#' @export
 plot_doy_wind <- function(daily,
                           smooth = TRUE,
                           span = 0.15,
@@ -250,9 +355,9 @@ plot_doy_wind <- function(daily,
 
   p +
     geom_hline(yintercept = thr_tc,  linetype = "dashed",
-               color = passaat_colors$threshold["tc"], alpha = 0.7) +
+               color = plot_colors$threshold["TS"], alpha = 0.7) +
     geom_hline(yintercept = thr_hur, linetype = "dashed",
-               color = passaat_colors$threshold["hur"], alpha = 0.7) +
+               color = plot_colors$threshold["HUR"], alpha = 0.7) +
     scale_color_manual(values = c(Mean = "grey40", Maximum = "steelblue"), name = NULL) +
     scale_x_continuous(
       breaks = c(1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335),
@@ -262,20 +367,41 @@ plot_doy_wind <- function(daily,
     ) +
     labs(x = NULL, y = "Wind speed (kt)",
          title = "Daily Wind Speed by Day of Year") +
-    passaat_theme()
+    plot_theme()
 }
 
 # -----------------------------------------------------------------------------
 # Plot 5: Monthly wind quantiles
 # -----------------------------------------------------------------------------
 
-#' Plot monthly wind quantile ribbon
+#' Plot monthly wind quantile summary
 #'
-#' @param daily Daily data frame
-#' @param probs Quantile probabilities (lower, median, upper)
-#' @param log_scale Use log y-axis
-#' @param thr_tc Tropical cyclone threshold (kt)
-#' @param thr_hur Hurricane threshold (kt)
+#' @description Computes monthly wind quantiles and plots a median-to-upper
+#'   ribbon with upper and extreme quantile lines.
+#'
+#' @details `probs` is indexed as lower/median display (`probs[1]`), ribbon
+#'   upper bound (`probs[2]`), and extreme line (`probs[3]`). If `log_scale` is
+#'   `TRUE`, quantile values are floored at 0.5 before `scale_y_log10()` to
+#'   avoid non-positive values.
+#'
+#' @param daily A data frame or tibble with columns `date` (`Date`) and
+#'   `wind_kt` (numeric, knots; `NA` allowed and ignored in quantiles).
+#' @param probs Numeric vector of length 3 with probabilities in `[0, 1]`, used
+#'   in
+#'   order `probs[1]`, `probs[2]`, `probs[3]`.
+#' @param log_scale Logical scalar; if `TRUE`, use a log10 y-axis.
+#' @param thr_tc Numeric scalar; tropical-cyclone threshold in knots.
+#' @param thr_hur Numeric scalar; hurricane threshold in knots.
+#'
+#' @return A `ggplot` object.
+#'
+#' @examples
+#' d <- data.frame(
+#'   date = as.Date("2001-01-01") + 0:59,
+#'   wind_kt = pmax(1, 20 + rnorm(60, sd = 5))
+#' )
+#' plot_monthly_quantiles(d)
+#' @export
 plot_monthly_quantiles <- function(daily,
                                    probs = c(0.50, 0.95, 0.99),
                                    log_scale = FALSE,
@@ -300,15 +426,15 @@ plot_monthly_quantiles <- function(daily,
 
   p <- ggplot(monthly, aes(x = month)) +
     geom_ribbon(aes(ymin = median, ymax = upper), fill = "grey80", alpha = 0.8) +
-    geom_line(aes(y = median), linewidth = 1, color = passaat_colors$quantile["median"]) +
+    geom_line(aes(y = median), linewidth = 1, color = plot_colors$quantile["median"]) +
     geom_line(aes(y = upper), linewidth = 0.7, linetype = "dashed",
-              color = passaat_colors$quantile["p95"]) +
+              color = plot_colors$quantile["p95"]) +
     geom_line(aes(y = extreme), linewidth = 0.7, linetype = "dotted",
-              color = passaat_colors$quantile["p99"]) +
+              color = plot_colors$quantile["p99"]) +
     geom_hline(yintercept = thr_tc,  linetype = "dashed",
-               color = passaat_colors$threshold["tc"], alpha = 0.6) +
+               color = plot_colors$threshold["TS"], alpha = 0.6) +
     geom_hline(yintercept = thr_hur, linetype = "dashed",
-               color = passaat_colors$threshold["hur"], alpha = 0.6) +
+               color = plot_colors$threshold["HUR"], alpha = 0.6) +
     scale_x_continuous(breaks = 1:12, labels = month.abb) +
     labs(
       x = NULL,
@@ -317,7 +443,7 @@ plot_monthly_quantiles <- function(daily,
       subtitle = sprintf("Ribbon: median-P%d | Dotted: P%d",
                          probs[2]*100, probs[3]*100)
     ) +
-    passaat_theme()
+    plot_theme()
 
   if (log_scale) p <- p + scale_y_log10()
 
@@ -327,11 +453,31 @@ plot_monthly_quantiles <- function(daily,
 # -----------------------------------------------------------------------------
 # Plot 6: Annual event count distribution
 # -----------------------------------------------------------------------------
-#' Plot histogram of annual event counts
+#' Plot distribution of annual event totals
 #'
-#' @param daily Daily data frame
-#' @param metric "events" (distinct events) or "days" (event-days)
-#' @param show_poisson Overlay Poisson distribution
+#' @description Computes annual totals from daily event flags and plots a
+#'   histogram of either distinct events or event-days.
+#'
+#' @details Annual `n_events` counts distinct non-`NA` `event_id` values per
+#'   `sim_year`; annual `n_days` counts daily rows with non-`NA` `event_id`. A
+#'   Poisson expected-count overlay is added only when `metric = "events"` and
+#'   `show_poisson = TRUE`.
+#'
+#' @param daily A data frame or tibble with columns `sim_year` and `event_id`
+#'   (`NA` means no event that day).
+#' @param metric Character scalar; one of `"events"` or `"days"`.
+#' @param show_poisson Logical scalar; if `TRUE`, add Poisson expected points for
+#'   the `"events"` metric.
+#'
+#' @return A `ggplot` object.
+#'
+#' @examples
+#' d <- data.frame(
+#'   sim_year = rep(2001:2003, each = 5),
+#'   event_id = c(NA, 1, 1, NA, 2, NA, NA, 3, 3, 3, NA, 4, NA, 5, NA)
+#' )
+#' plot_annual_counts(d, metric = "events")
+#' @export
 plot_annual_counts <- function(daily,
                                metric = c("events", "days"),
                                show_poisson = TRUE) {
@@ -365,7 +511,7 @@ plot_annual_counts <- function(daily,
     scale_y_continuous(expand = expansion(mult = c(0, 0.08))) +
     labs(x = xlab, y = "Number of years", title = title,
          subtitle = sprintf("Mean: %.2f | n = %d years", lambda, n_years)) +
-    passaat_theme()
+    plot_theme()
 
   if (show_poisson && metric == "events") {
     # Overlay Poisson PMF
@@ -385,12 +531,34 @@ plot_annual_counts <- function(daily,
 # Plot 7: Event intensity vs duration scatter
 # -----------------------------------------------------------------------------
 
-#' Scatter plot of event intensity vs duration
+#' Plot event intensity versus duration
 #'
-#' @param daily Daily data frame (or events table directly)
-#' @param events Pre-computed events table (optional)
-#' @param thr_tc TC threshold
-#' @param thr_hur Hurricane threshold
+#' @description Creates a scatter plot of event duration (days) against event
+#'   peak wind speed, colored by event class.
+#'
+#' @details If `events` is `NULL`, `daily` must be supplied and is summarized via
+#'   `prep_events()`. The function errors if both are `NULL`.
+#'
+#' @param daily Optional data frame/tibble of daily rows used only when
+#'   `events = NULL`; must contain columns required by `prep_events()`.
+#' @param events Optional data frame/tibble with columns `dur_days` (integer
+#'   days), `max_wind_kt` (numeric, knots), and `event_class` (`"TS"`/`"HUR"`).
+#' @param thr_tc Numeric scalar; tropical-cyclone threshold in knots.
+#' @param thr_hur Numeric scalar; hurricane threshold in knots.
+#'
+#' @return A `ggplot` object.
+#'
+#' @examples
+#' d <- data.frame(
+#'   date = as.Date("2001-08-01") + 0:9,
+#'   wind_kt = c(10, 20, 40, 55, 30, 15, 5, 10, 70, 65),
+#'   event_id = c(NA, NA, 1, 1, 1, NA, NA, NA, 2, 2),
+#'   event_class = c(NA, NA, "TS", "TS", "TS", NA, NA, NA, "HUR", "HUR"),
+#'   location = "A",
+#'   sim_year = 2001
+#' )
+#' plot_intensity_duration(daily = d)
+#' @export
 plot_intensity_duration <- function(daily = NULL,
                                     events = NULL,
                                     thr_tc = 34,
@@ -405,24 +573,39 @@ plot_intensity_duration <- function(daily = NULL,
     geom_point(alpha = 0.6, size = 2) +
     geom_hline(yintercept = thr_tc,  linetype = "dashed", alpha = 0.5) +
     geom_hline(yintercept = thr_hur, linetype = "dashed", alpha = 0.5) +
-    scale_color_manual(values = passaat_colors$event, name = "Class") +
+    scale_color_manual(values = plot_colors$event, name = "Class") +
     scale_x_continuous(breaks = scales::breaks_pretty()) +
     labs(x = "Event duration (days)", y = "Peak wind (kt)",
          title = "Event Intensity vs Duration") +
-    passaat_theme()
+    plot_theme()
 }
 
 # -----------------------------------------------------------------------------
 # Plot 8: Wind histogram / density
 # -----------------------------------------------------------------------------
 
-#' Plot wind speed distribution
+#' Plot distribution of daily wind speed
 #'
-#' @param daily Daily data frame
-#' @param type "histogram" or "density"
-#' @param log_scale Use log x-axis
-#' @param thr_tc Tropical cyclone threshold (kt)
-#' @param thr_hur Hurricane threshold (kt)
+#' @description Plots daily wind speed as either a histogram or kernel density
+#'   estimate with TS/HUR threshold reference lines.
+#'
+#' @details `type` is matched with `match.arg()`. If `log_scale = TRUE`,
+#'   `scale_x_log10()` is applied; non-positive `wind_kt` values are therefore
+#'   not displayable on the transformed axis.
+#'
+#' @param daily A data frame or tibble with column `wind_kt` (numeric, knots;
+#'   `NA` values are ignored by ggplot stat layers).
+#' @param type Character scalar; one of `"histogram"` or `"density"`.
+#' @param log_scale Logical scalar; if `TRUE`, use a log10 x-axis.
+#' @param thr_tc Numeric scalar; tropical-cyclone threshold in knots.
+#' @param thr_hur Numeric scalar; hurricane threshold in knots.
+#'
+#' @return A `ggplot` object.
+#'
+#' @examples
+#' d <- data.frame(wind_kt = c(5, 10, 15, 20, 35, 40, 65, 70))
+#' plot_wind_distribution(d, type = "histogram")
+#' @export
 plot_wind_distribution <- function(daily,
                                    type = c("histogram", "density"),
                                    log_scale = FALSE,
@@ -442,13 +625,13 @@ plot_wind_distribution <- function(daily,
 
   p <- p +
     geom_vline(xintercept = thr_tc,  linetype = "dashed",
-               color = passaat_colors$threshold["tc"]) +
+               color = plot_colors$threshold["TS"]) +
     geom_vline(xintercept = thr_hur, linetype = "dashed",
-               color = passaat_colors$threshold["hur"]) +
+               color = plot_colors$threshold["HUR"]) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Wind speed (kt)", y = if(type == "histogram") "Count" else "Density",
          title = "Wind Speed Distribution") +
-    passaat_theme()
+    plot_theme()
 
   if (log_scale) p <- p + scale_x_log10()
 
@@ -459,11 +642,33 @@ plot_wind_distribution <- function(daily,
 # Plot 9: Return level plot
 # -----------------------------------------------------------------------------
 
-#' Plot empirical return levels
+#' Plot empirical wind return levels
 #'
-#' @param daily Daily data frame
-#' @param block_maxima Use annual maxima (TRUE) or all exceedances (FALSE
-#' @param threshold Threshold for POT approach (if block_maxima = FALSE)
+#' @description Computes empirical return-period points using either annual block
+#'   maxima or peaks-over-threshold exceedances and plots them on a log-scaled
+#'   return-period axis.
+#'
+#' @details For `block_maxima = TRUE`, one annual maximum is taken per
+#'   `sim_year`. For `block_maxima = FALSE`, `threshold` must be non-`NULL`, and
+#'   only rows with `wind_kt > threshold` are used. Wind summaries use
+#'   `na.rm = TRUE`.
+#'
+#' @param daily A data frame or tibble with columns `sim_year` and `wind_kt`
+#'   (numeric, knots).
+#' @param block_maxima Logical scalar; if `TRUE`, use annual maxima, otherwise
+#'   use exceedances over `threshold`.
+#' @param threshold Optional numeric scalar (knots); required when
+#'   `block_maxima = FALSE`.
+#'
+#' @return A `ggplot` object.
+#'
+#' @examples
+#' d <- data.frame(
+#'   sim_year = rep(2001:2005, each = 3),
+#'   wind_kt = c(20, 35, 50, 15, 30, 70, 10, 25, 45, 18, 40, 55, 22, 60, 65)
+#' )
+#' plot_return_levels(d, block_maxima = TRUE)
+#' @export
 plot_return_levels <- function(daily,
                                block_maxima = TRUE,
                                threshold = NULL) {
@@ -511,18 +716,45 @@ plot_return_levels <- function(daily,
     labs(x = "Return period (years)", y = "Wind speed (kt)",
          title = "Empirical Return Levels",
          subtitle = subtitle) +
-    passaat_theme()
+    plot_theme()
 }
 
 # -----------------------------------------------------------------------------
 # Quick summary panel
 # -----------------------------------------------------------------------------
 
-#' Generate multi-panel summary figure
+#' Build a four-panel hurricane hazard summary figure
 #'
-#' @param daily Daily data frame
-#' @param thr_tc TC threshold
-#' @param thr_hur Hurricane threshold
+#' @description Combines seasonality, monthly quantiles, annual event counts,
+#'   and intensity-duration plots into a single 2x2 patchwork layout.
+#'
+#' @details Requires the `patchwork` package at runtime (`requireNamespace()` is
+#'   called). Input requirements combine those of the component plotting
+#'   functions.
+#'
+#' @param daily A data frame or tibble with columns needed by
+#'   `plot_seasonality_doy()`, `plot_monthly_quantiles()`,
+#'   `plot_annual_counts()`, and `plot_intensity_duration()`.
+#' @param thr_tc Numeric scalar; tropical-cyclone threshold in knots passed to
+#'   component plots.
+#' @param thr_hur Numeric scalar; hurricane threshold in knots passed to
+#'   component plots.
+#'
+#' @return A `patchwork`/`ggplot` composed plot object.
+#'
+#' @examples
+#' \dontrun{
+#' d <- data.frame(
+#'   date = as.Date("2001-01-01") + 0:364,
+#'   wind_kt = pmax(1, 20 + rnorm(365, sd = 8)),
+#'   event_id = sample(c(NA, 1:8), 365, replace = TRUE),
+#'   event_class = sample(c(NA, "TS", "HUR"), 365, replace = TRUE),
+#'   location = "A",
+#'   sim_year = 2001
+#' )
+#' plot_summary_panel(d)
+#' }
+#' @export
 plot_summary_panel <- function(daily, thr_tc = 34, thr_hur = 64) {
 
   requireNamespace("patchwork", quietly = TRUE)
