@@ -16,5 +16,5 @@ Numeric scalar: baseline hurricane fraction p_HUR_base.
 \description{
 Computes p_HUR_base = I>_HUR / (I>_TS + I>_HUR) from the historical record.
 This is the baseline probability that an event reaching TS intensity or
-above becomes a hurricane (a?Y64 kt).
+above becomes a hurricane (>=64 kt).
 }

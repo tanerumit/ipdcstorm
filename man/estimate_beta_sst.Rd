@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_climate.R
 \name{estimate_beta_sst}
 \alias{estimate_beta_sst}
-\title{Estimate the SSTa?"activity scaling coefficient I2_SST}
+\title{Estimate the SST-activity scaling coefficient I2_SST}
 \usage{
 estimate_beta_sst(
   annual_counts,
@@ -22,7 +22,7 @@ year, storm_class, n_events.}
 
 \item{beta_prior}{Optional numeric; if provided, shrinks the estimate toward
 this prior value using a simple Bayesian-inspired weighted average:
-I2_final = wA.I2_MLE + (1-w)A.I2_prior, where w = min(1, n_years/50).
+beta_final = w * beta_mle + (1 - w) * beta_prior, where w = min(1, n_years/50).
 This stabilizes estimates when the historical record is short.}
 
 \item{verbose}{Logical; print diagnostic output.}
@@ -44,12 +44,21 @@ A list with:
 Fits a Poisson (or negative binomial) GLM of annual TS counts on MDR SST
 anomaly to estimate I2_SST in:
 
-\verb{E[N_t] = exp(I? + I2_SST A. I"SST_t)}
+\code{E[N_t] = exp(alpha + beta_SST * sst_anomaly_t)}
 
 The coefficient I2_SST represents the log-linear sensitivity of annual TS
-activity to SST anomalies. Typical values from the literature are 0.4a?"0.8
-per A?C for the North Atlantic (Villarini et al. 2011; Vecchi et al. 2021).
+activity to SST anomalies. Typical values from the literature are around
+0.4-0.8 per degC for the North Atlantic (Villarini et al. 2011;
+Vecchi et al. 2021).
 
 If the \code{MASS} package is available, a negative binomial GLM is preferred
 (accounts for overdispersion). Otherwise, a quasi-Poisson GLM is used.
+}
+\examples{
+# Small example workflow:
+sst_df <- get_mdr_sst_builtin() |>
+  compute_sst_anomaly()
+# annual_counts should come from compute_annual_counts()
+# beta_info <- estimate_beta_sst(annual_counts, sst_df)
+
 }

@@ -14,11 +14,17 @@ baseline (default: 1991:2020).}
 }
 \value{
 The input tibble with added columns:
-\item{sst_clim}{Climatological mean SST (A?C) over the baseline period.}
-\item{sst_anomaly}{I"SST (A?C) relative to baseline.}
+\item{sst_clim}{Climatological mean SST (degC) over the baseline period.}
+\item{sst_anomaly}{SST anomaly (degC) relative to baseline.}
 }
 \description{
-Computes I"SST_t = SST_t a^' SST_clim, where SST_clim is the mean SST over
-the specified baseline period (default: 1991a?"2020, the current WMO standard
+Computes \code{delta_SST_t = SST_t - SST_clim}, where \code{SST_clim} is the mean SST over
+the specified baseline period (default: 1991-2020, the current WMO standard
 climatological normal).
+}
+\examples{
+sst <- get_mdr_sst_builtin()
+sst_anom <- compute_sst_anomaly(sst, baseline_years = 1991:2020)
+head(sst_anom)
+
 }

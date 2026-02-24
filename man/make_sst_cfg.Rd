@@ -23,7 +23,7 @@ make_sst_cfg(
 
 \item{baseline_years}{Integer vector; years for climatological baseline.}
 
-\item{scenario}{Character; SST scenario for projection years.}
+\item{scenario}{Character; SST scenario name.}
 
 \item{scenario_start_year}{Integer; first year of the simulation scenario.}
 
@@ -38,9 +38,35 @@ A list with class "sst_cfg" containing all climate configuration parameters.
 Creates a climate configuration object for \code{run_hazard_model()} with
 user-facing inputs first and expert knobs grouped in \code{advanced}.
 
-Scenarios follow the model's accepted values:
-\code{"stationary"}, \code{"ssp126"}, \code{"ssp245"}, \code{"ssp585"}.
+\code{scenario} accepts \code{"stationary"} plus any value returned by
+\code{sst_scenario_info("all")$scenario} (for example SSP and optional KNMI
+scenarios when KNMI helpers are available).
 
-When \code{scenario = "stationary"}, climate conditioning is disabled by default
-and behaves like a stationary run.
+If \code{scenario = "stationary"}, the returned config forces
+\code{enabled = FALSE} so the model behaves as a stationary run.
+}
+\details{
+Use \code{advanced} only when you need to override expert defaults:
+\itemize{
+\item \code{advanced$beta_sst}: fixed Level 1 SST sensitivity (\code{I2_SST}). If \code{NULL},
+it is estimated from data in \code{prepare_sst_data()}.
+\item \code{advanced$beta_prior}: prior mean used when estimating \code{beta_sst}.
+\item \code{advanced$gamma_intensity}: fixed Level 2 intensity sensitivity (\code{I3}).
+If \code{NULL}, it is estimated from data in \code{prepare_sst_data()}.
+\item \code{advanced$gamma_prior}: prior mean used when estimating \code{gamma_intensity}.
+\item \code{advanced$cc_params}: Level 3 event perturbation controls.
+\itemize{
+\item \code{NULL}: disable Level 3 perturbation.
+\item \code{list()}: enable Level 3 with defaults from \code{default_cc_params()}.
+\item named list: override one or more Level 3 scaling factors.
+}
+}
+}
+\examples{
+cfg <- make_sst_cfg(
+  enabled = TRUE,
+  sst_source = "builtin",
+  scenario = "ssp245"
+)
+cfg
 }

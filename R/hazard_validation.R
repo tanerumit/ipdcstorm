@@ -1325,7 +1325,7 @@ validate_hazard_model <- function(cfg,
 # =============================================================================
 
 .validate_theme <- function(base_size = 11) {
-  passaat_theme(base_size = base_size) +
+  plot_theme(base_size = base_size) +
     ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", size = base_size + 1))
 }
 

@@ -23,9 +23,9 @@ or "historical_resample".}
 
 \item{start_year}{Integer; first calendar year of the simulation (for labelling).}
 
-\item{delta_start}{Numeric; starting I"SST (A?C) for "trend" mode.}
+\item{delta_start}{Numeric; starting SST anomaly (degC) for "trend" mode.}
 
-\item{delta_end}{Numeric; ending I"SST (A?C) for "trend" mode.}
+\item{delta_end}{Numeric; ending SST anomaly (degC) for "trend" mode.}
 
 \item{sst_hist_df}{Optional tibble with historical SST anomalies (year, sst_anomaly)
 for "historical_resample" mode. If NULL, uses built-in data.}
@@ -39,4 +39,8 @@ Tibble with columns: sim_year, calendar_year, sst_anomaly, scenario.
 Generates a per-year SST anomaly (degC relative to baseline_years).
 For SSP scenarios, uses piecewise-linear warming to 2050 and 2100 targets
 and holds constant thereafter to avoid unrealistic multi-century extrapolation.
+}
+\examples{
+generate_sst_scenario(n_years = 5, mode = "stationary")
+generate_sst_scenario(n_years = 5, mode = "trend", delta_start = 0, delta_end = 1)
 }

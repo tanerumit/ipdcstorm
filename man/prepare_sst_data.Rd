@@ -31,10 +31,17 @@ A list with:
 \item{gamma_intensity}{Estimated or user-supplied I3.}
 \item{gamma_info}{Full output from \code{estimate_gamma_intensity()} (or NULL).}
 \item{p_hur_base}{Baseline hurricane fraction.}
+\item{cc_params}{Resolved Level 3 perturbation parameters (or \code{NULL}).}
 \item{sst_cfg}{The input configuration.}
 }
 \description{
 Reads SST data from the configured source, computes anomalies, and
 optionally estimates I2_SST (Level 1) and I3 (Level 2). Returns a
 processed climate object ready for use in the hazard model.
+}
+\examples{
+cfg <- make_sst_cfg(enabled = TRUE, sst_source = "builtin", scenario = "stationary")
+prep <- prepare_sst_data(cfg, verbose = FALSE)
+prep$beta_sst
+
 }

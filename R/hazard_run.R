@@ -6,7 +6,34 @@
 # =============================================================================
 
 # =============================================================================
-# 0) Hazard configuration
+# 0) Console output helpers (internal)
+# =============================================================================
+
+#' Print a styled section header
+#' @keywords internal
+.cli_h <- function(title, width = 60) {
+  pad <- max(2, width - nchar(title) - 2)
+  message(sprintf("\n\u2500\u2500 %s %s", title, strrep("\u2500", pad)))
+}
+
+#' Print an indented info line
+#' @keywords internal
+.cli_info <- function(...) {
+  message(sprintf("   %s", paste0(...)))
+}
+
+#' Print a success line with checkmark
+#' @keywords internal
+.cli_ok <- function(...) {
+  message(sprintf("   \u2714 %s", paste0(...)))
+}
+
+#' Format a number with comma separators
+#' @keywords internal
+.fmt_n <- function(x) format(x, big.mark = ",", scientific = FALSE, trim = TRUE)
+
+# =============================================================================
+# 1) Hazard configuration
 # =============================================================================
 
 #' Create a hazard model configuration
@@ -113,6 +140,7 @@ print.hazard_cfg <- function(x, ...) {
 #' @param severities Character vector of storm classes to model (default TS and HUR).
 #' @param sst_cfg Optional SST configuration from `make_sst_cfg()`. When provided
 #'   and enabled, the annual count simulation uses SST-conditioned rate scaling.
+#' @param verbose Logical; if TRUE (default), print progress to console.
 #'
 #' @return A list with elements:
 #'   \code{sim}, \code{events}, \code{trackpoints}, \code{rates}, \code{fit},
@@ -121,7 +149,8 @@ print.hazard_cfg <- function(x, ...) {
 #' @export
 run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
                              severities = c("TS", "HUR"),
-                             sst_cfg = NULL) {
+                             sst_cfg = NULL,
+                             verbose = TRUE) {
   if (!inherits(cfg, "hazard_cfg")) {
     stop("cfg must be created by make_hazard_cfg().", call. = FALSE)
   }
@@ -129,13 +158,25 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   ts_threshold_kt <- as.numeric(cfg$advanced$ts_threshold_kt)
   hurricane_threshold_kt <- as.numeric(cfg$advanced$hurricane_threshold_kt)
 
+  # --- 1) Load IBTrACS (suppress sub-function messages) --------------------
+  if (verbose) .cli_h("Loading data")
+
   ib_sub <- read_ibtracs_clean(
     ibtracs_csv = cfg$data_path,
     basin = "NA",
     season = NULL,
     keep_all = TRUE,
-    verbose = TRUE
+    verbose = FALSE
   )
+
+  yr_range <- range(as.integer(ib_sub$SEASON), na.rm = TRUE)
+  if (verbose) {
+    .cli_ok(sprintf("%s track points (%d\u2013%d)",
+                    .fmt_n(nrow(ib_sub)), yr_range[1], yr_range[2]))
+  }
+
+  # --- 2) Filter storms per location --------------------------------------
+  if (verbose) .cli_h("Filtering storms by location")
 
   trackpoints_list    <- setNames(vector("list", nrow(targets)), targets$name)
   events_list         <- setNames(vector("list", nrow(targets)), targets$name)
@@ -143,6 +184,9 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   rates_list          <- setNames(vector("list", nrow(targets)), targets$name)
   sim_list            <- setNames(vector("list", nrow(targets)), targets$name)
   fit_list            <- setNames(vector("list", nrow(targets)), targets$name)
+
+  # Collect per-location summary for table display
+  loc_summary <- list()
 
   for (i in seq_len(nrow(targets))) {
     loc <- targets[i, ]
@@ -178,10 +222,10 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
       ) |>
       dplyr::relocate("location", .before = "storm_id")
 
-    message("[", loc_name, "] storms=", nrow(ev),
-            " finite peak_wind_kt=", sum(is.finite(ev$peak_wind_kt)),
-            " >=", ts_threshold_kt, "=", sum(ev$peak_wind_kt >= ts_threshold_kt, na.rm = TRUE),
-            " >=", hurricane_threshold_kt, "=", sum(ev$peak_wind_kt >= hurricane_threshold_kt, na.rm = TRUE))
+    # Collect summary stats for table
+    n_ts  <- sum(ev$peak_wind_kt >= ts_threshold_kt, na.rm = TRUE)
+    n_hur <- sum(ev$peak_wind_kt >= hurricane_threshold_kt, na.rm = TRUE)
+    loc_summary[[loc_name]] <- list(n_ts = n_ts, n_hur = n_hur)
 
     ev <- ev |>
       dplyr::filter(.data$year >= cfg$start_year) |>
@@ -210,6 +254,17 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
     )
   }
 
+  # Print location summary table
+  if (verbose && length(loc_summary) > 0) {
+    max_name_len <- max(nchar(names(loc_summary)))
+    col_w <- max(max_name_len, 10)
+    .cli_info(sprintf("%-*s  %5s  %5s", col_w, "Location", "TS", "HUR"))
+    for (nm in names(loc_summary)) {
+      s <- loc_summary[[nm]]
+      .cli_info(sprintf("%-*s  %5d  %5d", col_w, nm, s$n_ts, s$n_hur))
+    }
+  }
+
   events_all        <- dplyr::bind_rows(Filter(Negate(is.null), events_list))
   annual_counts_all <- dplyr::bind_rows(Filter(Negate(is.null), annual_counts_list))
   rates_all         <- dplyr::bind_rows(Filter(Negate(is.null), rates_list))
@@ -225,7 +280,8 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   p_hur_base <- NA_real_
 
   if (!is.null(sst_cfg) && inherits(sst_cfg, "sst_cfg") && isTRUE(sst_cfg$enabled)) {
-    message("\n>>> Climate modifications enabled")
+    scenario_label <- toupper(gsub("_", "-", sst_cfg$scenario))
+    if (verbose) .cli_h(sprintf("Climate scenario: %s", scenario_label))
 
     combined_lambda <- rates_all |>
       dplyr::group_by(.data$storm_class) |>
@@ -235,12 +291,13 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
         .groups = "drop"
       )
 
+    # Run preparation with verbose=FALSE — we'll summarise ourselves
     sst_info <- prepare_sst_data(
       sst_cfg = sst_cfg,
       annual_counts = annual_counts_all,
       lambda_table = combined_lambda,
       min_year = cfg$start_year,
-      verbose = TRUE
+      verbose = FALSE
     )
 
     beta_sst <- sst_info$beta_sst
@@ -256,33 +313,48 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
     sst_anomaly_sim <- sst_scenario$sst_anomaly
     sst_info$scenario <- sst_scenario
 
-    message(sprintf("[Climate] Simulation: %d years, scenario=%s",
-                    cfg$n_sim_years, sst_cfg$scenario))
+    # --- Print clean climate summary ---
+    if (verbose) {
+      # SST baseline
+      if (!is.null(sst_info$sst_df)) {
+        sst_clim <- round(sst_info$sst_df$sst_clim[1], 1)
+        bl_range <- sst_cfg$baseline_years
+        .cli_info(sprintf("SST baseline (%d\u2013%d): %.1f\u00b0C",
+                          min(bl_range), max(bl_range), sst_clim))
+      }
 
-    rs <- exp(beta_sst * sst_anomaly_sim)
-    message(sprintf("[L1] beta_SST=%.3f | Rate scaling range: [%.2f, %.2f]x",
-                    beta_sst, min(rs, na.rm = TRUE), max(rs, na.rm = TRUE)))
+      # Level 1: Rate scaling
+      if (is.finite(beta_sst) && beta_sst != 0) {
+        pct_change <- round(100 * (exp(beta_sst) - 1))
+        .cli_info(sprintf("L1 Rate scaling    : +1\u00b0C SST \u2192 %+d%% activity",
+                          pct_change))
+      } else {
+        .cli_info("L1 Rate scaling    : disabled")
+      }
 
-    if (is.finite(gamma_intensity) && gamma_intensity != 0) {
-      p_range <- pmin(0.99, pmax(0.01, p_hur_base * (1 + gamma_intensity * range(sst_anomaly_sim, na.rm = TRUE))))
-      message(sprintf("[L2] gamma=%.4f | p_HUR range: [%.3f, %.3f] (base: %.3f)",
-                      gamma_intensity, p_range[1], p_range[2], p_hur_base))
-    }
+      # Level 2: Intensity shift
+      if (is.finite(gamma_intensity) && gamma_intensity > 0) {
+        pct_gamma <- round(100 * gamma_intensity)
+        .cli_info(sprintf("L2 Intensity shift : +1\u00b0C SST \u2192 %+d%% hurricane fraction",
+                          pct_gamma))
+      } else {
+        .cli_info("L2 Intensity shift : not significant")
+      }
 
-    if (!is.null(sst_info$cc_params)) {
-      ccp <- sst_info$cc_params
-      sst_range <- range(sst_anomaly_sim, na.rm = TRUE)
-      message(sprintf("[L3] Storm perturbation active | At max SST (+%.1fC): V_peak %+.0f%%, RMW %+.0f%%, dur %+.0f%%",
-                      sst_range[2],
-                      100 * ccp$v_scale * sst_range[2],
-                      100 * ccp$r_scale * sst_range[2],
-                      100 * (1 / max(0.25, 1 + ccp$speed_scale * sst_range[2] / 2) - 1)))
+      # Level 3: Storm perturbation
+      if (!is.null(sst_info$cc_params)) {
+        .cli_info("L3 Storm perturb.  : active")
+      } else {
+        .cli_info("L3 Storm perturb.  : disabled")
+      }
     }
   }
 
   # =========================================================================
   # Simulate annual counts (with climate modifications)
   # =========================================================================
+  if (verbose) .cli_h(sprintf("Simulating %s years", .fmt_n(cfg$n_sim_years)))
+
   sim_list <- setNames(vector("list", nrow(targets)), targets$name)
 
   for (loc_name in names(Filter(Negate(is.null), fit_list))) {
@@ -308,6 +380,16 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   }
 
   sim_all <- dplyr::bind_rows(Filter(Negate(is.null), sim_list))
+
+  # Print simulation summary
+  if (verbose) {
+    if (!is.null(sst_anomaly_sim) && beta_sst != 0) {
+      rs <- exp(beta_sst * sst_anomaly_sim)
+      .cli_info(sprintf("Rate scaling range: %.1fx \u2013 %.1fx",
+                        min(rs, na.rm = TRUE), max(rs, na.rm = TRUE)))
+    }
+    .cli_ok("Done")
+  }
 
   fit_all <- fit_all |>
     dplyr::mutate(

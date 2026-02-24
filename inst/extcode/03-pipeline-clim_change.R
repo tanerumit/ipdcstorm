@@ -17,31 +17,23 @@
 
 rm(list = ls())
 
-library(tidyr)
-library(stringr)
-library(lubridate)
-library(geosphere)
-library(readr)
+# =============================================================================
+# Configuration
+# =============================================================================
+
+# library(tidyr)
+# library(stringr)
+# library(lubridate)
+# library(geosphere)
+# library(readr)
 library(dplyr)
+library(tidyr)
 library(tibble)
 library(ggplot2)
-
-source("R/hazard_core.R")
-source("R/hazard_climate.R")
-source("R/hazard_downscale.R")
-source("R/hazard_ibtracs.R")
-source("R/hazard_utils.R")
-source("R/hazard_run.R")
-
-set.seed(123)
-
-
-# =============================================================================
-# Global configuration
-# =============================================================================
+library(ipdcstorm)
 
 cfg <- make_hazard_cfg(
-  data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv",
+  data_path = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
   search_radius_km = 800,
   start_year = 1970,
   n_sim_years = 1000
@@ -53,71 +45,31 @@ targets <- tibble::tribble(
   "Saba",        17.6350,  -63.2300,
   "Statia",      17.4890,  -62.9740,
   "Puerto_Rico", 18.2208,  -66.5901,
-  "Miami",       25.7617,  -80.1918
-)
+  "Miami",       25.7617,  -80.1918)
 
 per_target_cfg <- list(
   Saba    = list(thr_port = 40, thr_infra = 55),
   Statia  = list(thr_port = 38, thr_infra = 52),
-  St_Martin = list(thr_port = 45, thr_infra = 60)
-)
+  St_Martin = list(thr_port = 45, thr_infra = 60))
 
 
 # =============================================================================
 # 1) STATIONARY BASELINE
 # =============================================================================
 
-message("\n", strrep("=", 72))
-message("  1) STATIONARY BASELINE")
-message(strrep("=", 72))
-
+seed_compare <- 123
+set.seed(seed_compare)
 out_stat <- run_hazard_model(
   cfg = cfg, targets = targets, per_target_cfg = per_target_cfg,
-  sst_cfg = NULL
-)
+  sst_cfg = NULL)
 
-cat("\nStationary lambdas:\n")
-print(out_stat$lambda_all)
-
+#print(out_stat$lambda_all)
 
 # =============================================================================
-# 2) LEVEL 1 ONLY: rate scaling, no intensity shift
+# 2) Rate scaling + intensity shift under SSP scenarios
 # =============================================================================
 
-message("\n", strrep("=", 72))
-message("  2) LEVEL 1 ONLY (SSP5-8.5 rate scaling, gamma=0)")
-message(strrep("=", 72))
-
-sst_L1_only <- make_sst_cfg(
-  enabled = TRUE,
-  sst_source = "builtin",
-  baseline_years = 1991L:2020L,
-  scenario = "ssp585",
-  scenario_start_year = 2025L,
-  advanced = list(
-    beta_sst = NULL,         # estimate from data
-    beta_prior = 0.6,
-    gamma_intensity = 0,     # explicitly disable intensity shift
-    gamma_prior = 0
-  )
-)
-
-out_L1 <- run_hazard_model(
-  cfg = cfg, targets = targets, per_target_cfg = per_target_cfg,
-  sst_cfg = sst_L1_only
-)
-
-cat("\nbeta_SST:", out_L1$beta_sst, "\n")
-cat("gamma:", out_L1$gamma_intensity, "\n")
-
-
-# =============================================================================
-# 3) LEVEL 1+2: rate scaling + intensity shift under SSP scenarios
-# =============================================================================
-
-message("\n", strrep("=", 72))
-message("  3) LEVEL 1+2 (SSP2-4.5)")
-message(strrep("=", 72))
+# Rate scaling + intensity shift under SSP scenarios
 
 sst_245 <- make_sst_cfg(
   enabled = TRUE,
@@ -128,19 +80,21 @@ sst_245 <- make_sst_cfg(
   advanced = list(
     beta_sst = NULL,
     beta_prior = 0.6,
-    gamma_intensity = NULL,  # estimate from data
-    gamma_prior = 0.065      # 6.5% HUR fraction increase per C
+    gamma_intensity = NULL,   # estimate from data
+    gamma_prior = 0.065,      # 6.5% HUR fraction increase per C
+    cc_params = list(
+      v_scale     =  NULL,     #0.05,  # +5% peak intensity per degC
+      r_scale     =  NULL,     #0.08,  # +8% radii expansion per degC
+      speed_scale =  NULL,     #-0.10, # -10% translation speed per degC
+      precip_scale = NULL      #0.07   # +7% rainfall per degC (CC scaling)
+    )
   )
 )
 
+set.seed(seed_compare)
 out_245 <- run_hazard_model(
   cfg = cfg, targets = targets, per_target_cfg = per_target_cfg,
-  sst_cfg = sst_245
-)
-
-message("\n", strrep("=", 72))
-message("  3b) LEVEL 1+2 (SSP5-8.5)")
-message(strrep("=", 72))
+  sst_cfg = sst_245)
 
 sst_585 <- make_sst_cfg(
   enabled = TRUE,
@@ -156,58 +110,46 @@ sst_585 <- make_sst_cfg(
   )
 )
 
+set.seed(seed_compare)
 out_585 <- run_hazard_model(
   cfg = cfg, targets = targets, per_target_cfg = per_target_cfg,
   sst_cfg = sst_585
 )
 
-cat("\nEstimated climate parameters:\n")
-cat("  beta_SST:", out_585$beta_sst, "\n")
-cat("  gamma:", out_585$gamma_intensity, "\n")
-cat("  p_HUR_base:", out_585$p_hur_base, "\n")
-
-
 # =============================================================================
 # 4) COMPARE ACROSS SCENARIOS
 # =============================================================================
 
-message("\n", strrep("=", 72))
-message("  4) SCENARIO COMPARISON")
-message(strrep("=", 72))
-
 sim_compare <- bind_rows(
-  out_stat$sim_all |> mutate(scenario = "Stationary"),
-  out_L1$sim_all   |> mutate(scenario = "L1 only (SSP5-8.5)"),
-  out_245$sim_all  |> mutate(scenario = "L1+L2 SSP2-4.5"),
-  out_585$sim_all  |> mutate(scenario = "L1+L2 SSP5-8.5")
-)
+  out_stat$sim |> mutate(scenario = "Stationary"),
+  out_245$sim  |> mutate(scenario = "SSP2-4.5"),
+  out_585$sim  |> mutate(scenario = "SSP5-8.5"))
 
 # --- Activity summary ---
 activity_summary <- sim_compare |>
-  group_by(scenario, island) |>
+  group_by(scenario, location) |>
   summarise(
     mean_total = mean(n_total),
-    mean_TS = mean(n_TS),
-    mean_HUR = mean(n_HUR),
-    mean_p_hur = mean(n_HUR / pmax(1, n_total)),
-    mean_A = mean(A),
+    mean_ts = mean(n_ts),
+    mean_hur = mean(n_hur),
+    mean_p_hur = mean(n_hur / pmax(1, n_total)),
     .groups = "drop"
   ) |>
-  arrange(island, scenario)
+  arrange(location, scenario)
 
 cat("\n--- Mean Annual Activity by Scenario ---\n")
 print(knitr::kable(activity_summary |> mutate(across(where(is.numeric), ~round(., 3))),
                    format = "pipe"))
 
-# --- Severity split comparison (L2 effect) ---
+# --- Severity split comparison  ---
 split_summary <- sim_compare |>
-  group_by(scenario, island) |>
+  group_by(scenario, location) |>
   summarise(
-    p_hur_sim = mean(n_HUR / pmax(1, n_total)),
-    mean_p_hur_param = mean(p_hur),
+    p_hur_sim = mean(n_hur / pmax(1, n_total)),
+    mean_p_hur_param = mean(p_hurricane),
     .groups = "drop"
   ) |>
-  arrange(island, scenario)
+  arrange(location, scenario)
 
 cat("\n--- Hurricane Fraction by Scenario (L2 Effect) ---\n")
 print(knitr::kable(split_summary |> mutate(across(where(is.numeric), ~round(., 4))),
@@ -215,28 +157,33 @@ print(knitr::kable(split_summary |> mutate(across(where(is.numeric), ~round(., 4
 
 # --- Percentage changes vs stationary ---
 change_table <- sim_compare |>
-  group_by(scenario, island) |>
+  group_by(scenario, location) |>
   summarise(
     mean_total = mean(n_total),
-    mean_HUR = mean(n_HUR),
+    mean_hur = mean(n_hur),
     .groups = "drop"
-  ) |>
-  pivot_wider(names_from = scenario,
-              values_from = c(mean_total, mean_HUR)) |>
-  mutate(
-    pct_total_L1L2_585 = 100 * (`mean_total_L1+L2 SSP5-8.5` - mean_total_Stationary) / mean_total_Stationary,
-    pct_HUR_L1L2_585 = 100 * (`mean_HUR_L1+L2 SSP5-8.5` - mean_HUR_Stationary) / mean_HUR_Stationary,
-    pct_HUR_L1only_585 = 100 * (`mean_HUR_L1 only (SSP5-8.5)` - mean_HUR_Stationary) / mean_HUR_Stationary
   )
 
-cat("\n--- Percentage Change vs Stationary (SSP5-8.5) ---\n")
-cat("  (L1+L2 captures both more activity AND higher HUR fraction)\n")
+base_table <- change_table |>
+  filter(scenario == "Stationary") |>
+  transmute(location, mean_total_stationary = mean_total, mean_hur_stationary = mean_hur)
+
+ssp585_table <- change_table |>
+  filter(scenario == "SSP5-8.5") |>
+  transmute(location, mean_total_585 = mean_total, mean_hur_585 = mean_hur)
+
+change_table <- base_table |>
+  left_join(ssp585_table, by = "location") |>
+  mutate(
+    pct_total_585 = 100 * (mean_total_585 - mean_total_stationary) / mean_total_stationary,
+    pct_hur_585 = 100 * (mean_hur_585 - mean_hur_stationary) / mean_hur_stationary
+  )
+
 print(knitr::kable(
   change_table |>
-    select(island, pct_total_L1L2_585, pct_HUR_L1only_585, pct_HUR_L1L2_585) |>
+    select(location, pct_total_585, pct_hur_585) |>
     mutate(across(where(is.numeric), ~round(., 1))),
-  format = "pipe"
-))
+  format = "pipe"))
 
 
 # =============================================================================
@@ -286,56 +233,9 @@ print(knitr::kable(daily_summary |> mutate(across(where(is.numeric), ~round(., 2
 # 6) DIAGNOSTIC PLOTS
 # =============================================================================
 
-if (!is.null(out_585$sst_info$gamma_info$fit_data)) {
+if (nrow(out_585$fit) > 0) {
 
   dir.create("output/climate", recursive = TRUE, showWarnings = FALSE)
-
-  # --- SST-activity plot (L1) ---
-  if (!is.null(out_585$sst_info$beta_info$fit_data)) {
-    fit_df <- out_585$sst_info$beta_info$fit_data
-
-    p1 <- ggplot(fit_df, aes(x = sst_anomaly, y = N)) +
-      geom_point(color = "steelblue", size = 2.5, alpha = 0.7) +
-      geom_smooth(method = "glm", method.args = list(family = "poisson"),
-                  formula = y ~ x, color = "red", linewidth = 0.8, se = TRUE) +
-      geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
-      labs(
-        x = "MDR SST Anomaly (C)",
-        y = "Annual TC count",
-        title = "L1: SST-Activity Relationship",
-        subtitle = sprintf("beta_SST = %.3f | +1C -> %+.0f%% activity",
-                            out_585$beta_sst,
-                            100 * (exp(out_585$beta_sst) - 1))
-      ) +
-      theme_light(base_size = 11)
-
-    ggsave("output/climate/L1_sst_activity.png", p1, width = 8, height = 5, dpi = 150)
-    message("Saved: output/climate/L1_sst_activity.png")
-  }
-
-  # --- HUR fraction vs SST plot (L2) ---
-  gamma_df <- out_585$sst_info$gamma_info$fit_data
-
-  p2 <- ggplot(gamma_df, aes(x = sst_anomaly, y = p_hur)) +
-    geom_point(color = "darkred", size = 2.5, alpha = 0.7) +
-    geom_smooth(method = "glm",
-                method.args = list(family = binomial(link = "logit")),
-                formula = y ~ x, color = "red", linewidth = 0.8, se = TRUE) +
-    geom_hline(yintercept = out_585$p_hur_base, linetype = "dashed", color = "grey50") +
-    labs(
-      x = "MDR SST Anomaly (C)",
-      y = "Hurricane fraction (n_HUR / n_total)",
-      title = "L2: Intensity Shift - HUR Fraction vs SST",
-      subtitle = sprintf("gamma = %.4f | p_HUR_base = %.3f | +1C -> p_HUR %+.1f%%",
-                          out_585$gamma_intensity,
-                          out_585$p_hur_base,
-                          100 * out_585$gamma_intensity)
-    ) +
-    theme_light(base_size = 11)
-
-  ggsave("output/climate/L2_intensity_shift.png", p2, width = 8, height = 5, dpi = 150)
-  message("Saved: output/climate/L2_intensity_shift.png")
-
 
   # --- Scenario trajectories ---
   scenarios <- bind_rows(
@@ -344,8 +244,13 @@ if (!is.null(out_585$sst_info$gamma_info$fit_data)) {
     generate_sst_scenario(76, mode = "ssp585", start_year = 2025)
   )
 
-  gamma <- out_585$gamma_intensity
-  p_base <- out_585$p_hur_base
+  fit_row <- out_585$fit |>
+    select(beta_sst, gamma_intensity, p_hurricane_base) |>
+    distinct() |>
+    slice(1)
+
+  gamma <- fit_row$gamma_intensity
+  p_base <- fit_row$p_hurricane_base
   scenarios <- scenarios |>
     mutate(p_hur_t = pmin(0.99, pmax(0.01, p_base * (1 + gamma * sst_anomaly))))
 
@@ -396,6 +301,7 @@ sst_585_L3 <- make_sst_cfg(
   )
 )
 
+set.seed(seed_compare)
 out_585_L3 <- run_hazard_model(
   cfg = cfg, targets = targets, per_target_cfg = per_target_cfg,
   sst_cfg = sst_585_L3

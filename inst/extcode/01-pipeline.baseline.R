@@ -8,7 +8,9 @@ library(dplyr)
 out_dir <- "output/baseline"
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
-# --- 1) Configuration -------------------------------------------------------
+# =============================================================================
+# Model configuration
+# =============================================================================
 
 cfg <- make_hazard_cfg(
   data_path       = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
@@ -19,10 +21,13 @@ cfg <- make_hazard_cfg(
 # Stationary baseline — no climate modifications
 sst_cfg <- make_sst_cfg(enabled = FALSE)
 
-targets <- tibble::tibble(
-  name = c("Saba", "St. Eustatius", "St. Martin"),
-  lat  = c(17.63, 17.49, 18.04),
-  lon  = c(-63.24, -62.97, -63.07)
+targets <- tibble::tribble(
+  ~name,        ~lat,      ~lon,
+  "St_Martin",   18.0708,  -63.0501,
+  "Saba",        17.6350,  -63.2300,
+  "Statia",      17.4890,  -62.9740,
+  "Puerto_Rico", 18.2208,  -66.5901,
+  "Miami",       25.7617,  -80.1918
 )
 
 # --- 2) Run hazard model ----------------------------------------------------
@@ -47,6 +52,12 @@ daily_all <- generate_daily_hazard_impact(
   scenario       = "stationary",
   seed           = 42
 )
+
+
+# =============================================================================
+# Visualize outputs
+# =============================================================================
+
 
 # --- 4) Per-location visualizations ------------------------------------------
 
@@ -165,3 +176,21 @@ ggsave(file.path(comp_dir, "sim_annual_totals.png"), p_sim,
        width = 7, height = 8)
 
 message("\n[DONE] All baseline outputs saved to: ", out_dir)
+
+
+
+# =============================================================================
+# Model validation against historical events
+# =============================================================================
+
+res <- validate_hazard_model(
+  cfg = cfg,
+  targets = targets,
+  validation_cfg = make_validation_cfg(),
+  severities = c("TS", "HUR"),
+  sst_cfg = NULL
+)
+
+# Validation outputs
+out <- res$out
+val <- res$val

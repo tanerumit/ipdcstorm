@@ -9,7 +9,8 @@ run_hazard_model(
   targets,
   per_target_cfg = list(),
   severities = c("TS", "HUR"),
-  sst_cfg = NULL
+  sst_cfg = NULL,
+  verbose = TRUE
 )
 }
 \arguments{
@@ -23,6 +24,8 @@ run_hazard_model(
 
 \item{sst_cfg}{Optional SST configuration from \code{make_sst_cfg()}. When provided
 and enabled, the annual count simulation uses SST-conditioned rate scaling.}
+
+\item{verbose}{Logical; if TRUE (default), print progress to console.}
 }
 \value{
 A list with elements:

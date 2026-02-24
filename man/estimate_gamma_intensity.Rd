@@ -20,7 +20,7 @@ estimate_gamma_intensity(
 \item{min_year}{Integer; earliest year to include.}
 
 \item{gamma_prior}{Optional numeric; prior value for shrinkage (default: 0.065,
-i.e. 6.5\% increase in HUR fraction per A?C).}
+i.e. 6.5\% increase in HUR fraction per degC).}
 
 \item{verbose}{Logical.}
 }
@@ -38,11 +38,12 @@ A list with:
 Fits a logistic regression of annual hurricane fraction on SST anomaly
 to estimate the intensification trend coefficient I3 in:
 
-p_HUR(t) = p_HUR_base A- (1 + I3 A. I"SST_t)
+\code{p_HUR(t) = p_HUR_base * (1 + gamma * sst_anomaly_t)}
 
 The coefficient I3 captures how the fraction of storms reaching hurricane
-intensity shifts with SST warming. Literature estimates suggest 5a?"8\% increase
-in Cat 4a?"5 fraction per A?C of tropical SST warming (Knutson et al. 2020;
+intensity shifts with SST warming. Literature estimates suggest roughly
+5-8\% increase in Cat 4-5 fraction per degC of tropical SST warming
+(Knutson et al. 2020;
 Kossin et al. 2020).
 
 Uses a binomial GLM: cbind(n_HUR, n_TS) ~ sst_anomaly, then converts the

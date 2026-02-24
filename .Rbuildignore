@@ -50,3 +50,6 @@
 ^output$
 ^hazard_validation\.R$
 ^R/_repo$
+
+#Agents
+./agents
