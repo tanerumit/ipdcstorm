@@ -11,13 +11,5 @@ Tibble with columns: region, storm_class, lambda_ref, source, gate_approx_nm, pe
 }
 \description{
 Returns a tibble of published annual TC passage rates from literature,
-for comparison against model-fitted lambdas. Sources:
-\itemize{
-\item Tropical storm (34+ kt) passage rates within ~100 nm of Leeward Islands
-from Neumann et al. (1999), Landsea et al. (various HURDAT2 analyses),
-and NHC climatology tables.
-\item Hurricane (64+ kt) passage rates from the same sources.
-\item Values represent storms passing within roughly 100-150 nm radius
-(comparable to the model's effective gate after wind field application).
-}
+for comparison against model-fitted lambdas.
 }

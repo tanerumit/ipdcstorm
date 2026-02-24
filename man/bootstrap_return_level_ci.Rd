@@ -30,6 +30,4 @@ Generates bootstrap CIs by:
 \item Refitting the hurdle-GEV to each bootstrap sample
 \item Computing return levels from each fit
 }
-
-This propagates uncertainty from both the zero-fraction and the GEV parameters.
 }

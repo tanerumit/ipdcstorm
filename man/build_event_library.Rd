@@ -7,7 +7,7 @@
 build_event_library(
   track_df,
   event_df,
-  sev_levels = c("TD", "TS", "HUR"),
+  sev_levels = c("TD", "TS", "HUR64plus"),
   bins = list(wind = c(0, 34, 64, 83, 96, 113, Inf), Pc = c(850, 900, 940, 970, 1000,
     1050), RMW = c(0, 10, 20, 30, 40, 60, Inf)),
   seed = NULL,

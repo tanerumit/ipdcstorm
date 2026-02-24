@@ -73,11 +73,10 @@ sst_cfg <- make_sst_cfg(
 res <- validate_hazard_model(
   cfg = cfg,
   targets = targets,
-  per_target_cfg = per_target_cfg,
   severities = c("TS", "HUR64plus"),
   sst_cfg = sst_cfg,
   holdout_years = 10,
-  n_sim = 5000,
+  sim_years = 5000,
   return_periods = c(5, 10, 25, 50),
   seed = 42,
   out_dir = "output/validation",
@@ -91,3 +90,4 @@ val <- res$val
 
 message("\nSaved artifacts:")
 print(res$artifacts)
+

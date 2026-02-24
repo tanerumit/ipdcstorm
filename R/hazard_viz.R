@@ -11,7 +11,7 @@ library(ggplot2)
 # -----------------------------------------------------------------------------
 
 passaat_theme <- function(base_size = 11) {
-  
+
   theme_light(base_size = base_size) +
     theme(
       panel.grid.minor = element_blank(),
@@ -35,10 +35,10 @@ passaat_colors <- list(
 #' Prepare daily data with time keys
 #' @param daily_impact Daily impact data frame (requires: date, wind_kt)
 prep_daily <- function(daily_impact) {
-  
+
   daily_impact %>%
     mutate(
-      
+
       doy   = as.integer(format(date, "%j")),
       month = as.integer(format(date, "%m")),
       year  = as.integer(format(date, "%Y"))
@@ -84,16 +84,16 @@ plot_wind_timeseries <- function(daily,
                                  thr_hur = 64,
                                  show_thresholds = TRUE,
                                  title = "Daily Wind with TC/Hurricane Events") {
-  
+
   if (is.null(events)) events <- prep_events(daily)
-  
-  
+
+
   p <- ggplot(daily, aes(x = date, y = wind_kt)) +
     geom_line(color = "grey50", linewidth = 0.4) +
     geom_segment(
       data = events,
-      aes(x = start_date, xend = end_date, 
-          y = max_wind_kt, yend = max_wind_kt, 
+      aes(x = start_date, xend = end_date,
+          y = max_wind_kt, yend = max_wind_kt,
           color = event_class),
       linewidth = 1.5, lineend = "round",
       inherit.aes = FALSE, alpha = 0.85
@@ -104,15 +104,15 @@ plot_wind_timeseries <- function(daily,
     labs(x = NULL, y = "Wind speed (kt)", title = title,
          subtitle = "Segments show event duration at peak intensity") +
     passaat_theme()
-  
+
   if (show_thresholds) {
     p <- p +
-      geom_hline(yintercept = thr_tc,  linetype = "dashed", 
+      geom_hline(yintercept = thr_tc,  linetype = "dashed",
                  color = passaat_colors$threshold["tc"], alpha = 0.7) +
-      geom_hline(yintercept = thr_hur, linetype = "dashed", 
+      geom_hline(yintercept = thr_hur, linetype = "dashed",
                  color = passaat_colors$threshold["hur"], alpha = 0.7)
   }
-  
+
   p
 }
 
@@ -130,10 +130,10 @@ plot_seasonality_doy <- function(daily,
                                  metric = c("event_days", "starts"),
                                  facet_class = TRUE,
                                  binwidth = 7) {
-  
-  
+
+
   metric <- match.arg(metric)
-  
+
   if (metric == "event_days") {
     # Duration-weighted: count each day an event is active
     plot_data <- daily %>%
@@ -144,7 +144,7 @@ plot_seasonality_doy <- function(daily,
       )
     ylab <- "Event-days"
     subtitle <- "Duration-weighted: each day of event exposure counted"
-    
+
   } else {
     # Starts only: count event initiations
     events <- prep_events(daily)
@@ -153,7 +153,7 @@ plot_seasonality_doy <- function(daily,
     ylab <- "Event starts"
     subtitle <- "Count of event initiations by day of year"
   }
-  
+
   p <- ggplot(plot_data, aes(x = doy, fill = event_class)) +
     geom_histogram(binwidth = binwidth, boundary = 0, color = "white", linewidth = 0.2) +
     scale_fill_manual(values = passaat_colors$event, name = "Class") +
@@ -164,15 +164,15 @@ plot_seasonality_doy <- function(daily,
       expand = c(0, 0)
     ) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
-    labs(x = NULL, y = ylab, 
+    labs(x = NULL, y = ylab,
          title = "Seasonality of TC Activity",
          subtitle = subtitle) +
     passaat_theme()
-  
+
   if (facet_class) {
     p <- p + facet_wrap(~ event_class, ncol = 1, scales = "free_y")
   }
-  
+
   p
 }
 
@@ -185,22 +185,22 @@ plot_seasonality_doy <- function(daily,
 #' @param daily Daily data frame
 #' @param normalize Divide by number of years to show annual rate
 plot_monthly_events <- function(daily, normalize = FALSE) {
-  
+
   events <- prep_events(daily)
   n_years <- n_distinct(daily$sim_year)
-  
+
   # Count by month, fill zeros
   monthly <- events %>%
     count(event_class, start_month, name = "n") %>%
     complete(event_class = c("TC", "HUR"), start_month = 1:12, fill = list(n = 0))
-  
+
   if (normalize) {
     monthly <- monthly %>% mutate(n = n / n_years)
     ylab <- "Events per year"
   } else {
     ylab <- "Total event starts"
   }
-  
+
   ggplot(monthly, aes(x = factor(start_month), y = n, fill = event_class)) +
     geom_col(position = "dodge", width = 0.7) +
     scale_x_discrete(labels = month.abb) +
@@ -226,7 +226,7 @@ plot_doy_wind <- function(daily,
                           span = 0.15,
                           thr_tc = 34,
                           thr_hur = 64) {
-  
+
   doy_summary <- daily %>%
     mutate(doy = as.integer(format(date, "%j"))) %>%
     group_by(doy) %>%
@@ -235,23 +235,23 @@ plot_doy_wind <- function(daily,
       max_wind  = max(wind_kt, na.rm = TRUE),
       .groups = "drop"
     ) %>%
-    pivot_longer(cols = c(mean_wind, max_wind), 
+    pivot_longer(cols = c(mean_wind, max_wind),
                  names_to = "stat", values_to = "wind_kt") %>%
     mutate(stat = factor(stat, levels = c("mean_wind", "max_wind"),
                          labels = c("Mean", "Maximum")))
-  
+
   p <- ggplot(doy_summary, aes(x = doy, y = wind_kt, color = stat))
-  
+
   if (smooth) {
     p <- p + geom_smooth(method = "loess", span = span, se = FALSE, linewidth = 1)
   } else {
     p <- p + geom_line(linewidth = 0.6)
   }
-  
+
   p +
-    geom_hline(yintercept = thr_tc,  linetype = "dashed", 
+    geom_hline(yintercept = thr_tc,  linetype = "dashed",
                color = passaat_colors$threshold["tc"], alpha = 0.7) +
-    geom_hline(yintercept = thr_hur, linetype = "dashed", 
+    geom_hline(yintercept = thr_hur, linetype = "dashed",
                color = passaat_colors$threshold["hur"], alpha = 0.7) +
     scale_color_manual(values = c(Mean = "grey40", Maximum = "steelblue"), name = NULL) +
     scale_x_continuous(
@@ -260,7 +260,7 @@ plot_doy_wind <- function(daily,
       limits = c(1, 366),
       expand = c(0, 0)
     ) +
-    labs(x = NULL, y = "Wind speed (kt)", 
+    labs(x = NULL, y = "Wind speed (kt)",
          title = "Daily Wind Speed by Day of Year") +
     passaat_theme()
 }
@@ -281,7 +281,7 @@ plot_monthly_quantiles <- function(daily,
                                    log_scale = FALSE,
                                    thr_tc = 34,
                                    thr_hur = 64) {
-  
+
   monthly <- daily %>%
     mutate(month = as.integer(format(date, "%m"))) %>%
     group_by(month) %>%
@@ -291,13 +291,13 @@ plot_monthly_quantiles <- function(daily,
       extreme = quantile(wind_kt, probs[3], na.rm = TRUE),
       .groups = "drop"
     )
-  
+
   # For log scale, floor small values
   if (log_scale) {
     monthly <- monthly %>%
       mutate(across(c(median, upper, extreme), ~ pmax(.x, 0.5)))
   }
-  
+
   p <- ggplot(monthly, aes(x = month)) +
     geom_ribbon(aes(ymin = median, ymax = upper), fill = "grey80", alpha = 0.8) +
     geom_line(aes(y = median), linewidth = 1, color = passaat_colors$quantile["median"]) +
@@ -305,22 +305,22 @@ plot_monthly_quantiles <- function(daily,
               color = passaat_colors$quantile["p95"]) +
     geom_line(aes(y = extreme), linewidth = 0.7, linetype = "dotted",
               color = passaat_colors$quantile["p99"]) +
-    geom_hline(yintercept = thr_tc,  linetype = "dashed", 
+    geom_hline(yintercept = thr_tc,  linetype = "dashed",
                color = passaat_colors$threshold["tc"], alpha = 0.6) +
-    geom_hline(yintercept = thr_hur, linetype = "dashed", 
+    geom_hline(yintercept = thr_hur, linetype = "dashed",
                color = passaat_colors$threshold["hur"], alpha = 0.6) +
     scale_x_continuous(breaks = 1:12, labels = month.abb) +
     labs(
-      x = NULL, 
+      x = NULL,
       y = "Wind speed (kt)",
       title = "Monthly Wind Distribution",
-      subtitle = sprintf("Ribbon: median-P%d | Dotted: P%d", 
+      subtitle = sprintf("Ribbon: median-P%d | Dotted: P%d",
                          probs[2]*100, probs[3]*100)
     ) +
     passaat_theme()
-  
+
   if (log_scale) p <- p + scale_y_log10()
-  
+
   p
 }
 
@@ -335,9 +335,9 @@ plot_monthly_quantiles <- function(daily,
 plot_annual_counts <- function(daily,
                                metric = c("events", "days"),
                                show_poisson = TRUE) {
-  
+
   metric <- match.arg(metric)
-  
+
   yearly <- daily %>%
     group_by(sim_year) %>%
     summarise(
@@ -345,7 +345,7 @@ plot_annual_counts <- function(daily,
       n_days   = sum(!is.na(event_id)),
       .groups = "drop"
     )
-  
+
   if (metric == "events") {
     yearly <- yearly %>% mutate(count = n_events)
     xlab <- "Events per year"
@@ -355,10 +355,10 @@ plot_annual_counts <- function(daily,
     xlab <- "Event-days per year"
     title <- "Distribution of Annual Event-Days"
   }
-  
+
   lambda <- mean(yearly$count)
   n_years <- nrow(yearly)
-  
+
   p <- ggplot(yearly, aes(x = count)) +
     geom_bar(fill = "steelblue", color = "white", width = 0.8) +
     scale_x_continuous(breaks = scales::breaks_pretty(n = 10)) +
@@ -366,7 +366,7 @@ plot_annual_counts <- function(daily,
     labs(x = xlab, y = "Number of years", title = title,
          subtitle = sprintf("Mean: %.2f | n = %d years", lambda, n_years)) +
     passaat_theme()
-  
+
   if (show_poisson && metric == "events") {
     # Overlay Poisson PMF
     x_range <- 0:max(yearly$count + 2)
@@ -377,7 +377,7 @@ plot_annual_counts <- function(daily,
     p <- p + geom_point(data = pois_df, aes(x = count, y = expected),
                         color = "red", size = 2, shape = 1)
   }
-  
+
   p
 }
 
@@ -395,12 +395,12 @@ plot_intensity_duration <- function(daily = NULL,
                                     events = NULL,
                                     thr_tc = 34,
                                     thr_hur = 64) {
-  
+
   if (is.null(events)) {
     stopifnot(!is.null(daily))
     events <- prep_events(daily)
   }
-  
+
   ggplot(events, aes(x = dur_days, y = max_wind_kt, color = event_class)) +
     geom_point(alpha = 0.6, size = 2) +
     geom_hline(yintercept = thr_tc,  linetype = "dashed", alpha = 0.5) +
@@ -428,30 +428,30 @@ plot_wind_distribution <- function(daily,
                                    log_scale = FALSE,
                                    thr_tc = 34,
                                    thr_hur = 64) {
-  
+
   type <- match.arg(type)
-  
+
   p <- ggplot(daily, aes(x = wind_kt))
-  
+
   if (type == "histogram") {
-    p <- p + geom_histogram(binwidth = 5, fill = "steelblue", 
+    p <- p + geom_histogram(binwidth = 5, fill = "steelblue",
                             color = "white", boundary = 0)
   } else {
     p <- p + geom_density(fill = "steelblue", alpha = 0.6, color = NA)
   }
-  
+
   p <- p +
-    geom_vline(xintercept = thr_tc,  linetype = "dashed", 
+    geom_vline(xintercept = thr_tc,  linetype = "dashed",
                color = passaat_colors$threshold["tc"]) +
-    geom_vline(xintercept = thr_hur, linetype = "dashed", 
+    geom_vline(xintercept = thr_hur, linetype = "dashed",
                color = passaat_colors$threshold["hur"]) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Wind speed (kt)", y = if(type == "histogram") "Count" else "Density",
          title = "Wind Speed Distribution") +
     passaat_theme()
-  
+
   if (log_scale) p <- p + scale_x_log10()
-  
+
   p
 }
 
@@ -467,7 +467,7 @@ plot_wind_distribution <- function(daily,
 plot_return_levels <- function(daily,
                                block_maxima = TRUE,
                                threshold = NULL) {
-  
+
   if (block_maxima) {
     # Annual maxima approach
     maxima <- daily %>%
@@ -480,13 +480,13 @@ plot_return_levels <- function(daily,
         exceedance_prob = rank / (n + 1),
         return_period = 1 / exceedance_prob
       )
-    
+
     subtitle <- "Block maxima (annual)"
   } else {
     # POT approach
     stopifnot(!is.null(threshold))
     n_years <- n_distinct(daily$sim_year)
-    
+
     maxima <- daily %>%
       filter(wind_kt > threshold) %>%
       arrange(desc(wind_kt)) %>%
@@ -498,10 +498,10 @@ plot_return_levels <- function(daily,
         return_period = 1 / (exceedance_prob * annual_rate / n_years)
       ) %>%
       rename(max_wind = wind_kt)
-    
+
     subtitle <- sprintf("Peaks over threshold (%.0f kt)", threshold)
   }
-  
+
   ggplot(maxima, aes(x = return_period, y = max_wind)) +
     geom_point(alpha = 0.6, color = "steelblue", size = 2) +
     scale_x_log10(
@@ -524,14 +524,14 @@ plot_return_levels <- function(daily,
 #' @param thr_tc TC threshold
 #' @param thr_hur Hurricane threshold
 plot_summary_panel <- function(daily, thr_tc = 34, thr_hur = 64) {
-  
+
   requireNamespace("patchwork", quietly = TRUE)
-  
+
   p1 <- plot_seasonality_doy(daily, metric = "event_days", facet_class = FALSE)
   p2 <- plot_monthly_quantiles(daily, thr_tc = thr_tc, thr_hur = thr_hur)
   p3 <- plot_annual_counts(daily, metric = "events")
   p4 <- plot_intensity_duration(daily, thr_tc = thr_tc, thr_hur = thr_hur)
-  
+
   (p1 + p2) / (p3 + p4) +
     patchwork::plot_annotation(
       title = "Hurricane Hazard Summary",

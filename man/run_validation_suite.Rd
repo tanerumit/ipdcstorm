@@ -2,32 +2,22 @@
 % Please edit documentation in R/hazard_validation.R
 \name{run_validation_suite}
 \alias{run_validation_suite}
-\title{Run the full validation suite and print a summary report}
+\title{Run the full validation suite}
 \usage{
-run_validation_suite(
-  out,
-  holdout_years = 10,
-  n_sim = 5000,
-  return_periods = c(5, 10, 25, 50),
-  seed = 42
-)
+run_validation_suite(out, cfg = make_validation_cfg())
 }
 \arguments{
 \item{out}{List returned by \code{run_hazard_model()}.}
 
-\item{holdout_years}{Integer; years to hold out for hindcast.}
-
-\item{n_sim}{Integer; synthetic years for hindcast simulation.}
-
-\item{return_periods}{Numeric vector of return periods.}
-
-\item{seed}{Integer seed.}
+\item{cfg}{Validation configuration from \code{make_validation_cfg()}. If \code{NULL},
+default configuration is used.}
 }
 \value{
-List with elements: hindcast, rate_check, wind_field, summary.
+List with elements: \code{hindcast}, \code{rate_check}, \code{wind_field}, \code{summary},
+and \code{artifacts} (paths of saved plots/tables, if any).
 }
 \description{
-Executes all three validation tiers (hindcast, rate check, wind field) and
-produces a consolidated diagnostic report. Returns all results for further
-analysis or plotting.
+Executes all three validation tiers (hindcast, rate check, wind field),
+produces a consolidated diagnostic report, and optionally saves all plots
+and tables to the configured output directory.
 }

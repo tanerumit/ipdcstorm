@@ -7,8 +7,9 @@
 plot_wind_field_validation(
   val,
   out = NULL,
-  out_dir = "output/validation",
-  base_size = 11
+  cfg = NULL,
+  out_dir = NULL,
+  base_size = NULL
 )
 }
 \arguments{
@@ -17,9 +18,11 @@ plot_wind_field_validation(
 \item{out}{Model output list from \code{run_hazard_model()}. Only needed for the
 Irma distance-profile plot.}
 
-\item{out_dir}{Directory to save plots in.}
+\item{cfg}{Optional \code{validation_cfg} object.}
 
-\item{base_size}{Base font size for plots.}
+\item{out_dir}{Directory to save plots in. Overrides \code{cfg$out_dir}.}
+
+\item{base_size}{Base font size for plots. Overrides \code{cfg$advanced$base_size}.}
 }
 \value{
 Named character vector of saved plot paths (invisibly) or \code{NULL}.

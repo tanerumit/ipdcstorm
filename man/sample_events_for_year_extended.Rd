@@ -22,14 +22,14 @@ Tibble with columns: severity, start_date, dur_days, V_peak,
 event_id, event_class, Pc_min_hPa, dP_max_hPa, RMW_mean_km.
 }
 \description{
-Extended version of \code{sample_events_for_year()} that also carries
+Extended event sampler that also carries
 atmospheric attributes (Pc, dP, RMW) and event metadata needed by
 \code{generate_daily_year_extended()}.
 
 For each sampled event, extracts from the event library row:
 \itemize{
 \item \code{event_id}: unique identifier (SID or generated).
-\item \code{event_class}: "TC" or "HUR" (for the daily dominant-event tracker).
+\item \code{event_class}: "TC" or "HUR64plus" (for the daily dominant-event tracker).
 \item \code{Pc_min_hPa}: minimum central pressure.
 \item \code{dP_max_hPa}: maximum pressure deficit.
 \item \code{RMW_mean_km}: mean radius of maximum wind.

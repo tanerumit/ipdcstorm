@@ -4,28 +4,20 @@
 \alias{plot_bias_diagnostics}
 \title{Plot bias decomposition: frequency vs intensity contributions}
 \usage{
-plot_bias_diagnostics(val, out_dir = "output/validation", base_size = 11)
+plot_bias_diagnostics(val, cfg = NULL, out_dir = NULL, base_size = NULL)
 }
 \arguments{
 \item{val}{Output from \code{run_validation_suite()}.}
 
-\item{out_dir}{Directory to save plots in.}
+\item{cfg}{Optional \code{validation_cfg} object.}
 
-\item{base_size}{Base font size for plots.}
+\item{out_dir}{Directory to save plots in. Overrides \code{cfg$out_dir}.}
+
+\item{base_size}{Base font size for plots. Overrides \code{cfg$advanced$base_size}.}
 }
 \value{
 Named character vector of saved plot paths (invisibly) or \code{NULL}.
 }
 \description{
-Decomposes the overprediction (or underprediction) of return levels into
-two sources:
-(a) Frequency bias: the model simulates too many / too few events per year.
-(b) Intensity bias: simulated event intensities are too high / too low.
-
-For each location, compares:
-\itemize{
-\item Observed vs simulated mean annual event rate (frequency)
-\item Observed vs simulated mean event intensity (conditional on occurrence)
-\item Observed vs simulated fraction of zero-event years
-}
+Plot bias decomposition: frequency vs intensity contributions
 }

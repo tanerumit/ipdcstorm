@@ -6,7 +6,8 @@
 \usage{
 generate_sst_scenario(
   n_years,
-  mode = c("stationary", "trend", "ssp126", "ssp245", "ssp585", "historical_resample"),
+  mode = c("stationary", "trend", "ssp126", "ssp245", "ssp585", "knmi_Ld", "knmi_Ln",
+    "knmi_Hd", "knmi_Hn", "historical_resample"),
   start_year = 2025L,
   delta_start = 0,
   delta_end = 1,

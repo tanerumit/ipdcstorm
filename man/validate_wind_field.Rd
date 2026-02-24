@@ -18,7 +18,4 @@ Tibble with model vs observed comparison per storm-station pair.
 For each reference observation, finds the matching storm in the model's trackpoint
 data, extracts the model's peak site wind for that storm at the target location,
 and compares against the observed wind.
-
-Accounts for observation type: if the observation is 10-min sustained, applies a
-1-min/10-min conversion factor of ~1.12 before comparison.
 }

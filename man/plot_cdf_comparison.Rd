@@ -4,23 +4,20 @@
 \alias{plot_cdf_comparison}
 \title{Plot CDF comparison of simulated vs observed annual maxima}
 \usage{
-plot_cdf_comparison(val, out_dir = "output/validation", base_size = 11)
+plot_cdf_comparison(val, cfg = NULL, out_dir = NULL, base_size = NULL)
 }
 \arguments{
 \item{val}{Output from \code{run_validation_suite()}.}
 
-\item{out_dir}{Directory to save plots in.}
+\item{cfg}{Optional \code{validation_cfg} object.}
 
-\item{base_size}{Base font size for plots.}
+\item{out_dir}{Directory to save plots in. Overrides \code{cfg$out_dir}.}
+
+\item{base_size}{Base font size for plots. Overrides \code{cfg$advanced$base_size}.}
 }
 \value{
 Path of saved plot (invisibly) or \code{NULL}.
 }
 \description{
-Overlays the empirical CDFs of simulated and observed annual maximum wind speeds
-for each location. A systematic leftward shift of the simulated CDF (higher winds
-at the same exceedance probability) indicates overprediction.
-
-Also shows the fitted hurdle-GEV CDF for the simulated data, allowing visual
-assessment of whether the parametric fit captures the simulated distribution.
+Plot CDF comparison of simulated vs observed annual maxima
 }

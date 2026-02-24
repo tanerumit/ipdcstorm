@@ -285,6 +285,8 @@ estimate_beta_sst <- function(annual_counts,
                               min_year = 1970L,
                               beta_prior = NULL,
                               verbose = TRUE) {
+  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
+  if (!requireNamespace("stats", quietly = TRUE)) stop("Package `stats` is required.")
 
   # Aggregate to total annual counts (across severities)
   totals <- annual_counts |>
@@ -403,25 +405,6 @@ estimate_beta_sst <- function(annual_counts,
 # 4b) INTENSITY DISTRIBUTION SHIFT (Level 2 Climate Modification)
 # =============================================================================
 
-#' Extract TS/HUR lambdas from a lambda table
-#'
-#' @param lambda_table Tibble from \code{compute_lambda_table()} with
-#'   severities "TS" and "HUR64plus".
-#'
-#' @return List with elements \code{ts}, \code{hur}, \code{total}.
-#' @keywords internal
-.extract_lambdas <- function(lambda_table) {
-  lam_ts  <- lambda_table$lambda[lambda_table$storm_class == "TS"]
-  lam_hur <- lambda_table$lambda[lambda_table$storm_class == "HUR64plus"]
-  if (length(lam_ts) == 0)  lam_ts  <- 0
-  if (length(lam_hur) == 0) lam_hur <- 0
-  list(
-    ts = as.numeric(lam_ts),
-    hur = as.numeric(lam_hur),
-    total = as.numeric(lam_ts) + as.numeric(lam_hur)
-  )
-}
-
 #' Estimate the historical hurricane fraction from annual counts
 #'
 #' @description
@@ -435,9 +418,13 @@ estimate_beta_sst <- function(annual_counts,
 #' @return Numeric scalar: baseline hurricane fraction p_HUR_base.
 #' @export
 compute_p_hur_base <- function(lambda_table) {
-  lam <- .extract_lambdas(lambda_table)
-  if (lam$total <= 0) return(0.5)  # safeguard
-  as.numeric(lam$hur / lam$total)
+  lam_TS  <- lambda_table$lambda[lambda_table$storm_class == "TS"]
+  lam_HUR <- lambda_table$lambda[lambda_table$storm_class == "HUR64plus"]
+  if (length(lam_TS) == 0)  lam_TS  <- 0
+  if (length(lam_HUR) == 0) lam_HUR <- 0
+  lam_total <- lam_TS + lam_HUR
+  if (lam_total <= 0) return(0.5)  # safeguard
+  as.numeric(lam_HUR / lam_total)
 }
 
 
@@ -619,8 +606,11 @@ compute_severity_split <- function(lambda_table,
                                    sst_anomaly,
                                    gamma = 0,
                                    p_hur_base = NULL) {
-  lam <- .extract_lambdas(lambda_table)
-  lam_total <- lam$total
+  lam_TS  <- lambda_table$lambda[lambda_table$storm_class == "TS"]
+  lam_HUR <- lambda_table$lambda[lambda_table$storm_class == "HUR64plus"]
+  if (length(lam_TS) == 0)  lam_TS  <- 0
+  if (length(lam_HUR) == 0) lam_HUR <- 0
+  lam_total <- lam_TS + lam_HUR
 
   if (is.null(p_hur_base)) {
     p_hur_base <- compute_p_hur_base(lambda_table)
@@ -642,86 +632,6 @@ compute_severity_split <- function(lambda_table,
   )
 }
 
-
-# =============================================================================
-# 5A) SST SCENARIO METADATA (CLIMATE INFORMATION SOURCES)
-# =============================================================================
-
-#' IPCC AR6 / CMIP6 SSP MDR SST anomaly targets
-#'
-#' @description
-#' Returns a tibble describing default MDR SST anomaly targets (degC relative to
-#' the 1991-2020 baseline) used by the built-in SSP scenario generator.
-#'
-#' These are deliberately simple, stakeholder-facing targets used for the
-#' piecewise-linear SST anomaly generator (to 2050 and 2100, then held constant).
-#' They are not intended to reproduce a particular CMIP6 model member.
-#'
-#' @return Tibble with columns: scenario, source, delta_sst_2050, delta_sst_2100, description.
-#' @export
-ipcc_ar6_sst_scenario_info <- function() {
-  tibble::tibble(
-    scenario       = c("ssp126", "ssp245", "ssp585"),
-    source         = "ipcc_ar6",
-    delta_sst_2050 = c(0.3, 0.5, 1.0),
-    delta_sst_2100 = c(0.4, 1.0, 2.5),
-    description    = c(
-      "Low emissions pathway (order-of-magnitude AR6)",
-      "Intermediate emissions pathway (order-of-magnitude AR6)",
-      "High emissions pathway (order-of-magnitude AR6)"
-    )
-  )
-}
-
-#' Retrieve available SST scenario definitions
-#'
-#' @description
-#' Returns a combined scenario table for all available climate-information sources.
-#' If KNMI'23 support is available (knmi_scenario_info()), those scenarios are
-#' included as well.
-#'
-#' @param source Character; one of "all", "ipcc_ar6", "knmi23".
-#'
-#' @return Tibble with at least: scenario, source, delta_sst_2050, delta_sst_2100.
-#' @export
-sst_scenario_info <- function(source = c("all", "ipcc_ar6", "knmi23")) {
-
-  source <- match.arg(source)
-  ipcc <- ipcc_ar6_sst_scenario_info()
-
-  knmi <- NULL
-  if (exists("knmi_scenario_info", mode = "function")) {
-    kn <- knmi_scenario_info()
-    # normalize to shared column set
-    knmi <- kn |>
-      dplyr::transmute(
-        scenario = .data$scenario,
-        source = "knmi23",
-        delta_sst_2050 = .data$delta_sst_2050,
-        delta_sst_2100 = .data$delta_sst_2100,
-        description = if ("description" %in% names(kn)) as.character(.data$description) else ""
-      )
-  } else {
-    knmi <- tibble::tibble(
-      scenario = character(0),
-      source = character(0),
-      delta_sst_2050 = numeric(0),
-      delta_sst_2100 = numeric(0),
-      description = character(0)
-    )
-  }
-
-  out <- dplyr::bind_rows(ipcc, knmi)
-
-  out <- switch(
-    source,
-    all = out,
-    ipcc_ar6 = out[out$source == "ipcc_ar6", , drop = FALSE],
-    knmi23   = out[out$source == "knmi23", , drop = FALSE]
-  )
-
-  out
-}
 
 # =============================================================================
 # 5) SST SCENARIO GENERATION
@@ -749,23 +659,24 @@ sst_scenario_info <- function(source = c("all", "ipcc_ar6", "knmi23")) {
 generate_sst_scenario <- function(n_years,
                                   mode = c("stationary", "trend",
                                            "ssp126", "ssp245", "ssp585",
-                                           "knmi_Ld", "knmi_Ln", "knmi_Hd", "knmi_Hn",
                                            "historical_resample"),
                                   start_year = 2025L,
                                   delta_start = 0,
                                   delta_end = 1.0,
                                   sst_hist_df = NULL,
                                   baseline_years = 1991L:2020L) {
-
+  if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
+  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
+  
   mode <- match.arg(mode)
-
+  
   n_years <- as.integer(n_years)
   if (!is.finite(n_years) || n_years <= 0) stop("n_years must be a positive integer.")
   start_year <- as.integer(start_year)
-
+  
   sim_year <- seq_len(n_years)
   cal_year <- start_year + sim_year - 1L
-
+  
   # helper: robust linear interpolation (with clamping)
   .lerp <- function(x, x0, x1, y0, y1) {
     if (x1 == x0) return(rep(y1, length(x)))
@@ -773,7 +684,7 @@ generate_sst_scenario <- function(n_years,
     t <- pmin(1, pmax(0, t))
     y0 + (y1 - y0) * t
   }
-
+  
   # determine a realistic starting anomaly from historical (builtin) if possible
   .get_start_anom <- function(year0) {
     sst_hist <- get_mdr_sst_builtin() |>
@@ -785,48 +696,77 @@ generate_sst_scenario <- function(n_years,
     if (length(a2) == 1 && is.finite(a2)) return(as.numeric(a2))
     0
   }
-
-
-# lookup scenario targets (degC relative to baseline_years) from scenario tables
-.get_targets <- function(scn) {
-  info <- sst_scenario_info("all")
-  row <- info[info$scenario == scn, , drop = FALSE]
-  if (nrow(row) == 0) {
-    stop("Unknown SST scenario: ", scn,
-         ". Available: ", paste(info$scenario, collapse = ", "),
-         call. = FALSE)
-  }
-  list(a_2050 = as.numeric(row$delta_sst_2050[1]),
-       a_2100 = as.numeric(row$delta_sst_2100[1]))
-}
+  
   sst_anom <- switch(
     mode,
-
+    
     stationary = rep(as.numeric(delta_start), n_years),
-
+    
     trend = {
       seq(as.numeric(delta_start), as.numeric(delta_end), length.out = n_years)
     },
-
-    ssp126 = , ssp245 = , ssp585 = , knmi_Ld = , knmi_Ln = , knmi_Hd = , knmi_Hn = {
-  targets <- .get_targets(mode)
-  a0 <- .get_start_anom(start_year)
-  y0 <- start_year
-  y1 <- 2050L
-  y2 <- 2100L
-  a1 <- targets$a_2050
-  a2 <- targets$a_2100
-
-  a_t <- ifelse(
-    cal_year <= y1,
-    .lerp(cal_year, y0, y1, a0, a1),
-    ifelse(cal_year <= y2,
-           .lerp(cal_year, y1, y2, a1, a2),
-           a2)
-  )
-  as.numeric(a_t)
+    
+    ssp126 = {
+      # Targets relative to 1991-2020:
+      # ~+0.3C by 2050, ~+0.4C by 2100 (low-emissions pathway)
+      a0 <- .get_start_anom(start_year)
+      y0 <- start_year
+      y1 <- 2050L
+      y2 <- 2100L
+      a1 <- 0.3
+      a2 <- 0.4
+      
+      a_t <- ifelse(
+        cal_year <= y1,
+        .lerp(cal_year, y0, y1, a0, a1),
+        ifelse(cal_year <= y2,
+               .lerp(cal_year, y1, y2, a1, a2),
+               a2)
+      )
+      as.numeric(a_t)
     },
-historical_resample = {
+    
+    ssp245 = {
+      # Targets relative to 1991a?"2020 (typical AR6 order of magnitude):
+      # ~+0.5C by 2050, ~+1.0C by 2100 (median-ish)
+      a0 <- .get_start_anom(start_year)
+      y0 <- start_year
+      y1 <- 2050L
+      y2 <- 2100L
+      a1 <- 0.5
+      a2 <- 1.0
+      
+      a_t <- ifelse(
+        cal_year <= y1,
+        .lerp(cal_year, y0, y1, a0, a1),
+        ifelse(cal_year <= y2,
+               .lerp(cal_year, y1, y2, a1, a2),
+               a2)
+      )
+      as.numeric(a_t)
+    },
+    
+    ssp585 = {
+      # Targets relative to 1991a?"2020:
+      # ~+1.0C by 2050, ~+2.5C by 2100 (median-ish)
+      a0 <- .get_start_anom(start_year)
+      y0 <- start_year
+      y1 <- 2050L
+      y2 <- 2100L
+      a1 <- 1.0
+      a2 <- 2.5
+      
+      a_t <- ifelse(
+        cal_year <= y1,
+        .lerp(cal_year, y0, y1, a0, a1),
+        ifelse(cal_year <= y2,
+               .lerp(cal_year, y1, y2, a1, a2),
+               a2)
+      )
+      as.numeric(a_t)
+    },
+    
+    historical_resample = {
       if (is.null(sst_hist_df)) {
         sst_hist_df <- get_mdr_sst_builtin() |>
           compute_sst_anomaly(baseline_years = baseline_years)
@@ -839,7 +779,7 @@ historical_resample = {
       sample(pool, n_years, replace = TRUE)
     }
   )
-
+  
   tibble::tibble(
     sim_year = sim_year,
     calendar_year = as.integer(cal_year),
@@ -897,19 +837,21 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
                                      .sst_abs_max = 10,          # degC plausibility
                                      .sst_scale_max = 1e3,       # exp(beta*anom) plausibility
                                      .mu_total_max = 1e6) {      # per-year Poisson mean plausibility
-
+  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
+  if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
+  
   stopifnot(is.data.frame(lambda_table))
   stopifnot(is.numeric(k_hat), length(k_hat) == 1)
   n_years_sim <- as.integer(n_years_sim)
   if (!is.finite(n_years_sim) || n_years_sim <= 0) stop("n_years_sim must be a positive integer.", call. = FALSE)
-
+  
   # ---- helpers ----
   .is_dateish <- function(x) inherits(x, c("Date", "POSIXct", "POSIXt"))
-
+  
   .coerce_sst_vec <- function(x, n) {
     # Allow: NULL, numeric vector, Date/POSIX vector (but treated as corruption), or data.frame with sst_anomaly column.
     if (is.null(x)) return(rep(0, n))
-
+    
     if (is.data.frame(x)) {
       nm <- names(x)
       if (!("sst_anomaly" %in% nm)) {
@@ -921,7 +863,7 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
       }
       x <- x[["sst_anomaly"]]
     }
-
+    
     if (.is_dateish(x)) {
       # Do not silently convert dates to numeric; that always means the wrong thing.
       stop(
@@ -930,22 +872,22 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
         call. = FALSE
       )
     }
-
+    
     x <- suppressWarnings(as.numeric(x))
     if (length(x) != n) {
       stop(sprintf("sst_anomaly length (%d) must equal n_years_sim (%d).", length(x), n), call. = FALSE)
     }
     x
   }
-
+  
   .diagnose_corruption <- function(x) {
     fin <- is.finite(x)
     if (!any(fin)) return("sst_anomaly has no finite values.")
     rng <- range(x[fin])
     mx  <- max(abs(x[fin]))
-
+    
     msg <- sprintf("max |sst_anomaly| = %.2f; range = [%.2f, %.2f]", mx, rng[1], rng[2])
-
+    
     # Heuristics for the common wrong-columns
     if (mx > 1500) {
       return(paste0(
@@ -967,46 +909,47 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
     }
     paste0(msg, "\nLikely wrong units/column (absolute SST, Kelvin, Fahrenheit, etc.).")
   }
-
+  
   .int_cap <- function(x, name) {
     # Avoid unsafe as.integer() on huge doubles; clip first.
     int_max <- .Machine$integer.max
     x2 <- as.numeric(x)
-
+    
     bad_hi <- is.finite(x2) & (x2 > int_max)
     bad_lo <- is.finite(x2) & (x2 < -int_max)
-
+    
     if (any(bad_hi) || any(bad_lo)) {
       warning(sprintf(
         "[simulate_twolevel_counts] %s overflow: capped %d above +%d and %d below -%d.",
         name, sum(bad_hi), int_max, sum(bad_lo), int_max
       ), call. = FALSE)
     }
-
+    
     x2[bad_hi] <- int_max
     x2[bad_lo] <- -int_max
     x2[!is.finite(x2)] <- NA_real_
     as.integer(x2)
   }
-
+  
   # ---- lambdas ----
   if (!all(c("storm_class", "lambda") %in% names(lambda_table))) {
     stop("lambda_table must contain columns: storm_class, lambda", call. = FALSE)
   }
   lt <- dplyr::as_tibble(lambda_table)
   lt$storm_class <- as.character(lt$storm_class)
-
-  lam <- .extract_lambdas(lt)
-  lambda_ts <- pmax(0, lam$ts)
-  lambda_hur <- pmax(0, lam$hur)
-  lambda_total <- lambda_ts + lambda_hur
-
+  
+  lambda_ts  <- lt$lambda[match("TS", lt$storm_class)]
+  lambda_hur <- lt$lambda[match("HUR64plus", lt$storm_class)]
+  if (!is.finite(lambda_ts))  lambda_ts <- 0
+  if (!is.finite(lambda_hur)) lambda_hur <- 0
+  lambda_total <- pmax(0, lambda_ts) + pmax(0, lambda_hur)
+  
   # ---- SST anomalies (validated) ----
   sst_vec <- .coerce_sst_vec(sst_anomaly, n_years_sim)
-
+  
   fin <- is.finite(sst_vec)
   if (!any(fin)) stop("sst_anomaly has no finite values.", call. = FALSE)
-
+  
   abs_max <- max(abs(sst_vec[fin]))
   if (is.finite(abs_max) && abs_max > .sst_abs_max) {
     stop(
@@ -1016,14 +959,14 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
       call. = FALSE
     )
   }
-
+  
   beta_sst <- as.numeric(beta_sst)
   if (!is.finite(beta_sst)) beta_sst <- 0
-
+  
   # ---- L1 scaling with guard ----
   lin <- beta_sst * sst_vec
   sst_scale <- exp(lin)
-
+  
   if (any(!is.finite(sst_scale))) {
     stop("Non-finite SST scaling detected (exp(beta_sst * sst_anomaly)). Check inputs/units.", call. = FALSE)
   }
@@ -1036,11 +979,11 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
       max(sst_scale, na.rm = TRUE), .sst_scale_max
     ), call. = FALSE)
   }
-
+  
   # ---- annual activity factor ----
   A <- stats::rgamma(n_years_sim, shape = k_hat, rate = k_hat)
   A[!is.finite(A)] <- 1
-
+  
   mu_total <- lambda_total * A * sst_scale
   if (any(mu_total > .mu_total_max, na.rm = TRUE)) {
     stop(sprintf(
@@ -1051,23 +994,23 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
       max(mu_total, na.rm = TRUE), .mu_total_max
     ), call. = FALSE)
   }
-
+  
   n_total <- stats::rpois(n_years_sim, lambda = mu_total)
-
+  
   # ---- L2 severity split (bounded) ----
   if (is.null(p_hur_base) || !is.finite(p_hur_base)) {
     p_hur_base <- if (lambda_total > 0) pmax(0, pmin(1, lambda_hur / lambda_total)) else 0.5
   }
-
+  
   gamma_intensity <- as.numeric(gamma_intensity)
   if (!is.finite(gamma_intensity)) gamma_intensity <- 0
-
+  
   p_hur <- p_hur_base * (1 + gamma_intensity * sst_vec)
   p_hur <- pmin(0.99, pmax(0.01, p_hur))
-
+  
   n_hur <- stats::rbinom(n_years_sim, size = n_total, prob = p_hur)
   n_ts  <- n_total - n_hur
-
+  
   tibble::tibble(
     sim_year = seq_len(n_years_sim),
     activity_factor = A,
@@ -1219,7 +1162,7 @@ make_sst_cfg <- function(enabled = TRUE,
                          scenario_start_year = 2025L,
                          advanced = NULL) {
   sst_source <- match.arg(sst_source)
-  scenario <- match.arg(scenario, choices = c("stationary", sst_scenario_info("all")$scenario))
+  scenario <- match.arg(scenario, choices = c("stationary", "ssp126", "ssp245", "ssp585"))
 
   defaults <- list(
     beta_sst = NULL,
@@ -1244,15 +1187,6 @@ make_sst_cfg <- function(enabled = TRUE,
 
   if (!is.null(advanced$cc_params) && !is.list(advanced$cc_params)) {
     stop("cc_params must be NULL (disabled) or a named list of scaling factors.")
-  }
-
-
-# Auto-adjust Level 3 cc_params for KNMI scenarios when user passes an empty list()
-  if (grepl("^knmi_", scenario) && !is.null(advanced$cc_params) && length(advanced$cc_params) == 0) {
-    if (!exists("knmi_cc_params", mode = "function")) {
-      stop("KNMI scenario selected but knmi_cc_params() is not available. Did you include hazard_climate_knmi23.R?", call. = FALSE)
-    }
-    advanced$cc_params <- knmi_cc_params(scenario, base_params = advanced$cc_params)
   }
 
   resolved_enabled <- isTRUE(enabled) && !identical(scenario, "stationary")
@@ -1335,7 +1269,7 @@ prepare_sst_data <- function(sst_cfg,
   if (!inherits(sst_cfg, "sst_cfg")) {
     stop("sst_cfg must be created by make_sst_cfg().")
   }
-
+  
   if (!sst_cfg$enabled) {
     if (verbose) message("[SST] Climate conditioning disabled.")
     return(list(
@@ -1345,22 +1279,22 @@ prepare_sst_data <- function(sst_cfg,
       sst_cfg = sst_cfg
     ))
   }
-
+  
   # Load SST data
   sst_raw <- switch(sst_cfg$sst_source,
                     builtin   = get_mdr_sst_builtin(),
                     csv       = read_mdr_sst_csv(sst_cfg$sst_path),
                     ersst_nc  = read_mdr_sst_ersst(sst_cfg$sst_path)
   )
-
+  
   if (verbose) {
     message(sprintf("[SST] Loaded %d years of MDR SST (%d-%d) from %s",
                     nrow(sst_raw), min(sst_raw$year), max(sst_raw$year), sst_cfg$sst_source))
   }
-
+  
   # Compute anomalies (compute_sst_anomaly should be strict; see next patch)
   sst_df <- compute_sst_anomaly(sst_raw, baseline_years = sst_cfg$baseline_years)
-
+  
   if (verbose) {
     message(sprintf("[SST] Baseline (%.0f-%.0f): %.2f C | Anomaly range: [%+.2f, %+.2f] C",
                     min(sst_cfg$baseline_years), max(sst_cfg$baseline_years),
@@ -1368,7 +1302,7 @@ prepare_sst_data <- function(sst_cfg,
                     min(sst_df$sst_anomaly, na.rm = TRUE),
                     max(sst_df$sst_anomaly, na.rm = TRUE)))
   }
-
+  
   # L1: beta
   beta_info <- NULL
   if (!is.null(sst_cfg$beta_sst) && is.finite(sst_cfg$beta_sst)) {
@@ -1387,15 +1321,15 @@ prepare_sst_data <- function(sst_cfg,
     beta_sst <- if (!is.null(sst_cfg$beta_prior)) as.numeric(sst_cfg$beta_prior) else 0
     if (verbose) message(sprintf("[L1] No annual_counts provided for beta estimation. Using prior: %.3f", beta_sst))
   }
-
+  
   # L2: gamma (IMPORTANT FIX)
   gamma_info <- NULL
   p_hur_base <- NA_real_
-
+  
   if (!is.null(lambda_table)) {
     p_hur_base <- compute_p_hur_base(lambda_table)
   }
-
+  
   if (!is.null(sst_cfg$gamma_intensity) && is.finite(sst_cfg$gamma_intensity)) {
     gamma_intensity <- as.numeric(sst_cfg$gamma_intensity)
     if (verbose) message(sprintf("[L2] Using user-supplied gamma = %.4f", gamma_intensity))
@@ -1416,7 +1350,7 @@ prepare_sst_data <- function(sst_cfg,
     gamma_intensity <- 0
     if (verbose) message("[L2] No annual_counts for gamma estimation and no user gamma provided. Using gamma = 0.")
   }
-
+  
   if (verbose && is.finite(gamma_intensity) && gamma_intensity != 0) {
     message(sprintf("[L2] Intensity shift: gamma=%.4f, p_HUR_base=%.3f",
                     gamma_intensity, p_hur_base))
@@ -1425,7 +1359,7 @@ prepare_sst_data <- function(sst_cfg,
                     p_hur_base,
                     100 * gamma_intensity))
   }
-
+  
   # L3 cc_params passthrough
   resolved_cc_params <- sst_cfg$cc_params
   if (!is.null(resolved_cc_params) && length(resolved_cc_params) == 0) {
@@ -1456,3 +1390,7 @@ prepare_sst_data <- function(sst_cfg,
     sst_cfg = sst_cfg
   )
 }
+
+
+
+

@@ -5,7 +5,6 @@
 # - .get_quadrant(): map bearing to NE/SE/SW/NW quadrants.
 # - .get_directional_radius(): select quadrant-specific wind radii.
 # - .enforce_monotone_radii(): ensure R64 <= R50 <= R34.
-# - .estimate_site_wind_piecewise(): piecewise-linear wind profile by radii anchors.
 # - .estimate_site_wind_holland(): Holland-type radial wind profile.
 # - compute_storm_heading(): storm motion heading per track point.
 # - .add_forward_motion_asymmetry(): apply forward-motion wind asymmetry.
@@ -15,10 +14,6 @@
 # - compute_annual_counts(): annual event counts by storm class.
 # - compute_lambda_table(): Poisson rate summaries by storm class.
 # - estimate_k_hat(): overdispersion estimate for annual totals.
-# - fit_total_binom_model(): total-count + binomial mix fit.
-# - simulate_counts_total_binom(): simulate annual totals and split by severity.
-#
-# NOTE: simulate_twolevel_counts() moved to hazard_climate.R (SST-aware).
 # =============================================================================
 
 # =============================================================================
@@ -146,65 +141,8 @@ calculate_bearing <- function(lat, lon, t_lat, t_lon) {
 # 2) Wind field models (symmetric + forward-motion asymmetry)
 # =============================================================================
 
-#' Estimate site wind using a piecewise-linear profile anchored to radii thresholds
-#'
-#' @description
-#' Piecewise-linear decay of wind with distance using available radii anchors
-#' (R64, R50, R34) and a soft outer cutoff at R0 = r0_mult * max(anchors).
-#'
-#' @param Vmax Numeric; storm maximum wind (kt).
-#' @param r_km Numeric; distance from storm center to site (km).
-#' @param R34_km,R50_km,R64_km Numeric; wind radii (km) for 34/50/64 kt thresholds.
-#' @param r0_mult Numeric; multiplier controlling outer cutoff distance.
-#'
-#' @return Numeric scalar; estimated sustained wind at site (kt).
-#'
-#' @keywords internal
-.estimate_site_wind_piecewise <- function(Vmax, r_km, R34_km, R50_km, R64_km, r0_mult = 1.5) {
-  if (!is.finite(Vmax) || !is.finite(r_km) || r_km < 0) return(NA_real_)
-  
-  anchors_r <- c(R64_km, R50_km, R34_km)
-  anchors_v <- c(64,     50,     34)
-  
-  ok <- is.finite(anchors_r) & anchors_r > 0
-  anchors_r <- anchors_r[ok]
-  anchors_v <- anchors_v[ok]
-  if (length(anchors_r) == 0L) return(NA_real_)
-  
-  o <- order(anchors_r)
-  anchors_r <- anchors_r[o]
-  anchors_v <- anchors_v[o]
-  
-  R_outer <- max(anchors_r)
-  R0 <- r0_mult * R_outer
-  if (r_km >= R0) return(0)
-  
-  R_in <- anchors_r[1]
-  V_in <- anchors_v[1]
-  if (r_km <= R_in) {
-    v <- Vmax + (V_in - Vmax) * (r_km / R_in)
-    return(max(0, min(Vmax, v)))
-  }
-  
-  if (length(anchors_r) >= 2L) {
-    for (j in 1:(length(anchors_r) - 1L)) {
-      r1 <- anchors_r[j];   v1 <- anchors_v[j]
-      r2 <- anchors_r[j+1]; v2 <- anchors_v[j+1]
-      if (r_km > r1 && r_km <= r2) {
-        v <- v1 + (v2 - v1) * ((r_km - r1) / (r2 - r1))
-        return(max(0, min(Vmax, v)))
-      }
-    }
-  }
-  
-  V_outer <- anchors_v[length(anchors_v)]
-  v <- V_outer + (0 - V_outer) * ((r_km - R_outer) / (R0 - R_outer))
-  max(0, min(Vmax, v))
-}
-
-
 # =============================================================================
-# Fix 3: Climatological R34 infill
+# 2a) Climatological R34 infill
 # =============================================================================
 
 #' Estimate climatological R34 (km) from maximum wind using Knaff et al. (2015)
@@ -247,7 +185,7 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
 
 
 # =============================================================================
-# Fix 4: Improved RMW estimation (Knaff & Zehr 2007 + latitude)
+# 2b) Knaff & Zehr RMW estimation (with latitude)
 # =============================================================================
 
 #' Estimate radius of maximum wind using Knaff & Zehr (2007) climatology
@@ -532,7 +470,6 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
 #' @return Same data frame with `heading_deg` (numeric).
 #' @export
 compute_storm_heading <- function(df) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   stopifnot(all(c("SID", "iso_time", "lat", "lon") %in% names(df)))
   
   deg2rad <- function(x) x * pi / 180
@@ -667,7 +604,7 @@ compute_storm_heading <- function(df) {
 
 
 # =============================================================================
-# 3) Core per-location computation (trackpoints -> V_site_kt)
+# 3) Core per-location wind computation (trackpoints -> V_site_kt)
 # =============================================================================
 
 # =============================================================================
@@ -686,7 +623,6 @@ compute_storm_heading <- function(df) {
 #' @return The input data frame with added site-wind columns.
 #' @export
 compute_site_winds_full <- function(df, target_lat, target_lon) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   
   df <- df |>
     dplyr::mutate(
@@ -718,7 +654,7 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
   
   if (!("storm_speed_kt" %in% names(df))) df$storm_speed_kt <- NA_real_
   
-  # --- Fix 4: Improved RMW with latitude dependence ---
+# --- Knaff & Zehr RMW with latitude dependence ---
   df <- df |>
     dplyr::mutate(
       R34_missing = !is.finite(.data$R34_km) | .data$R34_km <= 0,
@@ -758,6 +694,10 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
     )
 }
 
+# =============================================================================
+# 4) Event classification and summarization
+# =============================================================================
+
 #' Classify storm class from peak site wind
 #'
 #' @param V_site_max_kt Numeric vector of peak site winds (kt).
@@ -788,9 +728,7 @@ classify_severity <- function(V_site_max_kt,
 #' @return Tibble with one row per storm and key event attributes.
 #' @export
 make_storm_events <- function(track_df) {
-  if (!requireNamespace('dplyr', quietly = TRUE)) stop('Package `dplyr` is required.')
   if (!requireNamespace('lubridate', quietly = TRUE)) stop('Package `lubridate` is required.')
-  if (!requireNamespace('tibble', quietly = TRUE)) stop('Package `tibble` is required.')
   
   df <- track_df
   
@@ -844,7 +782,7 @@ make_storm_events <- function(track_df) {
 }
 
 # =============================================================================
-# 7) Rate model helpers (per-severity annual counts + 2-level Poisson-Gamma)
+# 5) Rate model helpers (per-severity annual counts)
 # =============================================================================
 
 #' Compute annual counts of unique storm events by storm class
@@ -857,7 +795,6 @@ make_storm_events <- function(track_df) {
 #'
 #' @export
 compute_annual_counts <- function(events, severities = c("TS", "HUR64plus")) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   if (!requireNamespace("tidyr", quietly = TRUE)) stop("Package `tidyr` is required.")
   
   events |>
@@ -877,7 +814,6 @@ compute_annual_counts <- function(events, severities = c("TS", "HUR64plus")) {
 #' @return Tibble with lambda, n_years, prob_annual, prob_none by storm_class.
 #' @export
 compute_lambda_table <- function(annual_counts) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   
   annual_counts |>
     dplyr::group_by(.data$storm_class) |>
@@ -902,8 +838,6 @@ compute_lambda_table <- function(annual_counts) {
 #'   \code{n_events}.
 #' @export
 get_annual_counts <- function(out) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  if (!requireNamespace("tidyr", quietly = TRUE)) stop("Package `tidyr` is required.")
   if (is.null(out$events)) stop("out$events is required.", call. = FALSE)
   events <- dplyr::as_tibble(out$events)
   if (nrow(events) == 0L) {
@@ -917,14 +851,9 @@ get_annual_counts <- function(out) {
   classes <- sort(unique(stats::na.omit(events$storm_class)))
   events |>
     dplyr::filter(is.finite(.data$year), !is.na(.data$location), !is.na(.data$storm_class)) |>
-    dplyr::distinct(.data$location, .data$year, .data$storm_class, .data$storm_id) |>
-    dplyr::count(.data$location, .data$year, .data$storm_class, name = "n_events") |>
-    tidyr::complete(
-      .data$location,
-      year = tidyr::full_seq(range(.data$year, na.rm = TRUE), 1),
-      storm_class = classes,
-      fill = list(n_events = 0)
-    ) |>
+    dplyr::group_by(.data$location) |>
+    dplyr::group_modify(~ compute_annual_counts(.x, severities = classes)) |>
+    dplyr::ungroup() |>
     dplyr::arrange(.data$location, .data$year, .data$storm_class)
 }
 
@@ -938,8 +867,6 @@ get_annual_counts <- function(out) {
 #' @return List with k_hat, annual_total (year,N), mu, var.
 #' @export
 estimate_k_hat <- function(annual_counts) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  if (!requireNamespace("stats", quietly = TRUE)) stop("Package `stats` is required.")
   
   annual_total <- annual_counts |>
     dplyr::group_by(.data$year) |>
@@ -952,96 +879,3 @@ estimate_k_hat <- function(annual_counts) {
   list(k_hat = k_hat, annual_total = annual_total, mu = mu, var = va)
 }
 
-# NOTE: simulate_twolevel_counts() has moved to hazard_climate.R
-# It now supports SST-conditioned rate scaling (Level 1 climate modification).
-# The function signature is backwards-compatible: when sst_anomaly=NULL and
-# beta_sst=0 (defaults), it behaves identically to the original.
-
-# =============================================================================
-# 6) Annual count model: total-count + binomial mix
-# =============================================================================
-
-#' Fit total-count + binomial-mix parameters from historical annual counts
-#'
-#' @description
-#' Fits a Poisson-Gamma (negative binomial) overdispersion factor for total annual
-#' storm counts, and (optionally) the empirical fraction of hurricanes given total
-#' storms using a binomial mix.
-#'
-#' @param annual_df Data frame with at least `n_tc` (total storms). If `n_hur`
-#'   is provided, the hurricane fraction is estimated as sum(n_hur)/sum(n_tc).
-#'
-#' @return A list with elements:
-#'   lambda_tc, p_hur, gamma_shape, gamma_rate.
-#'
-#' @export
-fit_total_binom_model <- function(annual_df) {
-  if (!requireNamespace("stats", quietly = TRUE)) stop("Package `stats` is required.")
-  stopifnot(all(c("n_tc") %in% names(annual_df)))
-  
-  n_tc <- as.numeric(annual_df$n_tc)
-  n_tc <- n_tc[is.finite(n_tc)]
-  
-  mu <- mean(n_tc)
-  va <- stats::var(n_tc)
-  
-  if (is.finite(va) && va > mu) {
-    k <- (mu * mu) / (va - mu)
-  } else {
-    k <- 1e6
-  }
-  
-  gamma_shape <- k
-  gamma_rate  <- k
-  
-  p_hur <- NA_real_
-  if ("n_hur" %in% names(annual_df)) {
-    n_hur <- as.numeric(annual_df$n_hur)
-    ok <- is.finite(n_hur) & is.finite(annual_df$n_tc) & annual_df$n_tc > 0
-    p_hur <- sum(n_hur[ok]) / sum(annual_df$n_tc[ok])
-  }
-  
-  list(
-    lambda_tc   = mu,
-    p_hur       = p_hur,
-    gamma_shape = gamma_shape,
-    gamma_rate  = gamma_rate
-  )
-}
-
-#' Simulate annual TC/TS/HUR counts using total-count + binomial mix
-#'
-#' @description
-#' Draws an annual activity factor A ~ Gamma(shape, rate), then total storms
-#' n_tc ~ Poisson(A * lambda_tc). If p_hur is finite, splits storms using
-#' n_hur ~ Binomial(n_tc, p_hur) and n_ts = n_tc - n_hur.
-#'
-#' @param n_years Integer; number of years to simulate.
-#' @param lambda_tc Numeric; mean annual total storm rate.
-#' @param p_hur Numeric; hurricane fraction (0..1) or NA.
-#' @param gamma_shape,gamma_rate Numeric; Gamma parameters for activity factor.
-#'
-#' @return Data frame with columns year_index, A, n_tc, n_hur, n_ts.
-#'
-#' @export
-simulate_counts_total_binom <- function(n_years, lambda_tc, p_hur,
-                                        gamma_shape, gamma_rate) {
-  A <- stats::rgamma(n_years, shape = gamma_shape, rate = gamma_rate)
-  n_tc <- stats::rpois(n_years, lambda = A * lambda_tc)
-  
-  if (!is.finite(p_hur)) {
-    n_hur <- rep(NA_integer_, n_years)
-    n_ts  <- rep(NA_integer_, n_years)
-  } else {
-    n_hur <- stats::rbinom(n_years, size = n_tc, prob = p_hur)
-    n_ts  <- n_tc - n_hur
-  }
-  
-  data.frame(
-    year_index = seq_len(n_years),
-    A = A,
-    n_tc = n_tc,
-    n_hur = n_hur,
-    n_ts = n_ts
-  )
-}

@@ -6,14 +6,6 @@
 \usage{
 .qgev(p, mu, sigma, xi)
 }
-\arguments{
-\item{p}{Numeric vector of probabilities (0, 1).}
-
-\item{mu, sigma, xi}{GEV parameters.}
-}
-\value{
-Numeric vector of quantiles.
-}
 \description{
 GEV quantile function
 }

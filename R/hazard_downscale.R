@@ -1,11 +1,9 @@
 # =============================================================================
 # Script overview: temporal downscaling and impact forcing
-# - .assign_severity_simple(): simple TD/TS/HUR class from peak wind.
+# - .assign_severity_simple(): simple TD/TS/HUR64plus class from peak wind.
 # - build_event_library(): empirical seasonality + stratified event resampling.
 # - build_event_library_from_out(): convenience wrapper using run_hazard_model() output.
-# - sample_events_for_year(): sample TS/HUR events with dates, duration, and peak wind.
 # - event_pulse(): deterministic within-event daily wind profile.
-# - generate_daily_year(): daily wind time series for one year.
 # - generate_daily_from_hazard(): daily series from stochastic hazard output.
 # - sample_events_for_year_extended(): sample events with additional attributes.
 # - generate_daily_year_extended(): daily wind + dominant event attributes.
@@ -22,12 +20,12 @@
 #' Assign simple severity class from peak wind
 #'
 #' @param wind_max_kt Numeric; peak wind (kt).
-#' @return Character scalar in \code{c("TD", "TS", "HUR")} (or \code{NA}).
+#' @return Character scalar in \code{c("TD", "TS", "HUR64plus")} (or \code{NA}).
 #' @keywords internal
 .assign_severity_simple <- function(wind_max_kt) {
   dplyr::case_when(
     !is.finite(wind_max_kt) ~ NA_character_,
-    wind_max_kt >= 64 ~ "HUR",
+    wind_max_kt >= 64 ~ "HUR64plus",
     wind_max_kt >= 34 ~ "TS",
     TRUE ~ "TD"
   )
@@ -64,7 +62,7 @@
 # - FIX consistency: dur_days (copula_nn) computed as inclusive day count (>=1)
 # =============================================================================
 build_event_library <- function(track_df, event_df,
-                                sev_levels = c("TD", "TS", "HUR"),
+                                sev_levels = c("TD", "TS", "HUR64plus"),
                                 bins = list(
                                   wind = c(0, 34, 64, 83, 96, 113, Inf),
                                   Pc   = c(850, 900, 940, 970, 1000, 1050),
@@ -75,9 +73,7 @@ build_event_library <- function(track_df, event_df,
                                 copula_min_n = 30L,
                                 copula_k = 1L,
                                 copula_robust_scale = TRUE) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   if (!requireNamespace("lubridate", quietly = TRUE)) stop("Package `lubridate` is required.")
-  if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
 
   resampling_method <- match.arg(resampling_method)
 
@@ -402,13 +398,13 @@ disruption_flags <- function(daily,
 #' @return Logical vector.
 #' @export
 is_tc_day <- function(daily) {
-  daily$event_class %in% c("TC", "HUR")
+  daily$event_class %in% c("TC", "HUR64plus")
 }
 
 #' @rdname is_tc_day
 #' @export
 is_hur_day <- function(daily) {
-  daily$event_class == "HUR"
+  daily$event_class == "HUR64plus"
 }
 
 #' Compute daily exposure hours above a wind threshold
@@ -456,7 +452,6 @@ peak_wind_by_year <- function(daily) {
 #'
 #' @export
 build_event_library_from_out <- function(out, location, ..., seed = NULL) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
 
   if (is.null(out$trackpoints[[location]])) {
     stop("out$trackpoints has no entry for location='", location, "'.")
@@ -477,97 +472,18 @@ build_event_library_from_out <- function(out, location, ..., seed = NULL) {
   )
 }
 
-#' Sample synthetic storm events for a single year
-#'
-#' @description
-#' Randomly samples TS and HUR events for a calendar year using an empirical
-#' event library. Each sampled event is assigned a start date (seasonality),
-#' a duration, and a peak site wind speed.
-#'
-#' @param lib Event library produced by \code{build_event_library()}.
-#' @param year Integer calendar year.
-#' @param n_ts Integer number of tropical storms to sample.
-#' @param n_hur Integer number of hurricanes to sample.
-#' @param seed Optional integer seed.
-#'
-#' @return Tibble with one row per event: severity, start_date, dur_days, V_peak.
-#' @export
-sample_events_for_year <- function(lib, year, n_ts, n_hur, seed = NULL) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
-
-  if (!is.null(seed)) set.seed(seed)
-  stopifnot(is.list(lib), is.function(lib$sample_doy), is.function(lib$sample_event))
-  year <- as.integer(year)
-
-  get_dur_days <- function(row) {
-    if ("dur_days" %in% names(row) && is.finite(row$dur_days) && row$dur_days > 0) {
-      return(as.integer(row$dur_days))
-    }
-    if (all(c("start_time", "end_time") %in% names(row)) &&
-        !is.na(row$start_time) && !is.na(row$end_time)) {
-      d <- as.numeric(difftime(row$end_time, row$start_time, units = "days"))
-      return(max(1L, as.integer(floor(d) + 1L)))
-    }
-    if ("n_points" %in% names(row) && is.finite(row$n_points) && row$n_points > 0) {
-      return(max(1L, as.integer(ceiling(row$n_points / 4))))
-    }
-    1L
-  }
-
-  get_V_peak <- function(row, sev) {
-    v <- NA_real_
-    if ("peak_wind_kt" %in% names(row)) v <- row$peak_wind_kt
-    if (!is.finite(v) && "V_site_max_kt" %in% names(row)) v <- row$V_site_max_kt
-    if (!is.finite(v) && "storm_intensity_kt" %in% names(row)) v <- row$storm_intensity_kt
-    if (!is.finite(v) && "wind_max_kt" %in% names(row)) v <- row$wind_max_kt
-    if (!is.finite(v) || v <= 0) v <- if (sev == "HUR") 80 else if (sev == "TS") 40 else 25
-    as.numeric(v)
-  }
-
-  sample_one <- function(sev) {
-    doy0 <- as.integer(lib$sample_doy(sev))
-    if (!is.finite(doy0) || doy0 < 1L || doy0 > 366L) stop("Invalid DOY sampled: ", doy0)
-
-    row <- dplyr::as_tibble(lib$sample_event(sev))
-
-    start_date <- as.Date(sprintf("%d-01-01", year)) + (doy0 - 1L)
-    dur_days <- get_dur_days(row)
-    V_peak <- get_V_peak(row, sev)
-
-    tibble::tibble(
-      severity   = sev,
-      start_date = start_date,
-      dur_days   = as.integer(dur_days),
-      V_peak     = as.numeric(V_peak)
-    )
-  }
-
-  out <- dplyr::bind_rows(
-    if (n_ts  > 0) dplyr::bind_rows(replicate(n_ts,  sample_one("TS"),  simplify = FALSE)) else NULL,
-    if (n_hur > 0) dplyr::bind_rows(replicate(n_hur, sample_one("HUR"), simplify = FALSE)) else NULL
-  )
-
-  if (nrow(out) == 0) {
-    tibble::tibble(severity = character(0), start_date = as.Date(character(0)),
-                   dur_days = integer(0), V_peak = numeric(0))
-  } else {
-    out
-  }
-}
-
 
 #' Sample synthetic storm events for a year with extended attributes
 #'
 #' @description
-#' Extended version of \code{sample_events_for_year()} that also carries
+#' Extended event sampler that also carries
 #' atmospheric attributes (Pc, dP, RMW) and event metadata needed by
 #' \code{generate_daily_year_extended()}.
 #'
 #' For each sampled event, extracts from the event library row:
 #' \itemize{
 #'   \item \code{event_id}: unique identifier (SID or generated).
-#'   \item \code{event_class}: "TC" or "HUR" (for the daily dominant-event tracker).
+#'   \item \code{event_class}: "TC" or "HUR64plus" (for the daily dominant-event tracker).
 #'   \item \code{Pc_min_hPa}: minimum central pressure.
 #'   \item \code{dP_max_hPa}: maximum pressure deficit.
 #'   \item \code{RMW_mean_km}: mean radius of maximum wind.
@@ -583,8 +499,6 @@ sample_events_for_year <- function(lib, year, n_ts, n_hur, seed = NULL) {
 #'   event_id, event_class, Pc_min_hPa, dP_max_hPa, RMW_mean_km.
 #' @export
 sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
 
   if (!is.null(seed)) set.seed(seed)
   stopifnot(is.list(lib), is.function(lib$sample_doy), is.function(lib$sample_event))
@@ -611,7 +525,7 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
     v <- NA_real_
     if ("V_site_max_kt" %in% names(row)) v <- row$V_site_max_kt
     if (!is.finite(v) && "wind_max_kt" %in% names(row)) v <- row$wind_max_kt
-    if (!is.finite(v) || v <= 0) v <- if (sev == "HUR") 80 else if (sev == "TS") 40 else 25
+    if (!is.finite(v) || v <= 0) v <- if (sev == "HUR64plus") 80 else if (sev == "TS") 40 else 25
     as.numeric(v)
   }
 
@@ -646,7 +560,7 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
     }
 
     # Event class for dominant-event tracking
-    event_class <- if (sev == "HUR") "HUR" else "TC"
+    event_class <- if (sev == "HUR64plus") "HUR64plus" else "TC"
 
     tibble::tibble(
       severity    = sev,
@@ -663,7 +577,7 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
 
   out <- dplyr::bind_rows(
     if (n_ts  > 0) dplyr::bind_rows(replicate(n_ts,  sample_one("TS"),  simplify = FALSE)) else NULL,
-    if (n_hur > 0) dplyr::bind_rows(replicate(n_hur, sample_one("HUR"), simplify = FALSE)) else NULL
+    if (n_hur > 0) dplyr::bind_rows(replicate(n_hur, sample_one("HUR64plus"), simplify = FALSE)) else NULL
   )
 
   if (nrow(out) == 0) {
@@ -710,65 +624,6 @@ event_pulse <- function(dur_days, V_peak, shape = c("cosine", "triangle")) {
 
 
 
-#' Generate a daily wind time series for a single calendar year
-#'
-#' @description
-#' Converts sampled storm events into a daily time series of maximum sustained
-#' wind at a site. Overlapping events are combined by daily maximum wind.
-#'
-#' @param year Integer calendar year.
-#' @param sampled_events Tibble from \code{sample_events_for_year()}.
-#' @param thr_port Optional numeric wind threshold (kt) for port disruption.
-#' @param thr_infra Optional numeric wind threshold (kt) for infrastructure disruption.
-#' @param pulse_shape Pulse shape passed to \code{event_pulse()}.
-#'
-#' @return Tibble with date, wind_kt, and optional disruption flags.
-#' @export
-generate_daily_year <- function(year, sampled_events,
-                                thr_port = NA_real_,
-                                thr_infra = NA_real_,
-                                pulse_shape = "cosine") {
-  if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-
-  start <- as.Date(sprintf("%d-01-01", year))
-  end   <- as.Date(sprintf("%d-12-31", year))
-  dates <- seq.Date(start, end, by = "day")
-
-  n <- length(dates)
-  wind <- rep(0, n)
-
-  if (nrow(sampled_events) > 0) {
-    for (k in seq_len(nrow(sampled_events))) {
-      s <- sampled_events$start_date[k]
-      d <- sampled_events$dur_days[k]
-      V <- sampled_events$V_peak[k]
-
-      idx0 <- as.integer(s - start) + 1L
-      idx1 <- idx0 + d - 1L
-      if (idx1 < 1L || idx0 > n) next
-
-      idx0c <- max(1L, idx0)
-      idx1c <- min(n, idx1)
-
-      pulse <- event_pulse(d, V, shape = pulse_shape)
-      ps <- idx0c - idx0 + 1L
-      pe <- ps + (idx1c - idx0c)
-
-      wind[idx0c:idx1c] <- pmax(wind[idx0c:idx1c], pulse[ps:pe])
-    }
-  }
-
-  tibble::tibble(
-    date = dates,
-    wind_kt = wind
-  ) |>
-    dplyr::mutate(
-      port_disrupt  = if (is.finite(thr_port))  .data$wind_kt >= thr_port  else NA,
-      infra_disrupt = if (is.finite(thr_infra)) .data$wind_kt >= thr_infra else NA
-    )
-}
-
 
 #' Generate a daily wind + dominant-event attribute series for a single calendar year
 #'
@@ -785,8 +640,6 @@ generate_daily_year <- function(year, sampled_events,
 #' @export
 generate_daily_year_extended <- function(year, sampled_events,
                                          pulse_shape = "cosine") {
-  if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
 
   start <- as.Date(sprintf("%d-01-01", year))
   end   <- as.Date(sprintf("%d-12-31", year))
@@ -902,8 +755,6 @@ generate_daily_hazard_impact <- function(
     pulse_shape = "cosine",
     scenario = NA_character_,
     seed = 1) {
-
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
   stopifnot(is.character(location), length(location) >= 1L)
 
   damage_method <- match.arg(damage_method)
@@ -1099,7 +950,6 @@ add_damage_forcing <- function(daily,
                                V0 = 34, V1 = 120,
                                p = 3,
                                dmax = 0.02) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
 
   stopifnot(is.data.frame(daily))
   if (!("wind_kt" %in% names(daily))) stop("daily must contain `wind_kt`.", call. = FALSE)

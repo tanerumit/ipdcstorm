@@ -31,14 +31,10 @@
     if (!file.exists(ibtracs_csv)) stop("File not found: ", ibtracs_csv)
     
     if (!requireNamespace("readr", quietly = TRUE)) stop("Package `readr` is required.")
-    if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
     if (!requireNamespace("lubridate", quietly = TRUE)) stop("Package `lubridate` is required.")
-    if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
-    
-    to_num <- function(x) suppressWarnings(as.numeric(x))
     
     col_num_or_na <- function(dat, col) {
-      if (col %in% names(dat)) to_num(dat[[col]]) else rep(NA_real_, nrow(dat))
+      if (col %in% names(dat)) .to_num_quiet(dat[[col]]) else rep(NA_real_, nrow(dat))
     }
     col_chr_or_na <- function(dat, col) {
       if (col %in% names(dat)) as.character(dat[[col]]) else rep(NA_character_, nrow(dat))
@@ -114,7 +110,7 @@
         
         lat = lat_clean,
         lon = lon_clean,
-        wind_kt = to_num(.data$USA_WIND),
+        wind_kt = .to_num_quiet(.data$USA_WIND),
         
         r34_ne_nm = .to_radii_nm(df[["USA_R34_NE"]], cap_nm = 600),
         r34_se_nm = .to_radii_nm(df[["USA_R34_SE"]], cap_nm = 600),

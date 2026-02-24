@@ -4,24 +4,20 @@
 \alias{plot_qq_validation}
 \title{Plot QQ plots comparing simulated vs observed annual maxima}
 \usage{
-plot_qq_validation(val, out_dir = "output/validation", base_size = 11)
+plot_qq_validation(val, cfg = NULL, out_dir = NULL, base_size = NULL)
 }
 \arguments{
 \item{val}{Output from \code{run_validation_suite()}.}
 
-\item{out_dir}{Directory to save plots in.}
+\item{cfg}{Optional \code{validation_cfg} object.}
 
-\item{base_size}{Base font size for plots.}
+\item{out_dir}{Directory to save plots in. Overrides \code{cfg$out_dir}.}
+
+\item{base_size}{Base font size for plots. Overrides \code{cfg$advanced$base_size}.}
 }
 \value{
 Path of saved plot (invisibly) or \code{NULL}.
 }
 \description{
-Creates per-location QQ plots of simulated annual maximum wind speeds against
-observed values. The simulated quantiles are computed from the 5000-year
-synthetic record, while observed quantiles come from the full historical record.
-
-Departures from the 1:1 line reveal where the model systematically over- or
-under-predicts: curvature upward at the right tail indicates overprediction of
-extreme events (a common sign of intensity distribution or GEV tail issues).
+Plot QQ plots comparing simulated vs observed annual maxima
 }

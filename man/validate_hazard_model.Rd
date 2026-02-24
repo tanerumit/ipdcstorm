@@ -7,50 +7,26 @@
 validate_hazard_model(
   cfg,
   targets,
-  per_target_cfg = list(),
+  validation_cfg = make_validation_cfg(),
   severities = c("TS", "HUR64plus"),
-  sst_cfg = NULL,
-  holdout_years = 10,
-  n_sim = 5000,
-  return_periods = c(5, 10, 25, 50),
-  seed = 42,
-  out_dir = "output/validation",
-  save_plots = TRUE,
-  save_tables = TRUE,
-  base_size = 11
+  sst_cfg = NULL
 )
 }
 \arguments{
-\item{cfg}{Model configuration list (passed to \code{run_hazard_model()}).}
+\item{cfg}{Hazard configuration from \code{make_hazard_cfg()}.}
 
-\item{targets}{Target locations tibble/data.frame (passed to \code{run_hazard_model()}).}
+\item{targets}{Target locations tibble/data.frame.}
 
-\item{per_target_cfg}{Optional per-target configuration list.}
+\item{validation_cfg}{Validation configuration from \code{make_validation_cfg()}.}
 
-\item{severities}{Character vector of storm_class classes to simulate.}
+\item{severities}{Character vector of storm classes to simulate.}
 
-\item{sst_cfg}{Optional SST configuration (passed to \code{run_hazard_model()}).}
-
-\item{holdout_years}{Holdout window for hindcast (years).}
-
-\item{n_sim}{Number of simulated years for hindcast validation.}
-
-\item{return_periods}{Return periods (years) for RL comparison.}
-
-\item{seed}{Integer seed for validation suite.}
-
-\item{out_dir}{Output directory for validation artifacts.}
-
-\item{save_plots}{Logical; save standard validation figures.}
-
-\item{save_tables}{Logical; save standard validation tables (CSV + optional markdown).}
-
-\item{base_size}{Base font size for saved plots.}
+\item{sst_cfg}{Optional SST configuration from \code{make_sst_cfg()}.}
 }
 \value{
 A list with elements \code{out}, \code{val}, and \code{artifacts} (saved paths).
 }
 \description{
 Convenience wrapper that runs the hazard model, executes the validation suite,
-and (optionally) saves all standard figures and tables to a chosen directory.
+and saves all standard figures and tables to the configured directory.
 }

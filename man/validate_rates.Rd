@@ -16,11 +16,5 @@ Tibble with model vs reference rate comparison.
 }
 \description{
 Takes the lambda table from the hazard model output and compares per-location
-per-storm_class rates against published references. Reports absolute and
-percentage differences, and flags rates outside expected bounds.
-
-A key consideration: the model uses an 800 km gate and computes site wind at the
-target, so its effective "passage radius" is set by the wind field, not the gate.
-The reference rates use a fixed radius (65-100 nm). We flag discrepancies > 2x as
-potentially indicating a gate/radius mismatch rather than a model error.
+per-storm_class rates against published references.
 }

@@ -12,8 +12,5 @@ station, obs_wind_kt, obs_type, obs_source, notes.
 }
 \description{
 Returns a tibble of known station/buoy observations during well-documented storms
-for comparison against model-estimated site wind. Observations are peak sustained
-wind (1-min or 10-min as noted) at fixed stations.
-
-Sources: NWS/NHC tropical cyclone reports, NOAA NDBC buoy data, Meteo France.
+for comparison against model-estimated site wind.
 }

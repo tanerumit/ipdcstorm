@@ -4,14 +4,17 @@
 \alias{plot_hindcast_validation}
 \title{Plot hindcast validation figures}
 \usage{
-plot_hindcast_validation(val, out_dir = "output/validation", base_size = 11)
+plot_hindcast_validation(val, cfg = NULL, out_dir = NULL, base_size = NULL)
 }
 \arguments{
 \item{val}{Output from \code{run_validation_suite()}.}
 
-\item{out_dir}{Directory to save plots in.}
+\item{cfg}{Optional \code{validation_cfg} object. When provided, \code{out_dir} and
+\code{base_size} are read from the config (explicit arguments override).}
 
-\item{base_size}{Base font size for plots.}
+\item{out_dir}{Directory to save plots in. Overrides \code{cfg$out_dir}.}
+
+\item{base_size}{Base font size for plots. Overrides \code{cfg$advanced$base_size}.}
 }
 \value{
 Named character vector of saved plot paths (invisibly) or \code{NULL}.

@@ -122,8 +122,6 @@ print.hazard_cfg <- function(x, ...) {
 run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
                              severities = c("TS", "HUR64plus"),
                              sst_cfg = NULL) {
-  if (!requireNamespace("dplyr", quietly = TRUE)) stop("Package `dplyr` is required.")
-  if (!requireNamespace("tibble", quietly = TRUE)) stop("Package `tibble` is required.")
   if (!inherits(cfg, "hazard_cfg")) {
     stop("cfg must be created by make_hazard_cfg().", call. = FALSE)
   }

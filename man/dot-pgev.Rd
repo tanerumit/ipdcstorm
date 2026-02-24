@@ -6,14 +6,6 @@
 \usage{
 .pgev(x, mu, sigma, xi)
 }
-\arguments{
-\item{x}{Numeric vector of values.}
-
-\item{mu, sigma, xi}{GEV parameters.}
-}
-\value{
-Numeric vector of probabilities.
-}
 \description{
 GEV CDF
 }

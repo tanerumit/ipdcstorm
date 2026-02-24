@@ -22,8 +22,9 @@ A list with elements:
 \item{converged}{Logical; whether estimation produced valid parameters.}
 }
 \description{
-Estimates GEV parameters (location ÃŽÂ¼, scale ÃÆ’, shape ÃŽÂ¾) using the method
-of L-moments. This is more robust than MLE for small samples (n < 50) and
-requires no optimization. The sign convention follows the standard meteorological
-form: ÃŽÂ¾ > 0 Ã¢â€ â€™ heavy tail (FrÃƒÂ©chet), ÃŽÂ¾ < 0 Ã¢â€ â€™ bounded tail (Weibull), ÃŽÂ¾ = 0 Ã¢â€ â€™ Gumbel.
+Estimates GEV parameters (location \eqn{\mu}, scale \eqn{\sigma}, shape
+\eqn{\xi}) using the method of L-moments. This is more robust than MLE for
+small samples (n < 50) and requires no optimization. The sign convention
+follows the standard meteorological form: \eqn{\xi > 0} = heavy tail
+(Frechet), \eqn{\xi < 0} = bounded tail (Weibull), \eqn{\xi = 0} = Gumbel.
 }
