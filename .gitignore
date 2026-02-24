@@ -49,7 +49,8 @@ po/*~
 rsconnect/
 
 #Large datasets
-data/ibtracs/
+inst/extdata/ibtracs
 
 #Outputs
 output/
+
