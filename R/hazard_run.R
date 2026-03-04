@@ -269,6 +269,18 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   annual_counts_all <- dplyr::bind_rows(Filter(Negate(is.null), annual_counts_list))
   rates_all         <- dplyr::bind_rows(Filter(Negate(is.null), rates_list))
   fit_all           <- dplyr::bind_rows(Filter(Negate(is.null), fit_list))
+  rate_check_seed <- .build_rate_check_table(list(rates = rates_all))
+  lambda_scalers <- .lambda_scalers_from_rate_check(rate_check_seed)
+  lambda_scaler_id <- .lambda_scaler_id(lambda_scalers)
+
+  if (verbose && nrow(lambda_scalers) > 0) {
+    n_clamped <- sum(lambda_scalers$scale_clamped, na.rm = TRUE)
+    n_no_ref <- sum(lambda_scalers$scale_status == "no_ref", na.rm = TRUE)
+    .cli_info(sprintf(
+      "Lambda scalers   : %d site/class pairs (id=%s, clamped=%d, no_ref=%d)",
+      nrow(lambda_scalers), lambda_scaler_id, n_clamped, n_no_ref
+    ))
+  }
 
   # =========================================================================
   # CLIMATE MODIFICATIONS (Levels 1 & 2)
@@ -360,12 +372,17 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   for (loc_name in names(Filter(Negate(is.null), fit_list))) {
     lt <- rates_list[[loc_name]] |>
       dplyr::select(-"location")
+    lt_sim <- .apply_lambda_scalers_to_lambda_table(
+      lambda_table = lt,
+      location = loc_name,
+      lambda_scalers = lambda_scalers
+    )
     k <- fit_list[[loc_name]]$k_hat
 
-    p_hur_island <- compute_p_hur_base(lt)
+    p_hur_island <- compute_p_hur_base(lt_sim)
 
     sim <- simulate_twolevel_counts(
-      lambda_table = lt,
+      lambda_table = lt_sim,
       k_hat = k,
       n_years_sim = cfg$n_sim_years,
       sst_anomaly = sst_anomaly_sim,
@@ -409,6 +426,8 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
     events = events_all,
     trackpoints = trackpoints_list,
     rates = rates_all,
+    lambda_scalers = lambda_scalers,
+    lambda_scaler_id = lambda_scaler_id,
     fit = fit_all,
     cfg = cfg_out
   )

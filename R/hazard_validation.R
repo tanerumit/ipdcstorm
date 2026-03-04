@@ -609,15 +609,43 @@ bootstrap_return_level_ci <- function(annual_max,
 
   ac_train <- compute_annual_counts(ev_train, severities = severities)
   lt_train <- compute_lambda_table(ac_train)
+  rate_check_train <- .build_rate_check_table(list(
+    rates = lt_train |>
+      dplyr::mutate(location = location) |>
+      dplyr::relocate("location", .before = "storm_class")
+  ))
+  lambda_scalers_train <- .lambda_scalers_from_rate_check(rate_check_train)
+  lt_train_adj <- .apply_lambda_scalers_to_lambda_table(
+    lambda_table = lt_train,
+    location = location,
+    lambda_scalers = lambda_scalers_train
+  )
   ki_train <- estimate_k_hat(ac_train)
 
   train_params <- list(
     lambda_table = lt_train,
+    lambda_table_adjusted = lt_train_adj,
+    rate_check = rate_check_train,
+    lambda_scalers = lambda_scalers_train,
     k_hat = ki_train$k_hat,
     n_train_years = length(train_years),
     mu_total = ki_train$mu,
     var_total = ki_train$var
   )
+
+  message("  Rate calibration (training):")
+  for (i in seq_len(nrow(rate_check_train))) {
+    rr <- rate_check_train[i, ]
+    message(sprintf(
+      "    %-10s raw=%.3f  ref=%.3f  scale=%.3f  adj=%.3f  [%s]",
+      rr$storm_class,
+      rr$lambda_model_raw,
+      if (is.na(rr$lambda_ref)) NA else rr$lambda_ref,
+      rr$lambda_scale,
+      rr$lambda_adj,
+      rr$scale_status
+    ))
+  }
 
   # --- FIT KDE INTENSITY DISTRIBUTIONS ---
   train_V_ts <- ev_train |>
@@ -663,7 +691,7 @@ bootstrap_return_level_ci <- function(annual_max,
   }
 
   sim_counts <- simulate_twolevel_counts(
-    lt_train, ki_train$k_hat, n_years_sim = n_sim,
+    lt_train_adj, ki_train$k_hat, n_years_sim = n_sim,
     sst_anomaly = sst_anomaly_sim,
     beta_sst = beta_sst,
     gamma_intensity = gamma_intensity
@@ -858,6 +886,142 @@ get_reference_rates <- function() {
 }
 
 
+.build_rate_check_table <- function(out, ref_rates = NULL) {
+  if (is.null(ref_rates)) ref_rates <- get_reference_rates()
+  if (is.null(out$rates)) stop("out$rates is required.", call. = FALSE)
+  if (nrow(out$rates) == 0) {
+    return(tibble::tibble(
+      location = character(0),
+      storm_class = character(0),
+      lambda_model = numeric(0),
+      lambda_model_raw = numeric(0),
+      n_years_model = integer(0),
+      lambda_ref = numeric(0),
+      lambda_target = numeric(0),
+      lambda_scale = numeric(0),
+      lambda_adj = numeric(0),
+      scale_status = character(0),
+      scale_clamped = logical(0),
+      source = character(0),
+      gate_approx_nm = numeric(0),
+      period = character(0),
+      expected_ratio = numeric(0),
+      raw_ratio = numeric(0),
+      ratio = numeric(0),
+      adj_ratio = numeric(0),
+      flag = character(0)
+    ))
+  }
+
+  model_rates <- out$rates |>
+    dplyr::select(
+      location = "location",
+      storm_class = "storm_class",
+      lambda_model_raw = "lambda",
+      n_years_model = "n_years"
+    )
+
+  model_rates2 <- model_rates |>
+    tidyr::pivot_wider(names_from = storm_class, values_from = lambda_model_raw, values_fill = 0)
+  if (!("TS" %in% names(model_rates2))) model_rates2$TS <- 0
+  if (!("HUR" %in% names(model_rates2))) model_rates2$HUR <- 0
+
+  model_rates2 <- model_rates2 |>
+    dplyr::mutate(TS34plus = TS + HUR) |>
+    tidyr::pivot_longer(c("TS34plus", "HUR"), names_to = "storm_class", values_to = "lambda_model_raw")
+
+  island_to_region <- tibble::tribble(
+    ~location,        ~region,
+    "St_Martin",      "St_Martin",
+    "Saba",           "Leeward_Islands",
+    "Statia",         "Leeward_Islands",
+    "Puerto_Rico",    "Puerto_Rico",
+    "Miami",          "Miami"
+  )
+
+  comp_base <- model_rates2 |>
+    dplyr::left_join(island_to_region, by = "location") |>
+    dplyr::left_join(ref_rates, by = c("region", "storm_class")) |>
+    dplyr::mutate(
+      expected_ratio = dplyr::case_when(
+        .data$storm_class == "TS34plus" & .data$gate_approx_nm >= 100 ~ 0.55,
+        .data$storm_class == "TS34plus" & .data$gate_approx_nm < 100  ~ 0.75,
+        .data$storm_class == "HUR" & .data$gate_approx_nm >= 100 ~ 0.30,
+        .data$storm_class == "HUR" & .data$gate_approx_nm < 100  ~ 0.45,
+        TRUE ~ 0.50
+      )
+    )
+
+  lambda_scalers <- out$lambda_scalers
+  if (is.null(lambda_scalers) || nrow(lambda_scalers) == 0) {
+    lambda_scalers <- .lambda_scalers_from_rate_check(comp_base)
+  }
+
+  comp_base |>
+    dplyr::left_join(
+      dplyr::select(
+        tibble::as_tibble(lambda_scalers),
+        "location", "storm_class",
+        "lambda_target", "lambda_scale", "lambda_adj",
+        "scale_status", "scale_clamped"
+      ),
+      by = c("location", "storm_class")
+    ) |>
+    dplyr::mutate(
+      lambda_scale = dplyr::if_else(
+        is.finite(.data$lambda_scale) & .data$lambda_scale > 0,
+        .data$lambda_scale,
+        1
+      ),
+      lambda_target = dplyr::if_else(
+        is.finite(.data$lambda_target),
+        .data$lambda_target,
+        dplyr::if_else(
+          is.finite(.data$lambda_ref),
+          .data$lambda_ref * .data$expected_ratio,
+          .data$lambda_model_raw
+        )
+      ),
+      lambda_adj = dplyr::if_else(
+        is.finite(.data$lambda_adj),
+        .data$lambda_adj,
+        .data$lambda_model_raw * .data$lambda_scale
+      ),
+      lambda_model = .data$lambda_model_raw,
+      raw_ratio = dplyr::if_else(
+        is.finite(.data$lambda_ref),
+        .data$lambda_model_raw / pmax(.data$lambda_ref, 0.001),
+        NA_real_
+      ),
+      ratio = dplyr::if_else(
+        is.finite(.data$lambda_ref),
+        .data$lambda_adj / pmax(.data$lambda_ref, 0.001),
+        NA_real_
+      ),
+      adj_ratio = dplyr::if_else(
+        is.finite(.data$ratio) & is.finite(.data$expected_ratio) & .data$expected_ratio > 0,
+        .data$ratio / .data$expected_ratio,
+        NA_real_
+      ),
+      flag = dplyr::case_when(
+        is.na(.data$lambda_ref)   ~ "no_reference",
+        .data$adj_ratio > 2.5     ~ "HIGH: model >> expected",
+        .data$adj_ratio < 0.4     ~ "LOW: model << expected",
+        .data$adj_ratio > 1.8     ~ "elevated",
+        .data$adj_ratio < 0.6     ~ "slightly_low",
+        TRUE ~ "OK"
+      )
+    ) |>
+    dplyr::select(
+      "location", "storm_class",
+      "lambda_model", "lambda_model_raw", "n_years_model",
+      "lambda_ref", "lambda_target", "lambda_scale", "lambda_adj",
+      "scale_status", "scale_clamped",
+      "source", "gate_approx_nm", "period",
+      "expected_ratio", "raw_ratio", "ratio", "adj_ratio", "flag"
+    )
+}
+
 #' Compare model-fitted rates against reference climatologies
 #'
 #' @description
@@ -870,70 +1034,24 @@ get_reference_rates <- function() {
 #' @return Tibble with model vs reference rate comparison.
 #' @export
 validate_rates <- function(out, ref_rates = NULL) {
-
-  if (is.null(ref_rates)) ref_rates <- get_reference_rates()
-
-  model_rates <- out$rates |>
-    dplyr::select(location = "location", storm_class = "storm_class",
-                  lambda_model = "lambda", n_years_model = "n_years")
-
-  model_rates2 <- model_rates |>
-    tidyr::pivot_wider(names_from = storm_class, values_from = lambda_model, values_fill = 0) |>
-    dplyr::mutate(TS34plus = TS + HUR) |>
-    tidyr::pivot_longer(c("TS34plus","HUR"), names_to="storm_class", values_to="lambda_model")
-
-  island_to_region <- tibble::tribble(
-    ~location,        ~region,
-    "St_Martin",    "St_Martin",
-    "Saba",         "Leeward_Islands",
-    "Statia",       "Leeward_Islands",
-    "Puerto_Rico",  "Puerto_Rico",
-    "Miami",        "Miami"
-  )
-
-  comp <- model_rates2 |>
-    dplyr::left_join(island_to_region, by = "location") |>
-    dplyr::left_join(ref_rates, by = c("region", "storm_class")) |>
-    dplyr::mutate(
-      ratio     = .data$lambda_model / pmax(.data$lambda_ref, 0.001),
-
-      expected_ratio = dplyr::case_when(
-        .data$storm_class == "TS34plus"  & .data$gate_approx_nm >= 100 ~ 0.55,
-        .data$storm_class == "TS34plus"  & .data$gate_approx_nm < 100  ~ 0.75,
-        .data$storm_class == "HUR" & .data$gate_approx_nm >= 100 ~ 0.30,
-        .data$storm_class == "HUR" & .data$gate_approx_nm < 100  ~ 0.45,
-        TRUE ~ 0.50
-      ),
-
-      adj_ratio = .data$ratio / .data$expected_ratio,
-
-      flag = dplyr::case_when(
-        is.na(.data$lambda_ref)   ~ "no_reference",
-        .data$adj_ratio > 2.5     ~ "HIGH: model >> expected",
-        .data$adj_ratio < 0.4     ~ "LOW: model << expected",
-        .data$adj_ratio > 1.8     ~ "elevated",
-        .data$adj_ratio < 0.6     ~ "slightly_low",
-        TRUE ~ "OK"
-      )
-    ) |>
-    dplyr::select(
-      "location", "storm_class",
-      "lambda_model", "n_years_model",
-      "lambda_ref", "source", "gate_approx_nm", "period",
-      "expected_ratio", "ratio", "adj_ratio", "flag"
-    )
+  comp <- .build_rate_check_table(out = out, ref_rates = ref_rates)
 
   message("\n[Rate Check] Summary:")
   for (i in seq_len(nrow(comp))) {
     r <- comp[i, ]
     sym <- if (r$flag == "OK") "\u2713" else if (grepl("^(HIGH|LOW)", r$flag)) "\u2717" else "~"
-    message(sprintf("  %s %s / %-10s : model=%.3f  ref=%.3f  raw_ratio=%.2f  exp_ratio=%.2f  adj_ratio=%.2f  [%s]",
-                    sym, r$location, r$storm_class, r$lambda_model,
-                    if (is.na(r$lambda_ref)) NA else r$lambda_ref,
-                    if (is.na(r$ratio)) NA else r$ratio,
-                    if (is.na(r$expected_ratio)) NA else r$expected_ratio,
-                    if (is.na(r$adj_ratio)) NA else r$adj_ratio,
-                    r$flag))
+    message(sprintf(
+      "  %s %s / %-10s : raw=%.3f  ref=%.3f  scale=%.3f  adj=%.3f  raw_ratio=%.2f  exp_ratio=%.2f  adj_ratio=%.2f  [%s; %s]",
+      sym, r$location, r$storm_class, r$lambda_model_raw,
+      if (is.na(r$lambda_ref)) NA else r$lambda_ref,
+      r$lambda_scale,
+      r$lambda_adj,
+      if (is.na(r$raw_ratio)) NA else r$raw_ratio,
+      if (is.na(r$expected_ratio)) NA else r$expected_ratio,
+      if (is.na(r$adj_ratio)) NA else r$adj_ratio,
+      r$flag,
+      r$scale_status
+    ))
   }
 
   comp
@@ -1832,7 +1950,10 @@ plot_rate_validation <- function(val,
   rc <- dplyr::filter(val$rate_check, !is.na(lambda_ref))
   if (nrow(rc) == 0) return(invisible(NULL))
 
-  p_rate <- ggplot2::ggplot(rc, ggplot2::aes(x = lambda_ref, y = lambda_model)) +
+  y_col <- if ("lambda_adj" %in% names(rc)) "lambda_adj" else "lambda_model"
+  y_vals <- rc[[y_col]]
+
+  p_rate <- ggplot2::ggplot(rc, ggplot2::aes(x = lambda_ref, y = .data[[y_col]])) +
     ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
     ggplot2::geom_abline(slope = 2, intercept = 0, linetype = "dotted", color = "grey70") +
     ggplot2::geom_abline(slope = 0.5, intercept = 0, linetype = "dotted", color = "grey70") +
@@ -1840,18 +1961,20 @@ plot_rate_validation <- function(val,
     ggplot2::geom_text(ggplot2::aes(label = location), nudge_y = 0.08, size = 3, check_overlap = TRUE) +
     ggplot2::scale_color_manual(values = c(
       "OK" = "forestgreen",
-      "elevated (expected: model gate > ref radius)" = "orange",
-      "HIGH: model >> reference (check search_radius_km or start_year)" = "red",
-      "LOW: model << reference (check storm_class filter or data)" = "purple"
+      "elevated" = "orange",
+      "HIGH: model >> expected" = "red",
+      "LOW: model << expected" = "purple",
+      "slightly_low" = "goldenrod3",
+      "no_reference" = "grey60"
     )) +
     ggplot2::coord_equal(
-      xlim = c(0, max(c(rc$lambda_model, rc$lambda_ref), na.rm = TRUE) + 0.3),
-      ylim = c(0, max(c(rc$lambda_model, rc$lambda_ref), na.rm = TRUE) + 0.3)
+      xlim = c(0, max(c(y_vals, rc$lambda_ref), na.rm = TRUE) + 0.3),
+      ylim = c(0, max(c(y_vals, rc$lambda_ref), na.rm = TRUE) + 0.3)
     ) +
     ggplot2::labs(
       x = "Reference \u03bb (published climatology)",
-      y = "Model \u03bb (fitted)",
-      title = "Rate Sanity Check: Model vs Published Annual Rates",
+      y = if (identical(y_col, "lambda_adj")) "Adjusted model \u03bb" else "Model \u03bb (fitted)",
+      title = "Rate Sanity Check: Adjusted Model vs Published Annual Rates",
       subtitle = "Dashed = 1:1; dotted = 0.5x and 2x bounds",
       color = "Flag", shape = "storm_class"
     ) +

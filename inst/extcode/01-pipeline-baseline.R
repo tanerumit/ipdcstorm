@@ -80,6 +80,16 @@ out <- res$out
 val <- res$val
 
 
+res <- run_validation_stats(
+  out, targets,
+  sites = c("Miami","Saba","Statia"),
+  min_year = 1970,
+  storm_vmax_min = 34,
+  holdout_years = 10,   # try 10 now that the era is shorter and more relevant
+  threshold_kt = 34,
+  top_k = 5
+)
+
 
 
 

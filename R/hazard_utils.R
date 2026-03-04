@@ -88,3 +88,214 @@
     out[is.finite(out) & out > cap_nm] <- NA_real_
     out
   }
+
+  #' Build multiplicative lambda scalers from a rate-check table
+  #'
+  #' @param rate_tbl Tibble with location, storm_class, lambda_model or
+  #'   lambda_model_raw, lambda_ref, and optional expected_ratio.
+  #' @param scale_min,scale_max Numeric scalar clamp bounds for lambda_scale.
+  #'
+  #' @return Tibble keyed by location and storm_class with raw lambda, target
+  #'   lambda, lambda_scale, adjusted lambda, and scaler status.
+  #'
+  #' @keywords internal
+  .lambda_scalers_from_rate_check <- function(rate_tbl,
+                                              scale_min = 0.25,
+                                              scale_max = 4) {
+    rt <- tibble::as_tibble(rate_tbl)
+    required <- c("location", "storm_class", "lambda_ref")
+    missing_cols <- setdiff(required, names(rt))
+    if (length(missing_cols) > 0) {
+      stop(
+        "rate_tbl is missing required columns: ",
+        paste(missing_cols, collapse = ", "),
+        call. = FALSE
+      )
+    }
+
+    lambda_col <- if ("lambda_model_raw" %in% names(rt)) {
+      "lambda_model_raw"
+    } else if ("lambda_model" %in% names(rt)) {
+      "lambda_model"
+    } else {
+      stop(
+        "rate_tbl must contain either lambda_model_raw or lambda_model.",
+        call. = FALSE
+      )
+    }
+
+    if (!("expected_ratio" %in% names(rt))) {
+      rt$expected_ratio <- 1
+    }
+
+    scale_min <- as.numeric(scale_min)
+    scale_max <- as.numeric(scale_max)
+    if (!is.finite(scale_min) || !is.finite(scale_max) || scale_min <= 0 || scale_max < scale_min) {
+      stop("scale_min and scale_max must be finite with 0 < scale_min <= scale_max.", call. = FALSE)
+    }
+
+    rt |>
+      dplyr::mutate(
+        lambda_model_raw = as.numeric(.data[[lambda_col]]),
+        expected_ratio = dplyr::if_else(
+          is.finite(.data$expected_ratio) & .data$expected_ratio > 0,
+          as.numeric(.data$expected_ratio),
+          1
+        ),
+        lambda_target = dplyr::if_else(
+          is.finite(.data$lambda_ref),
+          as.numeric(.data$lambda_ref) * .data$expected_ratio,
+          .data$lambda_model_raw
+        ),
+        scale_raw = dplyr::case_when(
+          !is.finite(.data$lambda_ref) ~ 1,
+          !is.finite(.data$lambda_model_raw) ~ 1,
+          .data$lambda_model_raw <= 0 & .data$lambda_target > 0 ~ scale_max,
+          .data$lambda_model_raw <= 0 ~ 1,
+          TRUE ~ .data$lambda_target / .data$lambda_model_raw
+        ),
+        scale_raw = dplyr::if_else(
+          is.finite(.data$scale_raw) & .data$scale_raw > 0,
+          .data$scale_raw,
+          1
+        ),
+        lambda_scale = pmax(scale_min, pmin(scale_max, .data$scale_raw)),
+        scale_status = dplyr::case_when(
+          !is.finite(.data$lambda_ref) ~ "no_ref",
+          !is.finite(.data$lambda_model_raw) ~ "no_model",
+          .data$lambda_model_raw <= 0 & .data$lambda_target > 0 ~ "zero_model",
+          .data$scale_raw < scale_min ~ "clamped_low",
+          .data$scale_raw > scale_max ~ "clamped_high",
+          TRUE ~ "ok"
+        ),
+        scale_clamped = .data$scale_status %in% c("clamped_low", "clamped_high", "zero_model"),
+        lambda_adj = .data$lambda_model_raw * .data$lambda_scale
+      ) |>
+      dplyr::select(
+        "location", "storm_class",
+        "lambda_model_raw", "lambda_ref", "expected_ratio",
+        "lambda_target", "lambda_scale", "lambda_adj",
+        "scale_status", "scale_clamped"
+      )
+  }
+
+  #' Apply site/class lambda scalers to a TS/HUR lambda table
+  #'
+  #' @param lambda_table Tibble from compute_lambda_table().
+  #' @param location Character scalar; site name.
+  #' @param lambda_scalers Optional output from .lambda_scalers_from_rate_check().
+  #'
+  #' @return Tibble with adjusted lambda values. Existing columns are preserved;
+  #'   lambda_raw, lambda_scale, and lambda_adj are added for traceability.
+  #'
+  #' @keywords internal
+  .apply_lambda_scalers_to_lambda_table <- function(lambda_table,
+                                                    location,
+                                                    lambda_scalers = NULL) {
+    lt <- tibble::as_tibble(lambda_table)
+    if (!all(c("storm_class", "lambda") %in% names(lt))) {
+      stop("lambda_table must contain storm_class and lambda.", call. = FALSE)
+    }
+
+    location <- as.character(location)[1]
+    lt$storm_class <- as.character(lt$storm_class)
+    lt$lambda <- as.numeric(lt$lambda)
+    lt$lambda_raw <- lt$lambda
+    lt$lambda_scale <- 1
+    lt$lambda_adj <- lt$lambda
+
+    if (is.null(lambda_scalers) || nrow(lambda_scalers) == 0) {
+      return(lt)
+    }
+
+    scaler_tbl <- tibble::as_tibble(lambda_scalers) |>
+      dplyr::filter(.data$location == .env$location)
+
+    if (nrow(scaler_tbl) == 0) {
+      return(lt)
+    }
+
+    scale_total <- scaler_tbl |>
+      dplyr::filter(.data$storm_class == "TS34plus") |>
+      dplyr::pull("lambda_scale")
+    scale_hur <- scaler_tbl |>
+      dplyr::filter(.data$storm_class == "HUR") |>
+      dplyr::pull("lambda_scale")
+
+    scale_total <- if (length(scale_total) > 0 && is.finite(scale_total[1])) scale_total[1] else 1
+    scale_hur <- if (length(scale_hur) > 0 && is.finite(scale_hur[1])) scale_hur[1] else 1
+
+    idx_ts <- which(lt$storm_class == "TS")
+    idx_hur <- which(lt$storm_class == "HUR")
+
+    lambda_ts_raw <- if (length(idx_ts) > 0) sum(lt$lambda_raw[idx_ts], na.rm = TRUE) else 0
+    lambda_hur_raw <- if (length(idx_hur) > 0) sum(lt$lambda_raw[idx_hur], na.rm = TRUE) else 0
+    lambda_total_raw <- lambda_ts_raw + lambda_hur_raw
+
+    lambda_total_adj <- lambda_total_raw * scale_total
+    lambda_hur_adj <- lambda_hur_raw * scale_hur
+
+    consistency_clamped <- FALSE
+    if (lambda_hur_adj > lambda_total_adj) {
+      lambda_hur_adj <- lambda_total_adj
+      consistency_clamped <- TRUE
+    }
+
+    lambda_ts_adj <- max(0, lambda_total_adj - lambda_hur_adj)
+
+    if (length(idx_ts) > 0) {
+      lt$lambda_adj[idx_ts] <- lambda_ts_adj
+      lt$lambda_scale[idx_ts] <- if (lambda_ts_raw > 0) lambda_ts_adj / lambda_ts_raw else 1
+      lt$lambda[idx_ts] <- lambda_ts_adj
+    }
+    if (length(idx_hur) > 0) {
+      lt$lambda_adj[idx_hur] <- lambda_hur_adj
+      lt$lambda_scale[idx_hur] <- if (lambda_hur_raw > 0) lambda_hur_adj / lambda_hur_raw else 1
+      lt$lambda[idx_hur] <- lambda_hur_adj
+    }
+
+    attr(lt, "lambda_scaler_context") <- list(
+      location = location,
+      scale_total = scale_total,
+      scale_hur = scale_hur,
+      consistency_clamped = consistency_clamped
+    )
+
+    lt
+  }
+
+  #' Deterministic identifier for a lambda scaler table
+  #'
+  #' @param lambda_scalers Tibble from .lambda_scalers_from_rate_check().
+  #'
+  #' @return Character scalar ID stable for identical scaler content.
+  #'
+  #' @keywords internal
+  .lambda_scaler_id <- function(lambda_scalers) {
+    if (is.null(lambda_scalers) || nrow(lambda_scalers) == 0) {
+      return("lambda-scalers-none")
+    }
+
+    scaler_tbl <- tibble::as_tibble(lambda_scalers) |>
+      dplyr::mutate(
+        location = as.character(.data$location),
+        storm_class = as.character(.data$storm_class),
+        lambda_scale = as.numeric(.data$lambda_scale),
+        scale_status = as.character(.data$scale_status)
+      ) |>
+      dplyr::arrange(.data$location, .data$storm_class)
+
+    keys <- paste(
+      scaler_tbl$location,
+      scaler_tbl$storm_class,
+      sprintf("%.6f", scaler_tbl$lambda_scale),
+      scaler_tbl$scale_status,
+      sep = "|"
+    )
+    code_points <- utf8ToInt(paste(keys, collapse = ";"))
+    weights <- (seq_along(code_points) %% 251) + 1
+    checksum <- sum(as.numeric(code_points) * weights)
+    checksum <- checksum %% 4294967295
+
+    sprintf("lambda-scalers-%08x", as.integer(checksum))
+  }
