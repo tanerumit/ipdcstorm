@@ -182,11 +182,96 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
   R34_nm * 1.852  # convert to km
 }
 
+# Resolve the Holland-profile outer cutoff radius (km).
+# A finite, positive `R34_km` supplied by the caller is treated as an observed
+# track-point radius. When `.estimate_site_wind_holland()` has to infill a
+# missing/non-positive R34 via `estimate_R34_climo()`, it marks that row as a
+# fallback radius and uses the looser 1.8x multiplier instead.
+.resolve_holland_outer_cutoff_km <- function(R34_km, R34_is_fallback = FALSE) {
+  n <- length(R34_km)
+  R_outer_km <- rep(300, n)
+  R34_is_fallback <- rep_len(R34_is_fallback, n)
+  has_R34 <- is.finite(R34_km) & (R34_km > 0)
+
+  if (any(has_R34)) {
+    mult <- rep(1.5, sum(has_R34))
+    mult[R34_is_fallback[has_R34]] <- 1.8
+    R_outer_km[has_R34] <- mult * R34_km[has_R34]
+  }
+
+  R_outer_km
+}
+
 
 
 # =============================================================================
 # 2b) Knaff & Zehr RMW estimation (with latitude)
 # =============================================================================
+
+.is_valid_observed_rmw_km <- function(rmw_km) {
+  is.finite(rmw_km) & rmw_km > 5 & rmw_km < 150
+}
+
+.cap_inferred_rmw_km <- function(rmw_km, Vmax_kt) {
+  out <- rmw_km
+  ok <- is.finite(out)
+  if (!any(ok)) return(out)
+
+  Vmax_clamped <- Vmax_kt
+  Vmax_clamped[!is.finite(Vmax_clamped)] <- 34
+  Vmax_clamped <- pmax(34, pmin(185, Vmax_clamped))
+
+  # Empirical upper guard from the packaged North Atlantic IBTrACS sample:
+  # the 95th-percentile observed RMW decreases with intensity, so non-observed
+  # estimates are capped on a simple monotone curve instead of a flat ceiling.
+  max_km <- pmax(50, 140 - 0.75 * (Vmax_clamped - 34))
+  out[ok] <- pmax(8, pmin(max_km[ok], out[ok]))
+  out
+}
+
+.estimate_rmw_from_mean_radii <- function(R64_mean_km, R50_mean_km, R34_mean_km) {
+  n <- max(length(R64_mean_km), length(R50_mean_km), length(R34_mean_km))
+  out <- rep(NA_real_, n)
+
+  has_r64 <- is.finite(R64_mean_km) & R64_mean_km >= 10 & R64_mean_km <= 305.58
+  has_r50 <- is.finite(R50_mean_km) & R50_mean_km >= 10 & R50_mean_km <= 481.52
+  has_r34 <- is.finite(R34_mean_km) & R34_mean_km >= 10 & R34_mean_km <= 888.96
+
+  # Fixed no-intercept coefficients fit once from the packaged North Atlantic
+  # IBTrACS sample (rows with valid USA_RMW, using storm-wide mean quadrant radii):
+  #   R64 tier  = 0.6517550 * mean(R64)
+  #   R50 tier  = 0.6676334 * mean(R50) when R64 is unavailable
+  #   R34 tier  = 0.4106665 * mean(R34) when R64/R50 are unavailable
+  out[has_r64] <- 0.6517550 * R64_mean_km[has_r64]
+
+  use_r50 <- !has_r64 & has_r50
+  out[use_r50] <- 0.6676334 * R50_mean_km[use_r50]
+
+  use_r34 <- !has_r64 & !has_r50 & has_r34
+  out[use_r34] <- 0.4106665 * R34_mean_km[use_r34]
+
+  out
+}
+
+.resolve_trackpoint_rmw_km <- function(rmw_obs_km,
+                                       R64_mean_km,
+                                       R50_mean_km,
+                                       R34_mean_km,
+                                       Vmax_kt,
+                                       lat) {
+  obs_ok <- .is_valid_observed_rmw_km(rmw_obs_km)
+
+  rmw_radii_km <- .estimate_rmw_from_mean_radii(R64_mean_km, R50_mean_km, R34_mean_km)
+  rmw_radii_km <- .cap_inferred_rmw_km(rmw_radii_km, Vmax_kt)
+
+  rmw_knaff_km <- estimate_RMW_knaff(Vmax_kt, lat)
+
+  out <- rmw_knaff_km
+  use_radii <- is.finite(rmw_radii_km)
+  out[use_radii] <- rmw_radii_km[use_radii]
+  out[obs_ok] <- rmw_obs_km[obs_ok]
+  out
+}
 
 #' Estimate radius of maximum wind using Knaff & Zehr (2007) climatology
 #'
@@ -208,12 +293,9 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   Vmax_clamped <- pmax(30, pmin(185, Vmax_kt))
   RMW_nm <- 66.785 - 0.09102 * Vmax_clamped + 1.0619 * (lat - 25)
 
-  # Floor/cap in nm: [5, 100]
-  RMW_nm <- pmax(5, pmin(100, RMW_nm))
-
-  RMW_nm[!is.finite(Vmax_kt)] <- NA_real_
-
-  RMW_nm * 1.852  # convert to km
+  RMW_km <- RMW_nm * 1.852
+  RMW_km[!is.finite(Vmax_kt)] <- NA_real_
+  .cap_inferred_rmw_km(RMW_km, Vmax_kt)
 }
 
 
@@ -435,18 +517,12 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   # Outer cutoff â€” tightened to reduce wind exposure footprint
   # Previous: 1.8Ã— observed, 2.4Ã— climo; typical R34~200km â†’ 360-480 km exposure
   # New: 1.5Ã— observed, 1.8Ã— climo; â†’ 300-360 km, closer to NHC wind field extent
-  R_outer <- rep(300, length(r_norm))
-  has_R34 <- is.finite(R34_eff[use]) & (R34_eff[use] > 0)
-  R_outer[has_R34] <- 1.8 * R34_eff[use][has_R34]
-
-  # climo extension (stable indexing)
-  if (any(has_R34)) {
-    idx_has <- which(has_R34)
-    is_cl  <- R34_is_climo[use][has_R34]
-    if (any(is_cl)) {
-      R_outer[idx_has[is_cl]] <- 2.4 * R34_eff[use][has_R34][is_cl]
-    }
-  }
+  # Outer cutoff is deterministic: 1.5x for observed track-point R34, 1.8x for
+  # fallback/climatological R34 that this function had to infill above.
+  R_outer <- .resolve_holland_outer_cutoff_km(
+    R34_km = R34_eff[use],
+    R34_is_fallback = R34_is_climo[use]
+  )
 
   beyond <- r_km0[use] > R_outer
   if (any(beyond)) {
@@ -623,6 +699,15 @@ compute_storm_heading <- function(df) {
 #' @return The input data frame with added site-wind columns.
 #' @export
 compute_site_winds_full <- function(df, target_lat, target_lon) {
+  mean_radius_nm <- function(r_ne, r_se, r_sw, r_nw) {
+    m <- cbind(r_ne, r_se, r_sw, r_nw)
+    m[!is.finite(m)] <- NA_real_
+    out <- rowMeans(m, na.rm = TRUE)
+    out[rowSums(is.finite(m)) == 0] <- NA_real_
+    out
+  }
+
+  if (!("rmw_km" %in% names(df))) df$rmw_km <- NA_real_
 
   df <- df |>
     dplyr::mutate(
@@ -641,6 +726,9 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
       R34_km = .data$R34_nm * 1.852,
       R50_km = .data$R50_nm * 1.852,
       R64_km = .data$R64_nm * 1.852,
+      R34_mean_km = mean_radius_nm(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm) * 1.852,
+      R50_mean_km = mean_radius_nm(.data$r50_ne_nm, .data$r50_se_nm, .data$r50_sw_nm, .data$r50_nw_nm) * 1.852,
+      R64_mean_km = mean_radius_nm(.data$r64_ne_nm, .data$r64_se_nm, .data$r64_sw_nm, .data$r64_nw_nm) * 1.852,
 
       Vmax_kt = .data$wind_kt
     )
@@ -654,17 +742,20 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
 
   if (!("storm_speed_kt" %in% names(df))) df$storm_speed_kt <- NA_real_
 
-# --- Knaff & Zehr RMW with latitude dependence ---
+  # RMW precedence is deterministic:
+  # 1) observed USA_RMW parsed to `rmw_km` when valid
+  # 2) calibrated mapping from storm-wide mean wind radii
+  # 3) guarded Knaff fallback
   df <- df |>
     dplyr::mutate(
       R34_missing = !is.finite(.data$R34_km) | .data$R34_km <= 0,
-      RMW_km = dplyr::case_when(
-        # Prefer observed radii-derived RMW
-        is.finite(.data$R64_km) & .data$R64_km > 0 ~ 0.35 * .data$R64_km,
-        is.finite(.data$R50_km) & .data$R50_km > 0 ~ 0.40 * .data$R50_km,
-        is.finite(.data$R34_km) & .data$R34_km > 0 & !.data$R34_missing ~ 0.50 * .data$R34_km,
-        # Fallback: Knaff & Zehr (2007) with latitude
-        TRUE ~ estimate_RMW_knaff(.data$Vmax_kt, .data$lat)
+      RMW_km = .resolve_trackpoint_rmw_km(
+        rmw_obs_km = .data$rmw_km,
+        R64_mean_km = .data$R64_mean_km,
+        R50_mean_km = .data$R50_mean_km,
+        R34_mean_km = .data$R34_mean_km,
+        Vmax_kt = .data$Vmax_kt,
+        lat = .data$lat
       )
     )
 
@@ -878,4 +969,3 @@ estimate_k_hat <- function(annual_counts) {
   k_hat <- if (is.finite(va) && va > mu && mu > 0) mu^2 / (va - mu) else 1e6
   list(k_hat = k_hat, annual_total = annual_total, mu = mu, var = va)
 }
-

@@ -1,4 +1,4 @@
-# AGENTS.md — weathergenr repo guidance
+# ipdc storm — Agent Instructions (canonical)
 
 ## Repo map
 - Code: R/
@@ -6,6 +6,13 @@
 - Docs: man/ (generated), vignettes/
 - Skills: .agents/skills/
 - Reports: tools/codex_reports/
+
+## Scientific correctness and transparency
+- Disclose scientific/numerical assumptions and simplifications before code when explanation is requested.
+- No silent simplifications of equations/physics/algorithms.
+- Track units/dimensions when applicable; enforce dimensional consistency.
+- Deterministic by default; fixed seeds for randomness unless stochastic behavior is requested.
+- State key numerical/physical/model limitations when explanation is requested.
 
 ## Non-negotiable constraints
 - Encoding: UTF-8 (no BOM).

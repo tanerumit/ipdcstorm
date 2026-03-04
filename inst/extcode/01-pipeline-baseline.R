@@ -1,6 +1,8 @@
 
 # Load packages & parameters
+rm(ipdcstorm)
 library(ipdcstorm)
+
 library(ggplot2)
 library(dplyr)
 
@@ -52,6 +54,33 @@ daily_all <- generate_daily_hazard_impact(
   scenario       = "stationary",
   seed           = 42
 )
+
+
+# =============================================================================
+# Model validation against historical events
+# =============================================================================
+
+
+cfg_validation <- make_hazard_cfg(
+  data_path       = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
+  search_radius_km = 800,
+  start_year       = 1970L,
+  n_sim_years      = 2000L)
+
+res <- validate_hazard_model(
+  cfg = cfg_validation,
+  targets = targets,
+  validation_cfg = make_validation_cfg(),
+  severities = c("TS", "HUR"),
+  sst_cfg = NULL
+)
+
+# Validation outputs
+out <- res$out
+val <- res$val
+
+
+
 
 
 # =============================================================================
@@ -179,18 +208,3 @@ message("\n[DONE] All baseline outputs saved to: ", out_dir)
 
 
 
-# =============================================================================
-# Model validation against historical events
-# =============================================================================
-
-res <- validate_hazard_model(
-  cfg = cfg,
-  targets = targets,
-  validation_cfg = make_validation_cfg(),
-  severities = c("TS", "HUR"),
-  sst_cfg = NULL
-)
-
-# Validation outputs
-out <- res$out
-val <- res$val

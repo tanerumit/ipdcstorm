@@ -96,7 +96,9 @@
     wmo_pres <- col_num_or_na(df, "WMO_PRES")
     poci     <- col_num_or_na(df, "USA_POCI")
     roci     <- col_num_or_na(df, "USA_ROCI")
-    rmw      <- col_num_or_na(df, "USA_RMW")
+    rmw_nm   <- col_num_or_na(df, "USA_RMW")
+    rmw      <- rmw_nm * 1.852
+    rmw[!is.finite(rmw) | rmw <= 5 | rmw >= 150] <- NA_real_
     
     usa_status <- col_chr_or_na(df, "USA_STATUS")
     name_chr   <- col_chr_or_na(df, "NAME")
