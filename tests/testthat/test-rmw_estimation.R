@@ -90,3 +90,23 @@ test_that("rmw resolution is deterministic", {
 
   expect_equal(first, second)
 })
+
+test_that("internal option can disable R34 calibration for diagnostics", {
+  args <- list(
+    Vmax_kt = 80,
+    r_km = 160,
+    R34_km = 220,
+    RMW_km = 35,
+    lat = 18
+  )
+
+  default_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, args)
+
+  old_opt <- getOption("ipdcstorm.disable_r34_calibration")
+  on.exit(options(ipdcstorm.disable_r34_calibration = old_opt), add = TRUE)
+  options(ipdcstorm.disable_r34_calibration = TRUE)
+
+  no_cal_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, args)
+
+  expect_lt(no_cal_val, default_val)
+})

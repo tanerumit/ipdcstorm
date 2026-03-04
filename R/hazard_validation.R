@@ -1100,6 +1100,336 @@ validate_wind_field <- function(out, obs_table = NULL) {
 }
 
 
+# Internal formatting helper for diagnostic console output.
+.diag_fmt_num <- function(x, digits = 2) {
+  if (length(x) == 0 || !is.finite(x[1])) return("NA")
+  format(round(x[1], digits), trim = TRUE, nsmall = digits)
+}
+
+# Internal safe summary helpers for diagnostics.
+.diag_safe_quantile <- function(x, prob) {
+  x <- x[is.finite(x)]
+  if (!length(x)) return(NA_real_)
+  as.numeric(stats::quantile(x, probs = prob, na.rm = TRUE, names = FALSE, type = 7))
+}
+
+.diag_safe_mean <- function(x) {
+  xx <- as.numeric(x)
+  ok <- is.finite(xx)
+  if (!any(ok)) return(NA_real_)
+  mean(xx[ok], na.rm = TRUE)
+}
+
+# Re-run site-wind computation with an internal calibration toggle for diagnostics.
+.run_winds_with_optional_calibration <- function(dat_loc, lat, lon, disable_cal = FALSE) {
+  old_opt <- getOption("ipdcstorm.disable_r34_calibration")
+  on.exit(options(ipdcstorm.disable_r34_calibration = old_opt), add = TRUE)
+  options(ipdcstorm.disable_r34_calibration = isTRUE(disable_cal))
+  compute_site_winds_full(dat_loc, target_lat = lat, target_lon = lon)
+}
+
+# Compute per-site diagnostics for the A-D bias hypotheses.
+.diag_ad <- function(tmp, site_name, tmp_no_cal = NULL) {
+  out <- tibble::tibble(
+    site = site_name,
+    delta_top1_p50 = NA_real_,
+    delta_top1_p90 = NA_real_,
+    delta_overall_p99 = NA_real_,
+    frac_beyond_all = NA_real_,
+    frac_beyond_top1 = NA_real_,
+    R34_p50_all = NA_real_,
+    R34_p90_all = NA_real_,
+    R34_p50_top1 = NA_real_,
+    R34_p90_top1 = NA_real_,
+    dist_p50_top1 = NA_real_,
+    r_over_R34_p50_top1 = NA_real_,
+    boost_p50 = NA_real_,
+    boost_p90 = NA_real_,
+    boost_p99 = NA_real_,
+    frac_boost_gt10 = NA_real_,
+    note_A = NA_character_,
+    note_B = NA_character_,
+    note_C = NA_character_,
+    note_D = NA_character_,
+    interp_A = NA_character_,
+    interp_B = NA_character_,
+    interp_C = NA_character_,
+    interp_D = NA_character_
+  )
+
+  needed_base <- c("V_site_kt")
+  miss_base <- setdiff(needed_base, names(tmp))
+  if (length(miss_base) > 0) {
+    miss_txt <- paste(miss_base, collapse = ", ")
+    out$note_A <- paste0("missing ", miss_txt)
+    out$note_B <- paste0("missing ", miss_txt)
+    out$note_C <- paste0("missing ", miss_txt)
+    out$note_D <- paste0("missing ", miss_txt)
+    return(out)
+  }
+
+  v_base <- tmp$V_site_kt
+  finite_v <- is.finite(v_base)
+  if (!any(finite_v)) {
+    out$note_A <- "no finite V_site_kt"
+    out$note_B <- "no finite V_site_kt"
+    out$note_C <- "no finite V_site_kt"
+    out$note_D <- "no finite V_site_kt"
+    return(out)
+  }
+
+  top1_cut <- .diag_safe_quantile(v_base, 0.99)
+  top1 <- rep(FALSE, length(v_base))
+  if (is.finite(top1_cut)) {
+    top1[finite_v] <- v_base[finite_v] >= top1_cut
+  }
+
+  miss_a <- character(0)
+  if (is.null(tmp_no_cal)) {
+    miss_a <- "calibration-disabled rerun unavailable"
+  } else {
+    miss_a <- setdiff("V_site_kt", names(tmp_no_cal))
+    if (!identical(nrow(tmp), nrow(tmp_no_cal))) {
+      miss_a <- c(miss_a, "row mismatch")
+    }
+  }
+  if (length(miss_a) > 0) {
+    out$note_A <- paste(miss_a, collapse = ", ")
+  } else {
+    v_no_cal <- tmp_no_cal$V_site_kt
+    if (!any(is.finite(v_no_cal))) {
+      out$note_A <- "no finite V_site_kt in calibration-disabled rerun"
+    } else {
+      out$delta_top1_p50 <- .diag_safe_quantile(v_no_cal[top1], 0.50) - .diag_safe_quantile(v_base[top1], 0.50)
+      out$delta_top1_p90 <- .diag_safe_quantile(v_no_cal[top1], 0.90) - .diag_safe_quantile(v_base[top1], 0.90)
+      out$delta_overall_p99 <- .diag_safe_quantile(v_no_cal, 0.99) - .diag_safe_quantile(v_base, 0.99)
+      delta_vec <- c(out$delta_top1_p50, out$delta_top1_p90, out$delta_overall_p99)
+      if (!any(is.finite(delta_vec))) {
+        out$interp_A <- "No finite upper-tail comparison values were available."
+      } else if (any(is.finite(delta_vec) & (delta_vec <= -3))) {
+        out$interp_A <- "Disabling calibration lowers the upper tail; calibration is a plausible driver."
+      } else if (any(is.finite(delta_vec)) && max(abs(delta_vec[is.finite(delta_vec)])) < 1) {
+        out$interp_A <- "Calibration has little effect on the upper tail at this site."
+      } else {
+        out$interp_A <- "Calibration changes are mixed or modest."
+      }
+    }
+  }
+
+  miss_b <- setdiff(c("dist_km", "R34_km"), names(tmp))
+  if (length(miss_b) > 0) {
+    out$note_B <- paste0("missing ", paste(miss_b, collapse = ", "))
+  } else {
+    r34_fallback <- (!is.finite(tmp$R34_km) | tmp$R34_km <= 0)
+    if ("R34_missing" %in% names(tmp)) {
+      r34_flag <- tmp$R34_missing
+      r34_flag[is.na(r34_flag)] <- FALSE
+      r34_fallback <- r34_fallback | as.logical(r34_flag)
+    }
+    R_outer <- .resolve_holland_outer_cutoff_km(
+      R34_km = tmp$R34_km,
+      R34_is_fallback = r34_fallback
+    )
+    beyond <- rep(NA, length(R_outer))
+    ok_b <- is.finite(tmp$dist_km) & is.finite(R_outer)
+    beyond[ok_b] <- tmp$dist_km[ok_b] > R_outer[ok_b]
+    out$frac_beyond_all <- .diag_safe_mean(beyond)
+    out$frac_beyond_top1 <- .diag_safe_mean(beyond[top1])
+    if (!is.finite(out$frac_beyond_top1)) {
+      out$interp_B <- "No finite top-1% cutoff comparisons were available."
+    } else if (out$frac_beyond_top1 <= 0.01) {
+      out$interp_B <- "Top-1% points almost never exceed the cutoff; the cutoff is not driving tail bias."
+    } else if (is.finite(out$frac_beyond_all) && out$frac_beyond_top1 > out$frac_beyond_all) {
+      out$interp_B <- "Top-1% points exceed the cutoff more often than the full sample."
+    } else {
+      out$interp_B <- "The cutoff is hit occasionally, but it is not concentrated in the tail."
+    }
+  }
+
+  miss_c <- setdiff(c("R34_km", "dist_km"), names(tmp))
+  if (length(miss_c) > 0) {
+    out$note_C <- paste0("missing ", paste(miss_c, collapse = ", "))
+  } else {
+    out$R34_p50_all <- .diag_safe_quantile(tmp$R34_km, 0.50)
+    out$R34_p90_all <- .diag_safe_quantile(tmp$R34_km, 0.90)
+    out$R34_p50_top1 <- .diag_safe_quantile(tmp$R34_km[top1], 0.50)
+    out$R34_p90_top1 <- .diag_safe_quantile(tmp$R34_km[top1], 0.90)
+    out$dist_p50_top1 <- .diag_safe_quantile(tmp$dist_km[top1], 0.50)
+
+    ratio_top1 <- rep(NA_real_, sum(top1))
+    if (any(top1)) {
+      r34_top1 <- tmp$R34_km[top1]
+      dist_top1 <- tmp$dist_km[top1]
+      ok_ratio <- is.finite(r34_top1) & (r34_top1 > 0) & is.finite(dist_top1)
+      ratio_top1[ok_ratio] <- dist_top1[ok_ratio] / r34_top1[ok_ratio]
+    }
+    out$r_over_R34_p50_top1 <- .diag_safe_quantile(ratio_top1, 0.50)
+
+    if (!is.finite(out$r_over_R34_p50_top1)) {
+      out$interp_C <- "No finite dist/R34 values were available in the top-1% subset."
+    } else if (out$r_over_R34_p50_top1 < 0.50) {
+      out$interp_C <- "Top-1% points sit deep inside R34; the geometry looks permissive."
+    } else if (out$r_over_R34_p50_top1 < 0.80) {
+      out$interp_C <- "Top-1% points are generally inside R34, which may support mild overreach."
+    } else {
+      out$interp_C <- "Top-1% points are not unusually deep inside R34."
+    }
+  }
+
+  miss_d <- setdiff("V_site_symmetric_kt", names(tmp))
+  if (length(miss_d) > 0) {
+    out$note_D <- paste0("missing ", paste(miss_d, collapse = ", "))
+  } else {
+    boost <- tmp$V_site_kt - tmp$V_site_symmetric_kt
+    out$boost_p50 <- .diag_safe_quantile(boost, 0.50)
+    out$boost_p90 <- .diag_safe_quantile(boost, 0.90)
+    out$boost_p99 <- .diag_safe_quantile(boost, 0.99)
+    out$frac_boost_gt10 <- .diag_safe_mean(boost > 10)
+    if (!is.finite(out$boost_p99)) {
+      out$interp_D <- "No finite asymmetry boost values were available."
+    } else if (out$boost_p99 > 15) {
+      out$interp_D <- "Large p99 boost suggests asymmetry is materially inflating extremes."
+    } else {
+      out$interp_D <- "Asymmetry is not producing a large extreme-tail boost here."
+    }
+  }
+
+  out
+}
+
+# Run and print diagnostics for all available validation sites.
+.run_validation_diagnostics_ad <- function(trackpoints, targets) {
+  target_names <- as.character(targets$name)
+  site_names <- intersect(target_names, names(trackpoints))
+
+  message("\n", "-" |> rep(72) |> paste(collapse = ""))
+  message("  DIAGNOSTICS A–D")
+  message("-" |> rep(72) |> paste(collapse = ""))
+
+  if (!length(site_names)) {
+    message("  skipped: no overlapping sites between `targets` and `out$trackpoints`.")
+    return(invisible(tibble::tibble()))
+  }
+
+  diag_rows <- vector("list", length(site_names))
+
+  for (i in seq_along(site_names)) {
+    site_name <- site_names[i]
+    site_idx <- match(site_name, target_names)
+    dat_loc <- trackpoints[[site_name]]
+
+    if (!is.finite(site_idx) || is.null(dat_loc) || nrow(dat_loc) == 0) {
+      diag_rows[[i]] <- .diag_ad(tibble::tibble(V_site_kt = numeric(0)), site_name)
+      next
+    }
+
+    lat <- targets$lat[site_idx]
+    lon <- targets$lon[site_idx]
+
+    tmp <- tryCatch(
+      .run_winds_with_optional_calibration(dat_loc, lat = lat, lon = lon, disable_cal = FALSE),
+      error = function(e) e
+    )
+    tmp_no_cal <- tryCatch(
+      .run_winds_with_optional_calibration(dat_loc, lat = lat, lon = lon, disable_cal = TRUE),
+      error = function(e) e
+    )
+
+    if (inherits(tmp, "error")) {
+      diag_rows[[i]] <- tibble::tibble(
+        site = site_name,
+        delta_top1_p50 = NA_real_,
+        delta_top1_p90 = NA_real_,
+        delta_overall_p99 = NA_real_,
+        frac_beyond_all = NA_real_,
+        frac_beyond_top1 = NA_real_,
+        R34_p50_all = NA_real_,
+        R34_p90_all = NA_real_,
+        R34_p50_top1 = NA_real_,
+        R34_p90_top1 = NA_real_,
+        dist_p50_top1 = NA_real_,
+        r_over_R34_p50_top1 = NA_real_,
+        boost_p50 = NA_real_,
+        boost_p90 = NA_real_,
+        boost_p99 = NA_real_,
+        frac_boost_gt10 = NA_real_,
+        note_A = paste0("compute failed: ", tmp$message),
+        note_B = paste0("compute failed: ", tmp$message),
+        note_C = paste0("compute failed: ", tmp$message),
+        note_D = paste0("compute failed: ", tmp$message),
+        interp_A = NA_character_,
+        interp_B = NA_character_,
+        interp_C = NA_character_,
+        interp_D = NA_character_
+      )
+    } else {
+      if (inherits(tmp_no_cal, "error")) tmp_no_cal <- NULL
+      diag_rows[[i]] <- .diag_ad(tmp = tmp, site_name = site_name, tmp_no_cal = tmp_no_cal)
+    }
+  }
+
+  diag_tbl <- dplyr::bind_rows(diag_rows)
+
+  for (i in seq_len(nrow(diag_tbl))) {
+    r <- diag_tbl[i, ]
+    message(sprintf("  Site: %s", r$site))
+
+    if (is.na(r$note_A)) {
+      message(sprintf(
+        "    A) delta_top1_p50=%s kt; delta_top1_p90=%s kt; delta_overall_p99=%s kt",
+        .diag_fmt_num(r$delta_top1_p50),
+        .diag_fmt_num(r$delta_top1_p90),
+        .diag_fmt_num(r$delta_overall_p99)
+      ))
+      message(sprintf("       %s", r$interp_A))
+    } else {
+      message(sprintf("    A) skipped: %s", r$note_A))
+    }
+
+    if (is.na(r$note_B)) {
+      message(sprintf(
+        "    B) frac_beyond_all=%s; frac_beyond_top1=%s",
+        .diag_fmt_num(r$frac_beyond_all, digits = 3),
+        .diag_fmt_num(r$frac_beyond_top1, digits = 3)
+      ))
+      message(sprintf("       %s", r$interp_B))
+    } else {
+      message(sprintf("    B) skipped: %s", r$note_B))
+    }
+
+    if (is.na(r$note_C)) {
+      message(sprintf(
+        "    C) R34_p50_all=%s km; R34_p90_all=%s km; R34_p50_top1=%s km; R34_p90_top1=%s km; dist_p50_top1=%s km; dist/R34_p50_top1=%s",
+        .diag_fmt_num(r$R34_p50_all),
+        .diag_fmt_num(r$R34_p90_all),
+        .diag_fmt_num(r$R34_p50_top1),
+        .diag_fmt_num(r$R34_p90_top1),
+        .diag_fmt_num(r$dist_p50_top1),
+        .diag_fmt_num(r$r_over_R34_p50_top1, digits = 3)
+      ))
+      message(sprintf("       %s", r$interp_C))
+    } else {
+      message(sprintf("    C) skipped: %s", r$note_C))
+    }
+
+    if (is.na(r$note_D)) {
+      message(sprintf(
+        "    D) boost_p50=%s kt; boost_p90=%s kt; boost_p99=%s kt; frac_boost_gt10=%s",
+        .diag_fmt_num(r$boost_p50),
+        .diag_fmt_num(r$boost_p90),
+        .diag_fmt_num(r$boost_p99),
+        .diag_fmt_num(r$frac_boost_gt10, digits = 3)
+      ))
+      message(sprintf("       %s", r$interp_D))
+    } else {
+      message(sprintf("    D) skipped: %s", r$note_D))
+    }
+  }
+
+  invisible(diag_tbl)
+}
+
+
 # =============================================================================
 # 9) COMBINED VALIDATION SUITE (all-in-one)
 # =============================================================================
@@ -1312,6 +1642,16 @@ validate_hazard_model <- function(cfg,
     targets = targets,
     severities = severities,
     sst_cfg = sst_cfg
+  )
+
+  tryCatch(
+    .run_validation_diagnostics_ad(trackpoints = out$trackpoints, targets = targets),
+    error = function(e) {
+      message("\n", "-" |> rep(72) |> paste(collapse = ""))
+      message("  DIAGNOSTICS A–D")
+      message("-" |> rep(72) |> paste(collapse = ""))
+      message("  skipped: ", e$message)
+    }
   )
 
   val <- run_validation_suite(out = out, cfg = validation_cfg)

@@ -1,6 +1,6 @@
 
 # Load packages & parameters
-rm(ipdcstorm)
+
 library(ipdcstorm)
 
 library(ggplot2)

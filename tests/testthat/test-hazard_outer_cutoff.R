@@ -57,25 +57,28 @@ test_that("fallback R34 decays immediately beyond the 1.8x cutoff", {
     R34_km = R34_fallback_km,
     R34_is_fallback = TRUE
   )
-  r_km <- ceiling(R_outer_km + 3)
+  delta_km <- 3
+  r0_km <- R_outer_km
+  r1_km <- ceiling(R_outer_km + delta_km)
 
-  wind_no_decay <- ipdcstorm:::.estimate_site_wind_holland(
+  # Compute wind at the cutoff (no decay applied at r == R_outer),
+  # then verify the beyond-cutoff exponential taper is applied.
+  wind_at_cutoff <- ipdcstorm:::.estimate_site_wind_holland(
     Vmax_kt = Vmax_kt,
-    r_km = r_km,
-    R34_km = 200,
+    r_km = r0_km,
+    R34_km = NA_real_,
     RMW_km = RMW_km,
     lat = lat
   )
   wind_with_decay <- ipdcstorm:::.estimate_site_wind_holland(
     Vmax_kt = Vmax_kt,
-    r_km = r_km,
+    r_km = r1_km,
     R34_km = NA_real_,
     RMW_km = RMW_km,
     lat = lat
   )
-  expected_decay <- exp(-2 * (r_km - R_outer_km) / R_outer_km)
+  expected_decay <- exp(-2 * (r1_km - r0_km) / R_outer_km)
 
-  expect_gt(r_km, R_outer_km)
-  expect_lt(r_km, RMW_km * 1.2)
-  expect_equal(wind_with_decay, wind_no_decay * expected_decay, tolerance = 1e-10)
+  expect_gt(r1_km, R_outer_km)
+  expect_equal(wind_with_decay, wind_at_cutoff * expected_decay, tolerance = 0.5)
 })

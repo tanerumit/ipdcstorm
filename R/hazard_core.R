@@ -340,6 +340,7 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   n <- length(Vmax_kt)
   # recycle scalars safely (base R recycling rules assumed by caller)
   out <- rep(NA_real_, n)
+  disable_r34_calibration <- isTRUE(getOption("ipdcstorm.disable_r34_calibration", FALSE))
 
   ok <- is.finite(Vmax_kt) & Vmax_kt > 0 &
     is.finite(r_km) & r_km >= 0 &
@@ -389,6 +390,12 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   if (any(need_R34)) {
     R34_eff[need_R34] <- estimate_R34_climo(Vmax_kt0[need_R34], lat = lat0[need_R34])
     R34_is_climo[need_R34] <- TRUE
+  }
+
+  rmw_over_r34_cap <- 4.0
+  clamp_rmw <- ok & R34_is_climo & is.finite(R34_eff) & (R34_eff > 0)
+  if (any(clamp_rmw)) {
+    RMW_km0[clamp_rmw] <- pmax(5, pmin(RMW_km0[clamp_rmw], R34_eff[clamp_rmw] / rmw_over_r34_cap))
   }
 
   # center handling (keep same semantics)
@@ -465,7 +472,10 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   #   (b) Hard cap on cal_factor at 1.4 (max 40% inflation)
   #   (c) Intensity-dependent damping: weaker calibration for strong hurricanes
   #       where the Holland inner-core structure is already well-constrained
-  can_cal <- is.finite(R34_eff[use]) & (R34_eff[use] > 0) & (r_km0[use] > RMW_km0[use] * 1.2)
+  can_cal <- !disable_r34_calibration &
+    is.finite(R34_eff[use]) &
+    (R34_eff[use] > 0) &
+    (r_km0[use] > RMW_km0[use] * 1.2)
   if (any(can_cal)) {
     R34u <- R34_eff[use][can_cal]
     Bu <- B[use][can_cal]
@@ -759,6 +769,28 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
       )
     )
 
+  # ---------------------------------------------------------------------------
+  # Diagnostics/traceability + robustness:
+  # Compute the effective R34 and the effective RMW actually used in the wind
+  # solver, so event-max diagnostics can see whether the missing-radii clamp is
+  # activated for tail-driving points.
+  # This also ensures the clamp affects the wind solve even if internal solver
+  # state is not reflected back into the returned tibble.
+  # ---------------------------------------------------------------------------
+  rmw_over_r34_cap <- 4.0
+  df <- df |>
+    dplyr::mutate(
+      lat0 = dplyr::if_else(is.finite(.data$lat), .data$lat, 18),
+      R34_is_climo = .data$R34_missing & is.finite(.data$Vmax_kt) & (.data$Vmax_kt >= 34),
+      R34_eff_km = dplyr::if_else(.data$R34_is_climo, estimate_R34_climo(.data$Vmax_kt, lat = .data$lat0), .data$R34_km),
+      RMW_used_km = pmax(5, pmin(200, .data$RMW_km)),
+      RMW_used_km = dplyr::if_else(
+        .data$R34_is_climo & is.finite(.data$R34_eff_km) & (.data$R34_eff_km > 0),
+        pmax(5, pmin(.data$RMW_used_km, .data$R34_eff_km / rmw_over_r34_cap)),
+        .data$RMW_used_km
+      )
+    )
+
   stopifnot(nrow(df) == length(df$storm_speed_kt), nrow(df) == length(df$heading_deg))
 
   # --- Use patched Holland profile (vectorized; removes mapply bottleneck) ---
@@ -770,7 +802,7 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
         R34_km  = .data$R34_km,
         R50_km  = .data$R50_km,
         R64_km  = .data$R64_km,
-        RMW_km  = .data$RMW_km,
+        RMW_km  = .data$RMW_used_km,
         lat     = .data$lat,
         Pn      = 1013
       ),
@@ -780,7 +812,15 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
         r_km              = .data$dist_km,
         bearing_to_target = .data$bearing_to_target,
         storm_heading     = .data$heading_deg,
-        RMW_km            = .data$RMW_km
+        RMW_km            = .data$RMW_used_km
+      ),
+      # Physical guard: final site wind should not exceed storm Vmax.
+      # Symmetric Holland profile already caps at Vmax; apply same guard
+      # after adding forward-motion asymmetry.
+      V_site_kt = dplyr::if_else(
+        is.finite(.data$V_site_kt) & is.finite(.data$Vmax_kt),
+        pmin(.data$V_site_kt, .data$Vmax_kt),
+        .data$V_site_kt
       )
     )
 }
