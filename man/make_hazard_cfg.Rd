@@ -28,7 +28,8 @@ include track points.}
 \item{advanced}{Optional named list of expert parameters. Most users should
 leave this as \code{NULL}. Supported names:
 \code{ts_threshold_kt}, \code{strong_storm_threshold_kt}, \code{hurricane_threshold_kt},
-\code{r34_cap_nm}, \code{r50_cap_nm}, \code{r64_cap_nm}.}
+\code{r34_cap_nm}, \code{r50_cap_nm}, \code{r64_cap_nm},
+\code{lambda_scaling_mode} (\code{"target"} or \code{"down_only"}).}
 }
 \value{
 A list with class \code{c("hazard_cfg", "list")}.

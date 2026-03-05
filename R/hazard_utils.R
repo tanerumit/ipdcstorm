@@ -79,31 +79,56 @@
   #' @return Numeric vector of radii (nm) with invalid/sentinel values set to NA.
   #'
   #' @keywords internal
-  .to_radii_nm <- function(x, cap_nm) {
+.to_radii_nm <- function(x, cap_nm) {
     x <- stringr::str_trim(as.character(x))
     x[x %in% c("", "NA", "N/A", "NULL", "null", ".", "-")] <- NA_character_
     
     out <- suppressWarnings(readr::parse_number(x, na = c("", "NA", "N/A", "NULL", "null")))
     out[out %in% c(-999, -99, 0, 99, 999, 9999, 99999)] <- NA_real_
     out[is.finite(out) & out > cap_nm] <- NA_real_
-    out
-  }
+  out
+}
 
-  #' Build multiplicative lambda scalers from a rate-check table
-  #'
-  #' @param rate_tbl Tibble with location, storm_class, lambda_model or
-  #'   lambda_model_raw, lambda_ref, and optional expected_ratio.
-  #' @param scale_min,scale_max Numeric scalar clamp bounds for lambda_scale.
-  #'
-  #' @return Tibble keyed by location and storm_class with raw lambda, target
-  #'   lambda, lambda_scale, adjusted lambda, and scaler status.
-  #'
-  #' @keywords internal
-  .lambda_scalers_from_rate_check <- function(rate_tbl,
-                                              scale_min = 0.25,
-                                              scale_max = 4) {
-    rt <- tibble::as_tibble(rate_tbl)
-    required <- c("location", "storm_class", "lambda_ref")
+#' Normalize lambda scaling mode
+#'
+#' @param mode Character scalar mode.
+#'
+#' @return Character scalar in {"target", "down_only"}.
+#'
+#' @keywords internal
+.normalize_lambda_scaling_mode <- function(mode) {
+  mode_chr <- if (is.null(mode) || length(mode) == 0L || !is.character(mode)) {
+    "target"
+  } else {
+    as.character(mode[1])
+  }
+  if (!isTRUE(nzchar(mode_chr))) {
+    mode_chr <- "target"
+  }
+  if (!(mode_chr %in% c("target", "down_only"))) {
+    stop("lambda scaling mode must be one of: target, down_only.", call. = FALSE)
+  }
+  mode_chr
+}
+
+#' Build multiplicative lambda scalers from a rate-check table
+#'
+#' @param rate_tbl Tibble with location, storm_class, lambda_model or
+#'   lambda_model_raw, lambda_ref, and optional expected_ratio.
+#' @param scale_min,scale_max Numeric scalar clamp bounds for lambda_scale.
+#' @param scaling_mode Character scalar. `"target"` preserves historical behavior;
+#'   `"down_only"` prevents lambda upscaling above modeled rates.
+#'
+#' @return Tibble keyed by location and storm_class with raw lambda, target
+#'   lambda, lambda_scale, adjusted lambda, and scaler status.
+#'
+#' @keywords internal
+.lambda_scalers_from_rate_check <- function(rate_tbl,
+                                            scale_min = 0.25,
+                                            scale_max = 4,
+                                            scaling_mode = "target") {
+  rt <- tibble::as_tibble(rate_tbl)
+  required <- c("location", "storm_class", "lambda_ref")
     missing_cols <- setdiff(required, names(rt))
     if (length(missing_cols) > 0) {
       stop(
@@ -128,16 +153,21 @@
       rt$expected_ratio <- 1
     }
 
-    scale_min <- as.numeric(scale_min)
-    scale_max <- as.numeric(scale_max)
-    if (!is.finite(scale_min) || !is.finite(scale_max) || scale_min <= 0 || scale_max < scale_min) {
-      stop("scale_min and scale_max must be finite with 0 < scale_min <= scale_max.", call. = FALSE)
-    }
+  scale_min <- as.numeric(scale_min)
+  scale_max <- as.numeric(scale_max)
+  if (!is.finite(scale_min) || !is.finite(scale_max) || scale_min <= 0 || scale_max < scale_min) {
+    stop("scale_min and scale_max must be finite with 0 < scale_min <= scale_max.", call. = FALSE)
+  }
+  scaling_mode <- .normalize_lambda_scaling_mode(scaling_mode)
 
-    rt |>
-      dplyr::mutate(
-        lambda_model_raw = as.numeric(.data[[lambda_col]]),
-        expected_ratio = dplyr::if_else(
+  if (any(is.finite(as.numeric(rt[[lambda_col]])) & as.numeric(rt[[lambda_col]]) < 0, na.rm = TRUE)) {
+    stop("lambda_model_raw must be >= 0 for all finite values.", call. = FALSE)
+  }
+
+  out <- rt |>
+    dplyr::mutate(
+      lambda_model_raw = as.numeric(.data[[lambda_col]]),
+      expected_ratio = dplyr::if_else(
           is.finite(.data$expected_ratio) & .data$expected_ratio > 0,
           as.numeric(.data$expected_ratio),
           1
@@ -147,13 +177,18 @@
           as.numeric(.data$lambda_ref) * .data$expected_ratio,
           .data$lambda_model_raw
         ),
-        scale_raw = dplyr::case_when(
+        scale_raw_base = dplyr::case_when(
           !is.finite(.data$lambda_ref) ~ 1,
           !is.finite(.data$lambda_model_raw) ~ 1,
           .data$lambda_model_raw <= 0 & .data$lambda_target > 0 ~ scale_max,
           .data$lambda_model_raw <= 0 ~ 1,
           TRUE ~ .data$lambda_target / .data$lambda_model_raw
         ),
+        scale_raw = if (identical(scaling_mode, "down_only")) {
+          pmin(1, .data$scale_raw_base)
+        } else {
+          .data$scale_raw_base
+        },
         scale_raw = dplyr::if_else(
           is.finite(.data$scale_raw) & .data$scale_raw > 0,
           .data$scale_raw,
@@ -169,15 +204,33 @@
           TRUE ~ "ok"
         ),
         scale_clamped = .data$scale_status %in% c("clamped_low", "clamped_high", "zero_model"),
-        lambda_adj = .data$lambda_model_raw * .data$lambda_scale
+        lambda_adj = .data$lambda_model_raw * .data$lambda_scale,
+        lambda_scaling_mode = scaling_mode,
+        lambda_scale_applied = .data$lambda_scale,
+        was_upscaled = .data$lambda_scale_applied > (1 + 1e-12)
       ) |>
       dplyr::select(
         "location", "storm_class",
         "lambda_model_raw", "lambda_ref", "expected_ratio",
         "lambda_target", "lambda_scale", "lambda_adj",
-        "scale_status", "scale_clamped"
+        "scale_status", "scale_clamped",
+        "lambda_scaling_mode", "lambda_scale_applied", "was_upscaled"
       )
+
+  if (any(!is.finite(out$lambda_adj), na.rm = TRUE) || any(out$lambda_adj < 0, na.rm = TRUE)) {
+    stop("lambda_adj must be finite and >= 0 for all rows.", call. = FALSE)
   }
+
+  n_clamped <- sum(out$scale_clamped, na.rm = TRUE)
+  if (n_clamped > 0) {
+    message(sprintf("[lambda] Clamp applied to %d site/class rows.", n_clamped))
+  }
+  if (identical(scaling_mode, "down_only") && any(out$was_upscaled, na.rm = TRUE)) {
+    stop("down_only scaling mode produced upscaling, which is not allowed.", call. = FALSE)
+  }
+
+  out
+}
 
   #' Apply site/class lambda scalers to a TS/HUR lambda table
   #'
@@ -271,7 +324,7 @@
   #' @return Character scalar ID stable for identical scaler content.
   #'
   #' @keywords internal
-  .lambda_scaler_id <- function(lambda_scalers) {
+.lambda_scaler_id <- function(lambda_scalers) {
     if (is.null(lambda_scalers) || nrow(lambda_scalers) == 0) {
       return("lambda-scalers-none")
     }
@@ -297,5 +350,25 @@
     checksum <- sum(as.numeric(code_points) * weights)
     checksum <- checksum %% 4294967295
 
-    sprintf("lambda-scalers-%08x", as.integer(checksum))
+  sprintf("lambda-scalers-%08x", as.integer(checksum))
+}
+
+#' Deterministic checksum ID from text
+#'
+#' @param text Character vector.
+#' @param prefix Character scalar prefix for the ID.
+#'
+#' @return Character scalar deterministic ID.
+#'
+#' @keywords internal
+.checksum_id_from_text <- function(text, prefix = "id") {
+  text <- paste(as.character(text), collapse = "|")
+  code_points <- utf8ToInt(enc2utf8(text))
+  if (length(code_points) == 0L) {
+    return(sprintf("%s-%08x", prefix, as.integer(0)))
   }
+  weights <- (seq_along(code_points) %% 251) + 1
+  checksum <- sum(as.numeric(code_points) * weights)
+  checksum <- checksum %% 4294967295
+  sprintf("%s-%08x", prefix, as.integer(checksum))
+}

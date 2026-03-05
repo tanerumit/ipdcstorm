@@ -59,7 +59,7 @@ if (!exists("%||%", mode = "function")) {
 #' @export
 #'
 #' @examples
-#' # Defaults — suitable for most users
+#' # Defaults â€” suitable for most users
 #' val_cfg <- make_validation_cfg()
 #'
 #' # Custom holdout and output location
@@ -82,7 +82,8 @@ make_validation_cfg <- function(holdout_years  = 10L,
   defaults <- list(
     xi_bounds = c(-0.3, 0.4),
     n_boot    = 500L,
-    base_size = 11
+    base_size = 11,
+    hindcast_use_raw_rates = TRUE
   )
 
   if (is.null(advanced)) {
@@ -117,7 +118,8 @@ make_validation_cfg <- function(holdout_years  = 10L,
     out_dir        = as.character(out_dir),
     save_plots     = isTRUE(save_plots),
     save_tables    = isTRUE(save_tables),
-    advanced       = advanced
+    advanced       = advanced,
+    output         = list(level = "minimal")
   )
   class(cfg) <- c("validation_cfg", "list")
   cfg
@@ -126,6 +128,10 @@ make_validation_cfg <- function(holdout_years  = 10L,
 
 #' @export
 print.validation_cfg <- function(x, ...) {
+  output_level <- "minimal"
+  if (!is.null(x$output) && !is.null(x$output$level)) {
+    output_level <- as.character(x$output$level[1])
+  }
   cat("Validation configuration\n")
   cat(sprintf("  Holdout       : %d years\n", x$holdout_years))
   cat(sprintf("  Simulation    : %s synthetic years\n",
@@ -133,6 +139,7 @@ print.validation_cfg <- function(x, ...) {
   cat(sprintf("  Return periods: %s yr\n", paste(x$return_periods, collapse = ", ")))
   cat(sprintf("  Seed          : %d\n", x$seed))
   cat(sprintf("  Output dir    : %s\n", x$out_dir))
+  cat(sprintf("  Output level  : %s\n", output_level))
   cat(sprintf("  Save plots    : %s\n", if (x$save_plots) "yes" else "no"))
   cat(sprintf("  Save tables   : %s\n", if (x$save_tables) "yes" else "no"))
   cat(sprintf("  GEV xi bounds : [%.2f, %.2f]\n",
@@ -548,6 +555,181 @@ bootstrap_return_level_ci <- function(annual_max,
   )
 }
 
+# Internal GEV negative log-likelihood (par = c(mu, log_sigma, xi)).
+.gev_nll_transformed <- function(par, x, xi_bounds = c(-0.3, 0.4)) {
+  mu <- par[1]
+  sigma <- exp(par[2])
+  xi <- par[3]
+  if (!is.finite(mu) || !is.finite(sigma) || sigma <= 0 || !is.finite(xi)) return(Inf)
+  if (xi < xi_bounds[1] || xi > xi_bounds[2]) return(Inf)
+
+  z <- (x - mu) / sigma
+  if (abs(xi) < 1e-8) {
+    return(length(x) * log(sigma) + sum(z + exp(-z)))
+  }
+
+  t_val <- 1 + xi * z
+  if (any(!is.finite(t_val)) || any(t_val <= 0)) return(Inf)
+  length(x) * log(sigma) + (1 + 1 / xi) * sum(log(t_val)) + sum(t_val^(-1 / xi))
+}
+
+# Internal GEV random generator from inverse-CDF.
+.rgev <- function(n, mu, sigma, xi) {
+  u <- stats::runif(n, min = 1e-12, max = 1 - 1e-12)
+  .qgev(u, mu = mu, sigma = sigma, xi = xi)
+}
+
+# Internal RL gradient wrt c(mu, sigma, xi) for a fixed conditional probability.
+.gev_rl_gradient <- function(p_cond, sigma, xi) {
+  y <- -log(p_cond)
+  lgy <- log(y)
+  if (abs(xi) < 1e-8) {
+    a <- -lgy
+    dq_dxi <- sigma * 0.5 * (lgy^2)
+  } else {
+    y_pow <- y^(-xi)
+    a <- (y_pow - 1) / xi
+    dq_dxi <- sigma * ((-lgy * y_pow * xi) - (y_pow - 1)) / (xi^2)
+  }
+  c(1, a, dq_dxi)
+}
+
+# Internal observed RL CI using delta-method first, deterministic bootstrap fallback.
+.compute_obs_return_level_ci <- function(annual_max,
+                                         return_periods = c(5, 10, 25, 50),
+                                         xi_bounds = c(-0.3, 0.4),
+                                         conf_level = 0.90,
+                                         n_boot_fallback = 300L,
+                                         min_n_pos_ci = 10L,
+                                         seed = NULL,
+                                         force_bootstrap = FALSE) {
+  if (!is.null(seed) && is.finite(seed)) set.seed(as.integer(seed))
+
+  base_fit <- compute_return_levels_gev(annual_max, return_periods, xi_bounds = xi_bounds)
+  out <- tibble::tibble(
+    return_period = return_periods,
+    sim_median = as.numeric(base_fit$return_levels),
+    sim_lo_90 = NA_real_,
+    sim_hi_90 = NA_real_,
+    sim_lo_50 = NA_real_,
+    sim_hi_50 = NA_real_,
+    ci_method = "unavailable"
+  )
+
+  n_total <- base_fit$n_total
+  n_pos <- base_fit$n_nonzero
+  p_zero <- base_fit$p_zero
+  gev <- base_fit$gev_fit
+
+  if (!is.finite(n_pos) || n_pos < as.integer(min_n_pos_ci) || is.null(gev)) {
+    return(out)
+  }
+  if (!all(is.finite(c(gev$mu, gev$sigma, gev$xi))) || gev$sigma <= 0) {
+    return(out)
+  }
+
+  vcov_theta <- NULL
+  start_par <- c(gev$mu, log(gev$sigma), gev$xi)
+  x_pos <- annual_max[is.finite(annual_max) & annual_max > 0]
+  mle <- NULL
+  if (!isTRUE(force_bootstrap)) {
+    mle <- tryCatch(
+      stats::optim(
+        par = start_par,
+        fn = .gev_nll_transformed,
+        x = x_pos,
+        xi_bounds = xi_bounds,
+        method = "BFGS",
+        control = list(maxit = 500, reltol = 1e-10)
+      ),
+      error = function(e) NULL
+    )
+    if (!is.null(mle) && is.finite(mle$value)) {
+      hess <- tryCatch(
+        stats::optimHess(par = mle$par, fn = .gev_nll_transformed, x = x_pos, xi_bounds = xi_bounds),
+        error = function(e) NULL
+      )
+      if (!is.null(hess) && all(is.finite(hess))) {
+        inv_hess <- tryCatch(solve(hess), error = function(e) NULL)
+        if (!is.null(inv_hess) && all(is.finite(inv_hess))) {
+          sigma_hat <- exp(mle$par[2])
+          jac <- diag(c(1, sigma_hat, 1))
+          vcov_theta <- jac %*% inv_hess %*% jac
+          eig <- tryCatch(eigen(vcov_theta, symmetric = TRUE, only.values = TRUE)$values, error = function(e) NULL)
+          if (is.null(eig) || any(!is.finite(eig)) || any(eig <= 0)) vcov_theta <- NULL
+        }
+      }
+    }
+  }
+
+  z <- stats::qnorm((1 + conf_level) / 2)
+  delta_ok <- FALSE
+  if (!is.null(vcov_theta)) {
+    fit_theta <- c(gev$mu, gev$sigma, gev$xi)
+    for (i in seq_along(return_periods)) {
+      T_rp <- return_periods[i]
+      target_p <- 1 - 1 / T_rp
+      p_cond <- (target_p - p_zero) / (1 - p_zero)
+      if (!is.finite(p_cond) || p_cond <= 0 || p_cond >= 1) next
+      q_hat <- out$sim_median[i]
+      if (!is.finite(q_hat)) next
+      grad <- .gev_rl_gradient(p_cond, fit_theta[2], fit_theta[3])
+      var_q <- as.numeric(t(grad) %*% vcov_theta %*% grad)
+      if (!is.finite(var_q) || var_q < 0) next
+      se_q <- sqrt(var_q)
+      lo <- q_hat - z * se_q
+      hi <- q_hat + z * se_q
+      if (is.finite(lo) && is.finite(hi)) {
+        lo <- max(0, min(185, lo))
+        hi <- max(0, min(185, hi))
+        out$sim_lo_90[i] <- min(lo, hi)
+        out$sim_hi_90[i] <- max(lo, hi)
+      }
+    }
+    if (all(is.finite(out$sim_lo_90) & is.finite(out$sim_hi_90))) {
+      out$ci_method <- "delta"
+      delta_ok <- TRUE
+    }
+  }
+
+  if (delta_ok) return(out)
+
+  n_boot <- max(200L, min(500L, as.integer(n_boot_fallback)))
+  if (!is.finite(n_boot) || n_boot < 1L) return(out)
+
+  boot_rl <- matrix(NA_real_, nrow = n_boot, ncol = length(return_periods))
+  for (b in seq_len(n_boot)) {
+    is_zero <- stats::runif(n_total) < p_zero
+    x_boot <- numeric(n_total)
+    n_pos_boot <- sum(!is_zero)
+    if (n_pos_boot > 0) {
+      x_boot[!is_zero] <- .rgev(n_pos_boot, gev$mu, gev$sigma, gev$xi)
+      x_boot[!is_zero] <- pmax(0, pmin(185, x_boot[!is_zero]))
+    }
+    fit_b <- tryCatch(
+      compute_return_levels_gev(x_boot, return_periods = return_periods, xi_bounds = xi_bounds)$return_levels,
+      error = function(e) rep(NA_real_, length(return_periods))
+    )
+    boot_rl[b, ] <- fit_b
+  }
+
+  for (j in seq_along(return_periods)) {
+    rlj <- boot_rl[, j]
+    ok <- is.finite(rlj)
+    if (sum(ok) < max(30L, ceiling(0.25 * n_boot))) next
+    qq <- stats::quantile(rlj[ok], probs = c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE, names = FALSE, type = 7)
+    out$sim_lo_90[j] <- max(0, min(185, qq[1]))
+    out$sim_hi_90[j] <- max(0, min(185, qq[5]))
+    out$sim_lo_50[j] <- max(0, min(185, qq[2]))
+    out$sim_median[j] <- max(0, min(185, qq[3]))
+    out$sim_hi_50[j] <- max(0, min(185, qq[4]))
+  }
+  if (all(is.finite(out$sim_lo_90) & is.finite(out$sim_hi_90))) {
+    out$ci_method <- "bootstrap"
+  }
+  out
+}
+
 
 # =============================================================================
 # 6) HINDCAST VALIDATION (internal workers)
@@ -565,6 +747,7 @@ bootstrap_return_level_ci <- function(annual_max,
                                sst_df = NULL,
                                beta_sst = 0,
                                gamma_intensity = 0,
+                               use_raw_rates = TRUE,
                                xi_bounds = c(-0.3, 0.4),
                                n_boot = 500) {
 
@@ -574,28 +757,71 @@ bootstrap_return_level_ci <- function(annual_max,
     dplyr::filter(.data$storm_class %in% c(severities, "none"),
                   is.finite(.data$peak_wind_kt))
 
-  all_years <- sort(unique(ev$year))
-  if (length(all_years) < holdout_years + 10) {
-    stop("Insufficient years for holdout. Have ", length(all_years),
-         ", need at least ", holdout_years + 10)
+  # Tier 1A alignment with Tier 1B "modern TS+ annual-max" regime:
+  # restrict to modern era and evaluate annual maxima over TS+ storms with explicit zero years.
+  min_year <- 1970L
+  ev <- ev |>
+    dplyr::filter(is.finite(.data$year), .data$year >= min_year)
+
+  if (nrow(ev) == 0) {
+    message("[Hindcast] Skipping ", location, ": no events at/after ", min_year, ".")
+    return(list(
+      location = location,
+      skipped = TRUE,
+      skip_reason = "no_modern_years",
+      min_year = min_year
+    ))
   }
 
-  cutoff <- all_years[length(all_years) - holdout_years]
+  year_max <- max(as.integer(ev$year), na.rm = TRUE)
+  all_years <- seq(min_year, year_max)
+
+  # TS+ events for observed annual-max construction (years with no TS+ -> 0 via join below)
+  ev_tsplus <- ev |>
+    dplyr::filter(.data$storm_class %in% severities)
+
+  min_train_years <- 10L
+  min_holdout_years <- 3L
+
+  n_years <- length(all_years)
+  max_holdout <- n_years - min_train_years
+  holdout_years_site <- min(as.integer(holdout_years), max_holdout)
+
+  if (!is.finite(holdout_years_site) || holdout_years_site < min_holdout_years) {
+    message(
+      "[Hindcast] Skipping ", location, ": insufficient years for holdout. Have ",
+      n_years, ", need at least ", (min_train_years + min_holdout_years),
+      " (min_train_years=", min_train_years, ", min_holdout_years=", min_holdout_years, ")."
+    )
+    return(list(
+      location = location,
+      skipped = TRUE,
+      skip_reason = "insufficient_years_for_holdout",
+      n_years_available = n_years,
+      min_train_years = min_train_years,
+      min_holdout_years = min_holdout_years,
+      requested_holdout_years = as.integer(holdout_years),
+      used_holdout_years = as.integer(holdout_years_site)
+    ))
+  }
+
+  cutoff <- all_years[n_years - holdout_years_site]
   train_years <- all_years[all_years <= cutoff]
   test_years  <- all_years[all_years > cutoff]
+
 
   message("[Hindcast] ", location, ": training ", min(train_years), "-", max(train_years),
           " (", length(train_years), " yr), testing ", min(test_years), "-",
           max(test_years), " (", length(test_years), " yr)")
 
   # --- Observed annual maxima (full record) ---
-  obs_annual_max <- ev |>
+  obs_annual_max <- ev_tsplus |>
     dplyr::group_by(.data$year) |>
     dplyr::summarise(V_max_kt = max(.data$peak_wind_kt, na.rm = TRUE),
                      .groups = "drop") |>
     dplyr::mutate(period = dplyr::if_else(.data$year %in% train_years, "train", "test"))
 
-  full_years <- tibble::tibble(year = seq(min(all_years), max(all_years)))
+  full_years <- tibble::tibble(year = all_years)
   obs_annual_max <- full_years |>
     dplyr::left_join(obs_annual_max, by = "year") |>
     dplyr::mutate(
@@ -620,11 +846,15 @@ bootstrap_return_level_ci <- function(annual_max,
     location = location,
     lambda_scalers = lambda_scalers_train
   )
+
+  lt_train_for_sim <- if (isTRUE(use_raw_rates)) lt_train else lt_train_adj
   ki_train <- estimate_k_hat(ac_train)
 
   train_params <- list(
     lambda_table = lt_train,
     lambda_table_adjusted = lt_train_adj,
+    lambda_table_for_sim = lt_train_for_sim,
+    use_raw_rates = isTRUE(use_raw_rates),
     rate_check = rate_check_train,
     lambda_scalers = lambda_scalers_train,
     k_hat = ki_train$k_hat,
@@ -632,6 +862,8 @@ bootstrap_return_level_ci <- function(annual_max,
     mu_total = ki_train$mu,
     var_total = ki_train$var
   )
+
+  message("  Hindcast frequency mode: ", if (isTRUE(use_raw_rates)) "RAW (point)" else "SCALED (reference)")
 
   message("  Rate calibration (training):")
   for (i in seq_len(nrow(rate_check_train))) {
@@ -691,7 +923,7 @@ bootstrap_return_level_ci <- function(annual_max,
   }
 
   sim_counts <- simulate_twolevel_counts(
-    lt_train_adj, ki_train$k_hat, n_years_sim = n_sim,
+    lt_train_for_sim, ki_train$k_hat, n_years_sim = n_sim,
     sst_anomaly = sst_anomaly_sim,
     beta_sst = beta_sst,
     gamma_intensity = gamma_intensity
@@ -738,19 +970,34 @@ bootstrap_return_level_ci <- function(annual_max,
     dplyr::pull(.data$V_max_kt)
   obs_test_rl <- compute_return_levels(obs_test_max, return_periods)
 
-  # --- BOOTSTRAP CIs ON OBSERVED RETURN LEVELS ---
-  obs_rl_ci <- bootstrap_return_level_ci(
-    obs_full_max, return_periods,
-    n_boot = n_boot,
-    xi_bounds = xi_bounds
+  # --- OBSERVED RL CIs (delta first, deterministic bootstrap fallback) ---
+  obs_rl_ci <- .compute_obs_return_level_ci(
+    annual_max = obs_full_max,
+    return_periods = return_periods,
+    xi_bounds = xi_bounds,
+    conf_level = 0.90,
+    n_boot_fallback = if (isTRUE(as.integer(n_boot) > 0L)) n_boot else 300L,
+    min_n_pos_ci = 10L,
+    seed = seed + 1000L
   )
 
-  # Model CIs (secondary diagnostic — should be narrow)
-  sim_rl_ci <- bootstrap_return_level_ci(
-    sim_annual_max, return_periods,
-    n_boot = min(200L, n_boot),
-    xi_bounds = xi_bounds
-  )
+  if (isTRUE(as.integer(n_boot) > 0L)) {
+    # Model CIs (secondary diagnostic - should be narrow)
+    sim_rl_ci <- bootstrap_return_level_ci(
+      sim_annual_max, return_periods,
+      n_boot = min(200L, n_boot),
+      xi_bounds = xi_bounds
+    )
+  } else {
+    sim_rl_ci <- tibble::tibble(
+      return_period = return_periods,
+      sim_median = sim_rl,
+      sim_lo_90 = NA_real_,
+      sim_hi_90 = NA_real_,
+      sim_lo_50 = NA_real_,
+      sim_hi_50 = NA_real_
+    )
+  }
 
   message(sprintf("  Model GEV: \u03bc=%.1f, \u03c3=%.1f, \u03be=%.3f (n_pos=%d, p0=%.2f)",
                   sim_gev$gev_fit$mu, sim_gev$gev_fit$sigma, sim_gev$gev_fit$xi,
@@ -772,9 +1019,22 @@ bootstrap_return_level_ci <- function(annual_max,
     sim_hi_90 = sim_rl_ci$sim_hi_90,
     obs_lo_90 = obs_rl_ci$sim_lo_90,
     obs_hi_90 = obs_rl_ci$sim_hi_90,
-    obs_in_90ci = sim_rl >= obs_rl_ci$sim_lo_90 & sim_rl <= obs_rl_ci$sim_hi_90,
-    model_in_obs_90ci = sim_rl >= obs_rl_ci$sim_lo_90 & sim_rl <= obs_rl_ci$sim_hi_90,
-    obs_in_model_90ci = obs_full_rl >= sim_rl_ci$sim_lo_90 & obs_full_rl <= sim_rl_ci$sim_hi_90,
+    obs_ci_method = obs_rl_ci$ci_method,
+    obs_in_90ci = dplyr::if_else(
+      is.finite(obs_rl_ci$sim_lo_90) & is.finite(obs_rl_ci$sim_hi_90),
+      sim_rl >= obs_rl_ci$sim_lo_90 & sim_rl <= obs_rl_ci$sim_hi_90,
+      NA
+    ),
+    model_in_obs_90ci = dplyr::if_else(
+      is.finite(obs_rl_ci$sim_lo_90) & is.finite(obs_rl_ci$sim_hi_90),
+      sim_rl >= obs_rl_ci$sim_lo_90 & sim_rl <= obs_rl_ci$sim_hi_90,
+      NA
+    ),
+    obs_in_model_90ci = dplyr::if_else(
+      is.finite(sim_rl_ci$sim_lo_90) & is.finite(sim_rl_ci$sim_hi_90),
+      obs_full_rl >= sim_rl_ci$sim_lo_90 & obs_full_rl <= sim_rl_ci$sim_hi_90,
+      NA
+    ),
     bias_pct = 100 * (sim_rl - obs_full_rl) / pmax(obs_full_rl, 1)
   )
 
@@ -787,6 +1047,7 @@ bootstrap_return_level_ci <- function(annual_max,
     obs_test_rl = obs_test_rl,
     obs_full_rl = obs_full_rl,
     obs_rl_ci = obs_rl_ci,
+    obs_gev = obs_gev,
     sim_rl = sim_rl,
     sim_annual_max = sim_annual_max,
     sim_rl_ci = sim_rl_ci,
@@ -814,6 +1075,7 @@ bootstrap_return_level_ci <- function(annual_max,
                                    sst_df = NULL,
                                    beta_sst = 0,
                                    gamma_intensity = 0,
+                                   use_raw_rates = TRUE,
                                    xi_bounds = c(-0.3, 0.4),
                                    n_boot = 500) {
   if (is.null(out$events)) stop("out$events is required.", call. = FALSE)
@@ -840,17 +1102,23 @@ bootstrap_return_level_ci <- function(annual_max,
         sst_df = sst_df,
         beta_sst = beta_sst,
         gamma_intensity = gamma_intensity,
+        use_raw_rates = use_raw_rates,
         xi_bounds = xi_bounds,
         n_boot = n_boot
       )
+
+      if (isTRUE(results[[location]]$skipped)) next
+
     }, error = function(e) {
       message("[Hindcast] Error for ", location, ": ", e$message)
     })
   }
 
-  comparison_all <- dplyr::bind_rows(
-    lapply(Filter(Negate(is.null), results), function(r) r$comparison)
-  )
+  ok_results <- Filter(function(r) {
+    !is.null(r) && !isTRUE(r$skipped) && !is.null(r$comparison)
+  }, results)
+
+  comparison_all <- dplyr::bind_rows(lapply(ok_results, function(r) r$comparison))
 
   list(
     per_island = results,
@@ -886,7 +1154,7 @@ get_reference_rates <- function() {
 }
 
 
-.build_rate_check_table <- function(out, ref_rates = NULL) {
+.build_rate_check_table <- function(out, ref_rates = NULL, lambda_scaling_mode = NULL, ...) {
   if (is.null(ref_rates)) ref_rates <- get_reference_rates()
   if (is.null(out$rates)) stop("out$rates is required.", call. = FALSE)
   if (nrow(out$rates) == 0) {
@@ -961,7 +1229,7 @@ get_reference_rates <- function() {
     dplyr::left_join(
       dplyr::select(
         tibble::as_tibble(lambda_scalers),
-        "location", "storm_class",
+        "location", "storm_class", "lambda_scaling_mode",
         "lambda_target", "lambda_scale", "lambda_adj",
         "scale_status", "scale_clamped"
       ),
@@ -1011,6 +1279,9 @@ get_reference_rates <- function() {
         .data$adj_ratio < 0.6     ~ "slightly_low",
         TRUE ~ "OK"
       )
+    ) |>
+    dplyr::mutate(
+      lambda_scaling_mode = if (is.null(lambda_scaling_mode)) NA_character_ else as.character(lambda_scaling_mode)
     ) |>
     dplyr::select(
       "location", "storm_class",
@@ -1238,6 +1509,62 @@ validate_wind_field <- function(out, obs_table = NULL) {
   mean(xx[ok], na.rm = TRUE)
 }
 
+.validation_output_level <- function(cfg) {
+  level <- "minimal"
+  if (!is.null(cfg$output) && is.list(cfg$output) && !is.null(cfg$output$level)) {
+    level <- as.character(cfg$output$level[1])
+  }
+  if (!(level %in% c("minimal", "full"))) {
+    stop("cfg$output$level must be one of: 'minimal', 'full'.", call. = FALSE)
+  }
+  level
+}
+
+.minimal_diagnostics_from_hindcast <- function(hc) {
+  if (is.null(hc) || is.null(hc$per_island)) {
+    return(tibble::tibble(
+      location = character(0),
+      storm_class = character(0),
+      delta_top1_p50 = numeric(0),
+      delta_overall_p99 = numeric(0)
+    ))
+  }
+
+  rows <- list()
+  idx <- 0L
+  for (loc in names(hc$per_island)) {
+    hloc <- hc$per_island[[loc]]
+    if (is.null(hloc) || isTRUE(hloc$skipped)) next
+    obs <- hloc$obs_annual_max$V_max_kt
+    sim <- hloc$sim_annual_max
+    obs <- obs[is.finite(obs)]
+    sim <- sim[is.finite(sim)]
+
+    obs_p99 <- .diag_safe_quantile(obs, 0.99)
+    sim_p99 <- .diag_safe_quantile(sim, 0.99)
+    obs_top <- obs[is.finite(obs_p99) & obs >= obs_p99]
+    sim_top <- sim[is.finite(sim_p99) & sim >= sim_p99]
+
+    idx <- idx + 1L
+    rows[[idx]] <- tibble::tibble(
+      location = loc,
+      storm_class = "TS34plus",
+      delta_top1_p50 = .diag_safe_quantile(sim_top, 0.50) - .diag_safe_quantile(obs_top, 0.50),
+      delta_overall_p99 = sim_p99 - obs_p99
+    )
+  }
+
+  if (!length(rows)) {
+    return(tibble::tibble(
+      location = character(0),
+      storm_class = character(0),
+      delta_top1_p50 = numeric(0),
+      delta_overall_p99 = numeric(0)
+    ))
+  }
+  dplyr::bind_rows(rows)
+}
+
 # Re-run site-wind computation with an internal calibration toggle for diagnostics.
 .run_winds_with_optional_calibration <- function(dat_loc, lat, lon, disable_cal = FALSE) {
   old_opt <- getOption("ipdcstorm.disable_r34_calibration")
@@ -1421,7 +1748,7 @@ validate_wind_field <- function(out, obs_table = NULL) {
   site_names <- intersect(target_names, names(trackpoints))
 
   message("\n", "-" |> rep(72) |> paste(collapse = ""))
-  message("  DIAGNOSTICS A–D")
+  message("  DIAGNOSTICS Aâ€“D")
   message("-" |> rep(72) |> paste(collapse = ""))
 
   if (!length(site_names)) {
@@ -1548,6 +1875,423 @@ validate_wind_field <- function(out, obs_table = NULL) {
 }
 
 
+.modern_cv_split_years_blocked <- function(years, block_size = 10L) {
+  years <- sort(unique(as.integer(years[is.finite(years)])))
+  if (!length(years)) return(list())
+
+  block_size <- max(1L, as.integer(block_size))
+  blocks <- split(years, ceiling(seq_along(years) / block_size))
+
+  folds <- vector("list", length(blocks))
+  for (i in seq_along(blocks)) {
+    test_years <- as.integer(blocks[[i]])
+    folds[[i]] <- list(
+      fold_id = as.integer(i),
+      train = as.integer(setdiff(years, test_years)),
+      test = test_years
+    )
+  }
+
+  folds
+}
+
+.modern_cv_safe_quantile <- function(x, probs) {
+  x <- x[is.finite(x)]
+  if (!length(x)) return(rep(NA_real_, length(probs)))
+  as.numeric(stats::quantile(x, probs = probs, na.rm = TRUE, names = FALSE, type = 7))
+}
+
+.modern_cv_safe_mean <- function(x) {
+  x <- x[is.finite(x)]
+  if (!length(x)) return(NA_real_)
+  mean(x, na.rm = TRUE)
+}
+
+.modern_cv_safe_min <- function(x) {
+  x <- x[is.finite(x)]
+  if (!length(x)) return(NA_real_)
+  min(x, na.rm = TRUE)
+}
+
+.modern_cv_safe_max <- function(x) {
+  x <- x[is.finite(x)]
+  if (!length(x)) return(NA_real_)
+  max(x, na.rm = TRUE)
+}
+
+.modern_cv_prepare_trackpoints <- function(dat_loc) {
+  dat_loc <- tibble::as_tibble(dat_loc)
+
+  if (!("V_site_kt" %in% names(dat_loc)) && "site_wind_kt" %in% names(dat_loc)) {
+    dat_loc$V_site_kt <- dat_loc$site_wind_kt
+  }
+  if (!("Vmax_kt" %in% names(dat_loc)) && "storm_wind_kt" %in% names(dat_loc)) {
+    dat_loc$Vmax_kt <- dat_loc$storm_wind_kt
+  }
+  if (!("SID" %in% names(dat_loc)) && "storm_id" %in% names(dat_loc)) {
+    dat_loc$SID <- dat_loc$storm_id
+  }
+  if (!("dist_km" %in% names(dat_loc))) {
+    dat_loc$dist_km <- NA_real_
+  }
+  if (!("RMW_used_km" %in% names(dat_loc))) {
+    dat_loc$RMW_used_km <- NA_real_
+  }
+  if (!("R34_eff_km" %in% names(dat_loc))) {
+    dat_loc$R34_eff_km <- NA_real_
+  }
+  if (!("R34_is_climo" %in% names(dat_loc))) {
+    dat_loc$R34_is_climo <- NA
+  }
+
+  needed <- c("iso_time", "V_site_kt", "Vmax_kt")
+  miss <- setdiff(needed, names(dat_loc))
+  if (length(miss) > 0) {
+    stop(
+      "Modern blocked CV requires `iso_time` plus site wind (`V_site_kt` or `site_wind_kt`) ",
+      "and storm wind (`Vmax_kt` or `storm_wind_kt`). Missing after alias resolution: ",
+      paste(miss, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  dat_loc
+}
+
+.modern_cv_site_annual_max <- function(dat_loc,
+                                       site_name,
+                                       min_year = 1970L,
+                                       storm_vmax_min = 34) {
+  dat_loc <- .modern_cv_prepare_trackpoints(dat_loc)
+
+  tmp <- dat_loc |>
+    dplyr::mutate(year = as.integer(substr(as.character(.data$iso_time), 1L, 4L)))
+
+  if (is.finite(min_year)) {
+    tmp <- dplyr::filter(tmp, is.finite(.data$year), .data$year >= min_year)
+  }
+  if (is.finite(storm_vmax_min)) {
+    tmp <- dplyr::filter(tmp, is.finite(.data$Vmax_kt), .data$Vmax_kt >= storm_vmax_min)
+  }
+
+  tmp |>
+    dplyr::filter(is.finite(.data$year), is.finite(.data$V_site_kt)) |>
+    dplyr::group_by(.data$year) |>
+    dplyr::slice_max(order_by = .data$V_site_kt, n = 1, with_ties = FALSE) |>
+    dplyr::ungroup() |>
+    dplyr::transmute(
+      site = site_name,
+      year = .data$year,
+      SID = .data$SID,
+      iso_time = .data$iso_time,
+      ann_max_kt = .data$V_site_kt,
+      Vmax_kt = .data$Vmax_kt,
+      dist_km = .data$dist_km,
+      RMW_used_km = .data$RMW_used_km,
+      R34_eff_km = .data$R34_eff_km,
+      R34_is_climo = .data$R34_is_climo
+    )
+}
+
+.modern_cv_summarise_years <- function(ann, years, threshold_kt = 34) {
+  years <- as.integer(years[is.finite(years)])
+  if (!length(years)) {
+    return(tibble::tibble(
+      n_years = 0L,
+      n_pos_years = 0L,
+      p0 = NA_real_,
+      q50 = NA_real_,
+      q75 = NA_real_,
+      q90 = NA_real_,
+      q95 = NA_real_
+    ))
+  }
+
+  x <- ann |>
+    dplyr::filter(.data$year %in% years) |>
+    dplyr::pull(.data$ann_max_kt)
+
+  n_years <- length(years)
+  n_pos <- sum(is.finite(x) & x >= threshold_kt, na.rm = TRUE)
+  qs <- .modern_cv_safe_quantile(x, c(0.50, 0.75, 0.90, 0.95))
+
+  tibble::tibble(
+    n_years = as.integer(n_years),
+    n_pos_years = as.integer(n_pos),
+    p0 = 1 - (n_pos / n_years),
+    q50 = qs[1],
+    q75 = qs[2],
+    q90 = qs[3],
+    q95 = qs[4]
+  )
+}
+
+.modern_cv_top_k_test <- function(ann, test_years, k = 3L) {
+  ann |>
+    dplyr::filter(.data$year %in% test_years) |>
+    dplyr::arrange(dplyr::desc(.data$ann_max_kt)) |>
+    dplyr::slice_head(n = k)
+}
+
+.modern_blocked_cv_paper_table <- function(fold_summary,
+                                           era_min_year = 1970L,
+                                           storm_vmax_min = 34,
+                                           block_size = 10L,
+                                           threshold_kt = 34,
+                                           min_test_pos_years = 2L,
+                                           save_tables = FALSE,
+                                           out_dir = NULL) {
+  fold_summary <- tibble::as_tibble(fold_summary)
+  if (!nrow(fold_summary)) {
+    out <- tibble::tibble(
+      site = character(0),
+      era = character(0),
+      folds_used_total = character(0),
+      p0_mean = numeric(0),
+      q90_mean = numeric(0),
+      q95_min = numeric(0),
+      q95_max = numeric(0),
+      q90_min = numeric(0),
+      q90_max = numeric(0)
+    )
+    attr(out, "csv_path") <- NULL
+    attr(out, "era_label") <- paste0(as.integer(era_min_year), "+")
+    attr(out, "block_size_years") <- as.integer(block_size)
+    attr(out, "block_definition") <- "contiguous index-based groups of observed annual-max years"
+    attr(out, "storm_vmax_min") <- as.numeric(storm_vmax_min)
+    attr(out, "threshold_kt") <- as.numeric(threshold_kt)
+    attr(out, "scoring_filter") <- paste0("test_n_pos_years >= ", as.integer(min_test_pos_years))
+    return(out)
+  }
+
+  counts <- fold_summary |>
+    dplyr::group_by(.data$site) |>
+    dplyr::summarise(
+      folds_total = dplyr::n(),
+      folds_used = sum(.data$test_n_pos_years >= min_test_pos_years, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  used_summary <- fold_summary |>
+    dplyr::filter(.data$test_n_pos_years >= min_test_pos_years) |>
+    dplyr::group_by(.data$site) |>
+    dplyr::summarise(
+      p0_mean = .modern_cv_safe_mean(.data$test_p0),
+      q90_mean = .modern_cv_safe_mean(.data$test_q90),
+      q95_min = .modern_cv_safe_min(.data$test_q95),
+      q95_max = .modern_cv_safe_max(.data$test_q95),
+      q90_min = .modern_cv_safe_min(.data$test_q90),
+      q90_max = .modern_cv_safe_max(.data$test_q90),
+      .groups = "drop"
+    )
+
+  out <- counts |>
+    dplyr::left_join(used_summary, by = "site") |>
+    dplyr::transmute(
+      site = .data$site,
+      era = paste0(as.integer(era_min_year), "+"),
+      folds_used_total = paste0(.data$folds_used, "/", .data$folds_total),
+      p0_mean = .data$p0_mean,
+      q90_mean = .data$q90_mean,
+      q95_min = .data$q95_min,
+      q95_max = .data$q95_max,
+      q90_min = .data$q90_min,
+      q90_max = .data$q90_max
+    ) |>
+    dplyr::arrange(.data$site)
+
+  csv_path <- NULL
+  if (isTRUE(save_tables) && is.character(out_dir) && nzchar(out_dir)) {
+    .validate_dir_create(out_dir)
+    csv_path <- file.path(out_dir, "modern_blocked_cv_compact.csv")
+    .validate_write_csv(out, csv_path)
+  }
+
+  attr(out, "csv_path") <- csv_path
+  attr(out, "era_label") <- paste0(as.integer(era_min_year), "+")
+  attr(out, "block_size_years") <- as.integer(block_size)
+  attr(out, "block_definition") <- "contiguous index-based groups of observed annual-max years"
+  attr(out, "storm_vmax_min") <- as.numeric(storm_vmax_min)
+  attr(out, "threshold_kt") <- as.numeric(threshold_kt)
+  attr(out, "scoring_filter") <- paste0("test_n_pos_years >= ", as.integer(min_test_pos_years))
+  out
+}
+
+.run_tier1b_modern_blocked_cv <- function(out,
+                                          min_year = 1970L,
+                                          storm_vmax_min = 34,
+                                          split_mode = "blocked_cv",
+                                          block_size = 10L,
+                                          threshold_kt = 34,
+                                          min_test_pos_years = 2L,
+                                          top_k = 3L,
+                                          save_tables = FALSE,
+                                          out_dir = NULL) {
+  if (!identical(split_mode, "blocked_cv")) {
+    stop("Tier 1B modern blocked CV only supports split_mode = 'blocked_cv'.", call. = FALSE)
+  }
+  if (is.null(out$trackpoints) || !is.list(out$trackpoints)) {
+    stop("`out$trackpoints` must be a named list of per-site trackpoint tables.", call. = FALSE)
+  }
+
+  fold_rows <- list()
+  top_rows <- list()
+  annual_max_rows <- list()
+
+  site_names <- names(out$trackpoints)
+  if (is.null(site_names)) site_names <- character(0)
+
+  for (site in site_names) {
+    dat_loc <- out$trackpoints[[site]]
+    if (is.null(dat_loc) || !nrow(dat_loc)) {
+      next
+    }
+
+    ann <- .modern_cv_site_annual_max(
+      dat_loc = dat_loc,
+      site_name = site,
+      min_year = min_year,
+      storm_vmax_min = storm_vmax_min
+    )
+    annual_max_rows[[length(annual_max_rows) + 1L]] <- ann
+
+    years <- sort(unique(ann$year))
+    folds <- .modern_cv_split_years_blocked(years, block_size = block_size)
+    if (!length(folds)) {
+      next
+    }
+
+    for (fold in folds) {
+      train_sum <- .modern_cv_summarise_years(ann, fold$train, threshold_kt = threshold_kt)
+      test_sum <- .modern_cv_summarise_years(ann, fold$test, threshold_kt = threshold_kt)
+
+      fold_rows[[length(fold_rows) + 1L]] <- tibble::tibble(
+        site = site,
+        split_mode = split_mode,
+        fold_id = as.integer(fold$fold_id),
+        block_size = as.integer(block_size),
+        min_year = as.integer(min_year),
+        storm_vmax_min = as.numeric(storm_vmax_min),
+        threshold_kt = as.numeric(threshold_kt),
+        train_years = paste(fold$train, collapse = ","),
+        test_years = paste(fold$test, collapse = ",")
+      ) |>
+        dplyr::bind_cols(
+          dplyr::rename_with(train_sum, ~ paste0("train_", .x)),
+          dplyr::rename_with(test_sum, ~ paste0("test_", .x))
+        )
+
+      top_rows[[length(top_rows) + 1L]] <- .modern_cv_top_k_test(ann, fold$test, k = top_k) |>
+        dplyr::mutate(
+          split_mode = split_mode,
+          fold_id = as.integer(fold$fold_id)
+        )
+    }
+  }
+
+  fold_summary <- dplyr::bind_rows(fold_rows)
+  top_test <- dplyr::bind_rows(top_rows)
+  annual_max <- dplyr::bind_rows(annual_max_rows)
+
+  if (!nrow(fold_summary)) {
+    site_summary <- tibble::tibble(
+      site = character(0),
+      folds_total = integer(0),
+      folds_used = integer(0),
+      mean_test_p0 = numeric(0),
+      mean_test_q90 = numeric(0),
+      max_test_q95 = numeric(0),
+      era_min_year = integer(0),
+      storm_vmax_min = numeric(0),
+      block_size = integer(0),
+      threshold_kt = numeric(0)
+    )
+    paper_table <- .modern_blocked_cv_paper_table(
+      fold_summary = fold_summary,
+      era_min_year = min_year,
+      storm_vmax_min = storm_vmax_min,
+      block_size = block_size,
+      threshold_kt = threshold_kt,
+      min_test_pos_years = min_test_pos_years,
+      save_tables = save_tables,
+      out_dir = out_dir
+    )
+    message("  No modern-era blocked CV folds were available.")
+    return(invisible(list(
+      site_summary = site_summary,
+      fold_summary = fold_summary,
+      top_test = top_test,
+      annual_max = annual_max,
+      paper_table = paper_table
+    )))
+  }
+
+  counts <- fold_summary |>
+    dplyr::group_by(.data$site) |>
+    dplyr::summarise(
+      folds_total = dplyr::n(),
+      folds_used = sum(.data$test_n_pos_years >= min_test_pos_years, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  used_summary <- fold_summary |>
+    dplyr::filter(.data$test_n_pos_years >= min_test_pos_years) |>
+    dplyr::group_by(.data$site) |>
+    dplyr::summarise(
+      mean_test_p0 = .modern_cv_safe_mean(.data$test_p0),
+      mean_test_q90 = .modern_cv_safe_mean(.data$test_q90),
+      max_test_q95 = .modern_cv_safe_max(.data$test_q95),
+      .groups = "drop"
+    )
+
+  site_summary <- counts |>
+    dplyr::left_join(used_summary, by = "site") |>
+    dplyr::mutate(
+      era_min_year = as.integer(min_year),
+      storm_vmax_min = as.numeric(storm_vmax_min),
+      block_size = as.integer(block_size),
+      threshold_kt = as.numeric(threshold_kt)
+    ) |>
+    dplyr::arrange(.data$site)
+
+  paper_table <- .modern_blocked_cv_paper_table(
+    fold_summary = fold_summary,
+    era_min_year = min_year,
+    storm_vmax_min = storm_vmax_min,
+    block_size = block_size,
+    threshold_kt = threshold_kt,
+    min_test_pos_years = min_test_pos_years,
+    save_tables = save_tables,
+    out_dir = out_dir
+  )
+
+  message(
+    "  Block definition: contiguous index-based groups of ",
+    as.integer(block_size),
+    " observed annual-max years (not fixed calendar decades)."
+  )
+  message(
+    "  Defaults: era >= ",
+    as.integer(min_year),
+    ", TS+ storms (`Vmax >= ",
+    format(as.numeric(storm_vmax_min), trim = TRUE),
+    " kt`); scored folds require test_n_pos_years >= ",
+    as.integer(min_test_pos_years),
+    "."
+  )
+  message("  Per-site summary:")
+  print(site_summary, n = nrow(site_summary))
+
+  invisible(list(
+    site_summary = site_summary,
+    fold_summary = fold_summary,
+    top_test = top_test,
+    annual_max = annual_max,
+    paper_table = paper_table
+  ))
+}
+
+
 # =============================================================================
 # 9) COMBINED VALIDATION SUITE (all-in-one)
 # =============================================================================
@@ -1571,17 +2315,20 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     stop("cfg must be created by make_validation_cfg().", call. = FALSE)
   }
 
+  output_level <- .validation_output_level(cfg)
   holdout_years  <- cfg$holdout_years
   n_sim          <- cfg$n_sim
   return_periods <- cfg$return_periods
   seed           <- cfg$seed
   xi_bounds      <- cfg$advanced$xi_bounds
-  n_boot         <- cfg$advanced$n_boot
+  n_boot         <- if (identical(output_level, "full")) cfg$advanced$n_boot else 0L
   base_size      <- cfg$advanced$base_size
+  use_raw_rates  <- isTRUE(cfg$advanced$hindcast_use_raw_rates)
   out_dir        <- cfg$out_dir
 
   message("=" |> rep(72) |> paste(collapse = ""))
   message("  HAZARD MODEL VALIDATION SUITE")
+  message("  Output level: ", output_level)
   message("=" |> rep(72) |> paste(collapse = ""))
 
   # --- Extract climate info from model output (if available) ---
@@ -1594,9 +2341,11 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     message(sprintf("  [Climate] beta_SST=%.3f, gamma=%.4f", beta_sst_val, gamma_val))
   }
 
-  # --- Tier 1: Hindcast ---
+  tier1b_cv <- NULL
+
+  # --- Tier 1A: Hindcast ---
   message("\n", "-" |> rep(72) |> paste(collapse = ""))
-  message("  TIER 1: HINDCAST VALIDATION")
+  message("  TIER 1A: HINDCAST VALIDATION (single-split RL-in-CI; secondary)")
   message("-" |> rep(72) |> paste(collapse = ""))
 
   hc <- tryCatch(
@@ -1608,6 +2357,7 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
                            sst_df = sst_df_val,
                            beta_sst = beta_sst_val,
                            gamma_intensity = gamma_val,
+                           use_raw_rates = use_raw_rates,
                            xi_bounds = xi_bounds,
                            n_boot = n_boot),
     error = function(e) { message("  ERROR: ", e$message); NULL }
@@ -1617,11 +2367,50 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     message("\n  Return-level comparison (kt):")
     for (i in seq_len(nrow(hc$comparison))) {
       r <- hc$comparison[i, ]
-      ci_tag <- if (isTRUE(r$obs_in_90ci)) "\u2713 in 90% CI" else "\u2717 outside 90% CI"
-      message(sprintf("    %-12s %2d-yr:  obs=%.0f  sim=%.0f  obs90%%CI=[%.0f, %.0f]  bias=%+.0f%%  %s",
-                      r$location, r$return_period, r$obs_full_rl, r$sim_rl,
-                      r$obs_lo_90, r$obs_hi_90, r$bias_pct, ci_tag))
+      n_pos <- NA_integer_
+      if (!is.null(hc$per_island[[as.character(r$location)]]) &&
+          !is.null(hc$per_island[[as.character(r$location)]]$obs_gev)) {
+        n_pos <- hc$per_island[[as.character(r$location)]]$obs_gev$n_nonzero
+      }
+      ci_available <- is.finite(r$obs_lo_90) && is.finite(r$obs_hi_90)
+      if (ci_available) {
+        ci_tag <- if (isTRUE(r$obs_in_90ci)) "\u2713 in 90% CI" else "\u2717 outside 90% CI"
+        message(sprintf("    %-12s %2d-yr:  obs=%.0f  sim=%.0f  obs90%%CI=[%.0f, %.0f]  bias=%+.0f%%  %s",
+                        r$location, r$return_period, r$obs_full_rl, r$sim_rl,
+                        r$obs_lo_90, r$obs_hi_90, r$bias_pct, ci_tag))
+      } else {
+        message(sprintf("    %-12s %2d-yr:  obs=%.0f  sim=%.0f  obs90%%CI=[NA, NA]  bias=%+.0f%%  - CI unavailable (n_pos=%s)",
+                        r$location, r$return_period, r$obs_full_rl, r$sim_rl,
+                        r$bias_pct, if (is.finite(n_pos)) as.character(as.integer(n_pos)) else "NA"))
+      }
     }
+  }
+
+  if (identical(output_level, "full")) {
+    # --- Tier 1B: Modern blocked CV ---
+    message("\n", "-" |> rep(72) |> paste(collapse = ""))
+    message("  TIER 1B: MODERN BLOCKED CV (annual maxima, TS+)")
+    message("-" |> rep(72) |> paste(collapse = ""))
+
+    tier1b_cv <- tryCatch(
+      .run_tier1b_modern_blocked_cv(
+        out = out,
+        min_year = 1970L,
+        storm_vmax_min = 34,
+        split_mode = "blocked_cv",
+        block_size = 10L,
+        threshold_kt = 34,
+        min_test_pos_years = 2L,
+        top_k = 3L,
+        save_tables = isTRUE(cfg$save_tables),
+        out_dir = out_dir
+      ),
+      error = function(e) { message("  ERROR: ", e$message); NULL }
+    )
+  } else {
+    message("\n", "-" |> rep(72) |> paste(collapse = ""))
+    message("  TIER 1B: MODERN BLOCKED CV (annual maxima, TS+) [skipped in minimal mode]")
+    message("-" |> rep(72) |> paste(collapse = ""))
   }
 
   # --- Tier 2: Rate check ---
@@ -1649,8 +2438,13 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
   message("  VALIDATION SUMMARY")
   message("=" |> rep(72) |> paste(collapse = ""))
 
-  n_rl_ok <- if (!is.null(hc)) sum(hc$comparison$obs_in_90ci, na.rm = TRUE) else 0
-  n_rl_total <- if (!is.null(hc)) sum(!is.na(hc$comparison$obs_in_90ci)) else 0
+  hc_comp_scored <- NULL
+  if (!is.null(hc) && !is.null(hc$comparison) && nrow(hc$comparison) > 0) {
+    hc_comp_scored <- dplyr::filter(hc$comparison, .data$return_period >= 25)
+  }
+
+  n_rl_ok <- if (!is.null(hc_comp_scored)) sum(hc_comp_scored$obs_in_90ci, na.rm = TRUE) else 0
+  n_rl_total <- if (!is.null(hc_comp_scored)) sum(!is.na(hc_comp_scored$obs_in_90ci)) else 0
 
   n_rate_ok <- if (!is.null(rc)) sum(rc$flag == "OK", na.rm = TRUE) else 0
   n_rate_total <- if (!is.null(rc)) sum(!is.na(rc$flag)) else 0
@@ -1660,15 +2454,19 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
   } else 0
   n_wf_total <- if (!is.null(wf)) sum(is.finite(wf$bias_pct)) else 0
 
-  summary_tbl <- tibble::tibble(
-    tier = c("Hindcast (RL in 90% CI)", "Rate check (flag OK)", "Wind field (|bias| < 30%)"),
-    pass = c(n_rl_ok, n_rate_ok, n_wf_ok),
-    total = c(n_rl_total, n_rate_total, n_wf_total),
-    pct = round(100 * c(n_rl_ok, n_rate_ok, n_wf_ok) /
-                  pmax(c(n_rl_total, n_rate_total, n_wf_total), 1), 0)
-  )
+  summary_tbl <- if (identical(output_level, "minimal")) {
+    .minimal_diagnostics_from_hindcast(hc)
+  } else {
+    tibble::tibble(
+      tier = c("Hindcast (RL in 90% CI)", "Rate check (flag OK)", "Wind field (|bias| < 30%)"),
+      pass = c(n_rl_ok, n_rate_ok, n_wf_ok),
+      total = c(n_rl_total, n_rate_total, n_wf_total),
+      pct = round(100 * c(n_rl_ok, n_rate_ok, n_wf_ok) /
+                    pmax(c(n_rl_total, n_rate_total, n_wf_total), 1), 0)
+    )
+  }
 
-  message(sprintf("  Hindcast:   %d / %d return levels within 90%% CI", n_rl_ok, n_rl_total))
+  message(sprintf("  Hindcast (RP>=25): %d / %d return levels within 90%% CI", n_rl_ok, n_rl_total))
   message(sprintf("  Rate check: %d / %d rates flagged OK", n_rate_ok, n_rate_total))
   message(sprintf("  Wind field: %d / %d storms within 30%% bias", n_wf_ok, n_wf_total))
   message("=" |> rep(72) |> paste(collapse = ""))
@@ -1677,7 +2475,9 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     hindcast = hc,
     rate_check = rc,
     wind_field = wf,
-    summary = summary_tbl
+    summary = summary_tbl,
+    output_level = output_level,
+    bias_diagnostics = if (identical(output_level, "minimal")) summary_tbl else NULL
   )
 
   # --- Save artifacts ---
@@ -1685,42 +2485,77 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 
   if (isTRUE(cfg$save_plots)) {
     .validate_dir_create(out_dir)
-    artifacts$plots$hindcast        <- plot_hindcast_validation(val, out_dir = out_dir, base_size = base_size)
-    artifacts$plots$rate_check      <- plot_rate_validation(val, out_dir = out_dir, base_size = base_size)
-    artifacts$plots$wind_field      <- plot_wind_field_validation(val, out = out, out_dir = out_dir, base_size = base_size)
-    artifacts$plots$bias_diagnostics <- plot_bias_diagnostics(val, out_dir = out_dir, base_size = base_size)
-    artifacts$plots$qq_plots        <- plot_qq_validation(val, out_dir = out_dir, base_size = base_size)
-    artifacts$plots$cdf_comparison  <- plot_cdf_comparison(val, out_dir = out_dir, base_size = base_size)
+    artifacts$plots$hindcast <- plot_hindcast_validation(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
+    artifacts$plots$bias_diagnostics <- plot_bias_diagnostics(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
+    if (identical(output_level, "full")) {
+      artifacts$plots$rate_check <- plot_rate_validation(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
+      artifacts$plots$wind_field <- plot_wind_field_validation(val, out = out, cfg = cfg, out_dir = out_dir, base_size = base_size)
+      artifacts$plots$qq_plots <- plot_qq_validation(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
+      artifacts$plots$cdf_comparison <- plot_cdf_comparison(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
+    }
   }
 
   if (isTRUE(cfg$save_tables)) {
     .validate_dir_create(out_dir)
-    tables <- list(
-      `Hindcast Return Levels` = val$hindcast$comparison,
-      `Rate Comparison`        = val$rate_check,
-      `Wind Field Spot-Checks` = val$wind_field,
-      `Summary`                = val$summary
-    )
-
-    if (!is.null(val$hindcast$comparison)) {
+    if (identical(output_level, "minimal")) {
       artifacts$tables$hindcast_csv <- file.path(out_dir, "hindcast_return_levels.csv")
-      .validate_write_csv(val$hindcast$comparison, artifacts$tables$hindcast_csv)
-    }
-    if (!is.null(val$rate_check)) {
-      artifacts$tables$rate_check_csv <- file.path(out_dir, "rate_check.csv")
-      .validate_write_csv(val$rate_check, artifacts$tables$rate_check_csv)
-    }
-    if (!is.null(val$wind_field)) {
-      artifacts$tables$wind_field_csv <- file.path(out_dir, "wind_field.csv")
-      .validate_write_csv(val$wind_field, artifacts$tables$wind_field_csv)
-    }
-    if (!is.null(val$summary)) {
-      artifacts$tables$summary_csv <- file.path(out_dir, "validation_summary.csv")
-      .validate_write_csv(val$summary, artifacts$tables$summary_csv)
-    }
+      .validate_write_csv(
+        if (!is.null(val$hindcast) && !is.null(val$hindcast$comparison)) val$hindcast$comparison else data.frame(),
+        artifacts$tables$hindcast_csv
+      )
 
-    artifacts$tables$tables_md <- file.path(out_dir, "validation_tables.md")
-    .validate_write_md_tables(tables, artifacts$tables$tables_md)
+      artifacts$tables$rate_check_csv <- file.path(out_dir, "rate_check.csv")
+      .validate_write_csv(
+        if (!is.null(val$rate_check)) val$rate_check else data.frame(),
+        artifacts$tables$rate_check_csv
+      )
+
+      artifacts$tables$wind_field_csv <- file.path(out_dir, "wind_field.csv")
+      .validate_write_csv(
+        if (!is.null(val$wind_field)) val$wind_field else data.frame(),
+        artifacts$tables$wind_field_csv
+      )
+
+      artifacts$tables$summary_csv <- file.path(out_dir, "validation_summary.csv")
+      .validate_write_csv(
+        if (!is.null(val$summary)) val$summary else data.frame(),
+        artifacts$tables$summary_csv
+      )
+    } else {
+      tables <- list(
+        `Hindcast Return Levels` = val$hindcast$comparison,
+        `Modern Blocked CV`      = if (!is.null(tier1b_cv)) tier1b_cv$site_summary else NULL,
+        `Modern Blocked CV Compact` = if (!is.null(tier1b_cv)) tier1b_cv$paper_table else NULL,
+        `Rate Comparison`        = val$rate_check,
+        `Wind Field Spot-Checks` = val$wind_field,
+        `Summary`                = val$summary
+      )
+
+      if (!is.null(val$hindcast$comparison)) {
+        artifacts$tables$hindcast_csv <- file.path(out_dir, "hindcast_return_levels.csv")
+        .validate_write_csv(val$hindcast$comparison, artifacts$tables$hindcast_csv)
+      }
+      if (!is.null(tier1b_cv)) {
+        artifacts$tables$modern_blocked_cv_csv <- file.path(out_dir, "modern_blocked_cv_summary.csv")
+        .validate_write_csv(tier1b_cv$site_summary, artifacts$tables$modern_blocked_cv_csv)
+        artifacts$tables$modern_blocked_cv_compact_csv <- attr(tier1b_cv$paper_table, "csv_path")
+      }
+      if (!is.null(val$rate_check)) {
+        artifacts$tables$rate_check_csv <- file.path(out_dir, "rate_check.csv")
+        .validate_write_csv(val$rate_check, artifacts$tables$rate_check_csv)
+      }
+      if (!is.null(val$wind_field)) {
+        artifacts$tables$wind_field_csv <- file.path(out_dir, "wind_field.csv")
+        .validate_write_csv(val$wind_field, artifacts$tables$wind_field_csv)
+      }
+      if (!is.null(val$summary)) {
+        artifacts$tables$summary_csv <- file.path(out_dir, "validation_summary.csv")
+        .validate_write_csv(val$summary, artifacts$tables$summary_csv)
+      }
+
+      artifacts$tables$tables_md <- file.path(out_dir, "validation_tables.md")
+      .validate_write_md_tables(tables, artifacts$tables$tables_md)
+    }
   }
 
   val$artifacts <- artifacts
@@ -1762,11 +2597,12 @@ validate_hazard_model <- function(cfg,
     sst_cfg = sst_cfg
   )
 
-  tryCatch(
+  output_level <- .validation_output_level(validation_cfg)
+  if (identical(output_level, "full")) tryCatch(
     .run_validation_diagnostics_ad(trackpoints = out$trackpoints, targets = targets),
     error = function(e) {
       message("\n", "-" |> rep(72) |> paste(collapse = ""))
-      message("  DIAGNOSTICS A–D")
+      message("  DIAGNOSTICS Aâ€“D")
       message("-" |> rep(72) |> paste(collapse = ""))
       message("  skipped: ", e$message)
     }
@@ -1784,7 +2620,7 @@ validate_hazard_model <- function(cfg,
 
 .validate_theme <- function(base_size = 11) {
   plot_theme(base_size = base_size) +
-    ggplot2::theme(plot.title = ggplot2::element_text(face = "bold", size = base_size + 1))
+    theme(plot.title = element_text(face = "bold", size = base_size + 1))
 }
 
 .resolve_plot_cfg <- function(cfg, out_dir, base_size) {
@@ -1824,7 +2660,7 @@ validate_hazard_model <- function(cfg,
 .validate_save_plot <- function(p, path, width, height, dpi = 150) {
   if (is.null(p)) return(invisible(NULL))
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
-  ggplot2::ggsave(filename = path, plot = p, width = width, height = height, dpi = dpi)
+  ggsave(filename = path, plot = p, width = width, height = height, dpi = dpi)
   invisible(path)
 }
 
@@ -1852,6 +2688,7 @@ plot_hindcast_validation <- function(val,
                                      out_dir = NULL,
                                      base_size = NULL) {
   plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
+  output_level <- if (!is.null(cfg)) .validation_output_level(cfg) else "full"
   out_dir <- plot_cfg$out_dir
   ggtheme <- plot_cfg$theme
 
@@ -1863,29 +2700,35 @@ plot_hindcast_validation <- function(val,
   .validate_dir_create(out_dir)
 
   comp <- val$hindcast$comparison
-  p_rl <- ggplot2::ggplot(comp, ggplot2::aes(x = factor(return_period))) +
-    ggplot2::geom_errorbar(
-      ggplot2::aes(ymin = obs_lo_90, ymax = obs_hi_90),
-      width = 0.3, color = "red", linewidth = 0.8, alpha = 0.7
-    ) +
-    ggplot2::geom_point(ggplot2::aes(y = obs_full_rl), size = 3, color = "red", shape = 17) +
-    ggplot2::geom_point(ggplot2::aes(y = sim_rl), size = 3, color = "steelblue", shape = 16) +
-    ggplot2::geom_hline(yintercept = 64, linetype = "dashed", color = "grey50", linewidth = 0.5) +
-    ggplot2::facet_wrap(~ location, scales = "free_y", ncol = 3) +
-    ggplot2::labs(
+  p_rl <- ggplot(comp, aes(x = factor(return_period))) +
+    geom_point(aes(y = obs_full_rl), size = 3, color = "red", shape = 17) +
+    geom_point(aes(y = sim_rl), size = 3, color = "steelblue", shape = 16) +
+    geom_hline(yintercept = 64, linetype = "dashed", color = "grey50", linewidth = 0.5) +
+    facet_wrap(~ location, scales = "free_y", ncol = 3) +
+    labs(
       x = "Return period (years)",
       y = "Return level \u2014 peak site wind (kt)",
       title = "Hindcast Validation: Simulated vs Observed Return Levels",
-      subtitle = "Blue dot = model; Red triangle [90% CI] = observed (full record); dashed = 64 kt HUR threshold"
+      subtitle = "Blue dot = model; Red triangle = observed (full record); dashed = 64 kt HUR threshold"
     ) +
     ggtheme
+  if (identical(output_level, "full") && any(is.finite(comp$obs_lo_90) & is.finite(comp$obs_hi_90))) {
+    p_rl <- p_rl +
+      geom_errorbar(
+        aes(ymin = obs_lo_90, ymax = obs_hi_90),
+        width = 0.3, color = "red", linewidth = 0.8, alpha = 0.7
+      ) +
+      labs(
+        subtitle = "Blue dot = model; Red triangle [90% CI] = observed (full record); dashed = 64 kt HUR threshold"
+      )
+  }
 
   paths <- character(0)
   paths["hindcast_return_levels"] <- file.path(out_dir, "hindcast_return_levels.png")
   .validate_save_plot(p_rl, paths[["hindcast_return_levels"]], width = 12, height = 7, dpi = 150)
 
   # Per-location distribution plots
-  if (!is.null(val$hindcast$per_island)) {
+  if (identical(output_level, "full") && !is.null(val$hindcast$per_island)) {
     for (isl in names(val$hindcast$per_island)) {
       hc_isl <- val$hindcast$per_island[[isl]]
       if (is.null(hc_isl)) next
@@ -1897,17 +2740,17 @@ plot_hindcast_validation <- function(val,
       sim_df <- sim_df[is.finite(sim_df$V_max_kt) & sim_df$V_max_kt > 0, , drop = FALSE]
 
 
-      p_dist <- ggplot2::ggplot() +
-        ggplot2::geom_histogram(
+      p_dist <- ggplot() +
+        geom_histogram(
           data = sim_df,
-          ggplot2::aes(x = V_max_kt, y = ggplot2::after_stat(density)),
+          aes(x = V_max_kt, y = after_stat(density)),
           fill = "steelblue", alpha = 0.4, bins = 40
         ) +
-        ggplot2::geom_density(data = sim_df, ggplot2::aes(x = V_max_kt), color = "steelblue", linewidth = 0.8) +
-        ggplot2::geom_rug(data = obs_df, ggplot2::aes(x = V_max_kt, color = period), linewidth = 0.8, alpha = 0.8) +
-        ggplot2::scale_color_manual(values = c(train = "grey40", test = "red")) +
-        ggplot2::geom_vline(xintercept = 64, linetype = "dashed", color = "grey50") +
-        ggplot2::labs(
+        geom_density(data = sim_df, aes(x = V_max_kt), color = "steelblue", linewidth = 0.8) +
+        geom_rug(data = obs_df, aes(x = V_max_kt, color = period), linewidth = 0.8, alpha = 0.8) +
+        scale_color_manual(values = c(train = "grey40", test = "red")) +
+        geom_vline(xintercept = 64, linetype = "dashed", color = "grey50") +
+        labs(
           x = "Annual maximum site wind (kt)",
           y = "Density",
           title = paste("Annual Max Distribution:", isl),
@@ -1953,13 +2796,13 @@ plot_rate_validation <- function(val,
   y_col <- if ("lambda_adj" %in% names(rc)) "lambda_adj" else "lambda_model"
   y_vals <- rc[[y_col]]
 
-  p_rate <- ggplot2::ggplot(rc, ggplot2::aes(x = lambda_ref, y = .data[[y_col]])) +
-    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
-    ggplot2::geom_abline(slope = 2, intercept = 0, linetype = "dotted", color = "grey70") +
-    ggplot2::geom_abline(slope = 0.5, intercept = 0, linetype = "dotted", color = "grey70") +
-    ggplot2::geom_point(ggplot2::aes(color = flag, shape = storm_class), size = 3.5) +
-    ggplot2::geom_text(ggplot2::aes(label = location), nudge_y = 0.08, size = 3, check_overlap = TRUE) +
-    ggplot2::scale_color_manual(values = c(
+  p_rate <- ggplot(rc, aes(x = lambda_ref, y = .data[[y_col]])) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
+    geom_abline(slope = 2, intercept = 0, linetype = "dotted", color = "grey70") +
+    geom_abline(slope = 0.5, intercept = 0, linetype = "dotted", color = "grey70") +
+    geom_point(aes(color = flag, shape = storm_class), size = 3.5) +
+    geom_text(aes(label = location), nudge_y = 0.08, size = 3, check_overlap = TRUE) +
+    scale_color_manual(values = c(
       "OK" = "forestgreen",
       "elevated" = "orange",
       "HIGH: model >> expected" = "red",
@@ -1967,11 +2810,11 @@ plot_rate_validation <- function(val,
       "slightly_low" = "goldenrod3",
       "no_reference" = "grey60"
     )) +
-    ggplot2::coord_equal(
+    coord_equal(
       xlim = c(0, max(c(y_vals, rc$lambda_ref), na.rm = TRUE) + 0.3),
       ylim = c(0, max(c(y_vals, rc$lambda_ref), na.rm = TRUE) + 0.3)
     ) +
-    ggplot2::labs(
+    labs(
       x = "Reference \u03bb (published climatology)",
       y = if (identical(y_col, "lambda_adj")) "Adjusted model \u03bb" else "Model \u03bb (fitted)",
       title = "Rate Sanity Check: Adjusted Model vs Published Annual Rates",
@@ -2015,17 +2858,17 @@ plot_wind_field_validation <- function(val,
   wf <- dplyr::filter(val$wind_field, is.finite(model_V_site_kt))
   if (nrow(wf) == 0) return(invisible(NULL))
 
-  p_wf <- ggplot2::ggplot(wf, ggplot2::aes(x = obs_1min_equiv_kt, y = model_V_site_kt)) +
-    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
-    ggplot2::geom_abline(slope = 1, intercept = 20, linetype = "dotted", color = "grey70") +
-    ggplot2::geom_abline(slope = 1, intercept = -20, linetype = "dotted", color = "grey70") +
-    ggplot2::geom_point(ggplot2::aes(color = location, shape = location), size = 3.5) +
-    ggplot2::geom_text(ggplot2::aes(label = storm_name), nudge_y = 4, size = 3, check_overlap = TRUE) +
-    ggplot2::coord_equal(
+  p_wf <- ggplot(wf, aes(x = obs_1min_equiv_kt, y = model_V_site_kt)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
+    geom_abline(slope = 1, intercept = 20, linetype = "dotted", color = "grey70") +
+    geom_abline(slope = 1, intercept = -20, linetype = "dotted", color = "grey70") +
+    geom_point(aes(color = location, shape = location), size = 3.5) +
+    geom_text(aes(label = storm_name), nudge_y = 4, size = 3, check_overlap = TRUE) +
+    coord_equal(
       xlim = c(0, max(c(wf$obs_1min_equiv_kt, wf$model_V_site_kt), na.rm = TRUE) + 20),
       ylim = c(0, max(c(wf$obs_1min_equiv_kt, wf$model_V_site_kt), na.rm = TRUE) + 20)
     ) +
-    ggplot2::labs(
+    labs(
       x = "Observed wind (1-min equiv, kt)",
       y = "Model V_site_kt (kt)",
       title = "Wind Field Validation: Model vs Station Observations",
@@ -2055,12 +2898,12 @@ plot_wind_field_validation <- function(val,
     }
 
     if (nrow(irma_tp) > 0) {
-      p_irma <- ggplot2::ggplot(irma_tp, ggplot2::aes(x = dist_km, y = .data[[wind_col]])) +
-        ggplot2::geom_line(color = "steelblue", linewidth = 0.8) +
-        ggplot2::geom_point(color = "steelblue", size = 1.5) +
-        ggplot2::geom_hline(yintercept = c(34, 64), linetype = "dashed", color = c("orange", "red")) +
-        ggplot2::geom_hline(yintercept = 155, linetype = "solid", color = "red", alpha = 0.5) +
-        ggplot2::annotate(
+      p_irma <- ggplot(irma_tp, aes(x = dist_km, y = .data[[wind_col]])) +
+        geom_line(color = "steelblue", linewidth = 0.8) +
+        geom_point(color = "steelblue", size = 1.5) +
+        geom_hline(yintercept = c(34, 64), linetype = "dashed", color = c("orange", "red")) +
+        geom_hline(yintercept = 155, linetype = "solid", color = "red", alpha = 0.5) +
+        annotate(
           "text",
           x = max(irma_tp$dist_km) * 0.7,
           y = 155,
@@ -2068,7 +2911,7 @@ plot_wind_field_validation <- function(val,
           size = 3,
           color = "red"
         ) +
-        ggplot2::labs(
+        labs(
           x = "Distance from St. Martin (km)",
           y = "Model site wind (kt)",
           title = "Hurricane Irma (2017): Wind Profile at St. Martin",
@@ -2099,13 +2942,51 @@ plot_bias_diagnostics <- function(val,
                                   out_dir = NULL,
                                   base_size = NULL) {
   plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
+  output_level <- if (!is.null(cfg)) .validation_output_level(cfg) else "full"
   out_dir <- plot_cfg$out_dir
   ggtheme <- plot_cfg$theme
 
-  if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
 
   .validate_dir_create(out_dir)
+  if (identical(output_level, "minimal")) {
+    diag_tbl <- val$bias_diagnostics
+    if (is.null(diag_tbl) || nrow(diag_tbl) == 0) return(invisible(NULL))
+    if (!all(c("location", "storm_class", "delta_top1_p50", "delta_overall_p99") %in% names(diag_tbl))) {
+      return(invisible(NULL))
+    }
+
+    bias_long <- diag_tbl |>
+      dplyr::select("location", "storm_class", "delta_top1_p50", "delta_overall_p99") |>
+      tidyr::pivot_longer(
+        cols = c("delta_top1_p50", "delta_overall_p99"),
+        names_to = "metric",
+        values_to = "delta_kt"
+      )
+
+    p_min <- ggplot(
+      bias_long,
+      aes(x = .data$location, y = .data$delta_kt, color = .data$storm_class)
+    ) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "grey60", linewidth = 0.5) +
+      geom_point(size = 3, alpha = 0.9) +
+      facet_wrap(~ metric, scales = "free_y", ncol = 1) +
+      labs(
+        x = NULL,
+        y = "Simulated - observed (kt)",
+        title = "Bias Diagnostics by Location",
+        subtitle = "Minimal mode metrics: delta_top1_p50 and delta_overall_p99",
+        color = "storm_class"
+      ) +
+      ggtheme +
+      theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+    path <- file.path(out_dir, "plot_bias_diagnostics.png")
+    .validate_save_plot(p_min, path, width = 9, height = 6, dpi = 150)
+    return(invisible(path))
+  }
+
+  if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
   paths <- character(0)
 
   # --- Collect per-location bias decomposition ---
@@ -2153,43 +3034,43 @@ plot_bias_diagnostics <- function(val,
                   Intensity = "int_contrib_kt", Interaction = "interact_kt") |>
     tidyr::pivot_longer(-"location", names_to = "source", values_to = "bias_kt")
 
-  p_decomp <- ggplot2::ggplot(bias_long, ggplot2::aes(x = location, y = bias_kt, fill = source)) +
-    ggplot2::geom_col(position = "stack", width = 0.6) +
-    ggplot2::geom_hline(yintercept = 0, linewidth = 0.5) +
-    ggplot2::scale_fill_manual(values = c(
+  p_decomp <- ggplot(bias_long, aes(x = location, y = bias_kt, fill = source)) +
+    geom_col(position = "stack", width = 0.6) +
+    geom_hline(yintercept = 0, linewidth = 0.5) +
+    scale_fill_manual(values = c(
       Frequency = "#E69F00", Intensity = "#56B4E9", Interaction = "#999999"
     )) +
-    ggplot2::labs(
+    labs(
       x = NULL, y = "Bias contribution (kt)",
       title = "Bias Decomposition: Frequency vs Intensity",
       subtitle = "Positive = model overestimates; Negative = model underestimates",
       fill = "Source"
     ) +
     ggtheme +
-    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 30, hjust = 1))
+    theme(axis.text.x = element_text(angle = 30, hjust = 1))
 
   paths[["bias_decomposition"]] <- file.path(out_dir, "bias_decomposition.png")
   .validate_save_plot(p_decomp, paths[["bias_decomposition"]], width = 8, height = 5, dpi = 150)
 
   # --- Panel 2: Frequency & intensity scatter ---
-  p_freq <- ggplot2::ggplot(bias_df, ggplot2::aes(x = obs_event_rate, y = sim_event_rate)) +
-    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
-    ggplot2::geom_point(size = 3.5, color = "steelblue") +
-    ggplot2::geom_text(ggplot2::aes(label = location), nudge_y = 0.02, size = 3, check_overlap = TRUE) +
-    ggplot2::coord_equal() +
-    ggplot2::labs(
+  p_freq <- ggplot(bias_df, aes(x = obs_event_rate, y = sim_event_rate)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
+    geom_point(size = 3.5, color = "steelblue") +
+    geom_text(aes(label = location), nudge_y = 0.02, size = 3, check_overlap = TRUE) +
+    coord_equal() +
+    labs(
       x = "Observed P(any event)", y = "Simulated P(any event)",
       title = "Frequency Bias: Event Occurrence Rate",
       subtitle = "Dashed = 1:1 line"
     ) +
     ggtheme
 
-  p_int <- ggplot2::ggplot(bias_df, ggplot2::aes(x = obs_mean_int_kt, y = sim_mean_int_kt)) +
-    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
-    ggplot2::geom_point(size = 3.5, color = "#D55E00") +
-    ggplot2::geom_text(ggplot2::aes(label = location), nudge_y = 1.5, size = 3, check_overlap = TRUE) +
-    ggplot2::coord_equal() +
-    ggplot2::labs(
+  p_int <- ggplot(bias_df, aes(x = obs_mean_int_kt, y = sim_mean_int_kt)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
+    geom_point(size = 3.5, color = "#D55E00") +
+    geom_text(aes(label = location), nudge_y = 1.5, size = 3, check_overlap = TRUE) +
+    coord_equal() +
+    labs(
       x = "Observed E[max | event] (kt)", y = "Simulated E[max | event] (kt)",
       title = "Intensity Bias: Conditional Mean Wind",
       subtitle = "Dashed = 1:1 line"
@@ -2254,12 +3135,12 @@ plot_qq_validation <- function(val,
   if (length(qq_rows) == 0) return(invisible(NULL))
   qq_df <- dplyr::bind_rows(qq_rows)
 
-  p_qq <- ggplot2::ggplot(qq_df, ggplot2::aes(x = obs_quantile, y = sim_quantile)) +
-    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
-    ggplot2::geom_point(ggplot2::aes(color = prob), size = 2, alpha = 0.8) +
-    ggplot2::scale_color_viridis_c(name = "Quantile", option = "C", limits = c(0, 1)) +
-    ggplot2::facet_wrap(~ location, scales = "free", ncol = 3) +
-    ggplot2::labs(
+  p_qq <- ggplot(qq_df, aes(x = obs_quantile, y = sim_quantile)) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
+    geom_point(aes(color = prob), size = 2, alpha = 0.8) +
+    scale_color_viridis_c(name = "Quantile", option = "C", limits = c(0, 1)) +
+    facet_wrap(~ location, scales = "free", ncol = 3) +
+    labs(
       x = "Observed annual max (kt)",
       y = "Simulated annual max (kt)",
       title = "QQ Plot: Simulated vs Observed Annual Maxima",
@@ -2342,12 +3223,12 @@ plot_cdf_comparison <- function(val,
   cdf_df <- dplyr::bind_rows(cdf_rows)
   gev_df <- if (length(gev_rows) > 0) dplyr::bind_rows(gev_rows) else NULL
 
-  p_cdf <- ggplot2::ggplot(cdf_df, ggplot2::aes(x = wind_kt, y = ecdf, color = source)) +
-    ggplot2::geom_step(linewidth = 0.7, alpha = 0.85) +
-    ggplot2::scale_color_manual(values = c(Observed = "red", Simulated = "steelblue")) +
-    ggplot2::geom_vline(xintercept = 64, linetype = "dashed", color = "grey50", linewidth = 0.4) +
-    ggplot2::facet_wrap(~ location, scales = "free_x", ncol = 3) +
-    ggplot2::labs(
+  p_cdf <- ggplot(cdf_df, aes(x = wind_kt, y = ecdf, color = source)) +
+    geom_step(linewidth = 0.7, alpha = 0.85) +
+    scale_color_manual(values = c(Observed = "red", Simulated = "steelblue")) +
+    geom_vline(xintercept = 64, linetype = "dashed", color = "grey50", linewidth = 0.4) +
+    facet_wrap(~ location, scales = "free_x", ncol = 3) +
+    labs(
       x = "Annual maximum site wind (kt)",
       y = "Cumulative probability",
       title = "CDF Comparison: Simulated vs Observed Annual Maxima",
@@ -2358,9 +3239,9 @@ plot_cdf_comparison <- function(val,
 
   if (!is.null(gev_df)) {
     p_cdf <- p_cdf +
-      ggplot2::geom_line(
+      geom_line(
         data = gev_df,
-        ggplot2::aes(x = wind_kt, y = cdf_gev),
+        aes(x = wind_kt, y = cdf_gev),
         color = "steelblue", linetype = "dotted", linewidth = 0.6,
         inherit.aes = FALSE
       )
@@ -2371,16 +3252,16 @@ plot_cdf_comparison <- function(val,
   .validate_save_plot(p_cdf, paths[["cdf_comparison"]], width = 12, height = 7, dpi = 150)
 
   # --- Exceedance probability plot (1-CDF, log scale) ---
-  p_exceed <- ggplot2::ggplot(cdf_df, ggplot2::aes(x = wind_kt, y = 1 - ecdf, color = source)) +
-    ggplot2::geom_step(linewidth = 0.7, alpha = 0.85) +
-    ggplot2::scale_y_log10(
+  p_exceed <- ggplot(cdf_df, aes(x = wind_kt, y = 1 - ecdf, color = source)) +
+    geom_step(linewidth = 0.7, alpha = 0.85) +
+    scale_y_log10(
       limits = c(0.001, 1),
       labels = scales::label_percent(accuracy = 0.1)
     ) +
-    ggplot2::scale_color_manual(values = c(Observed = "red", Simulated = "steelblue")) +
-    ggplot2::geom_vline(xintercept = 64, linetype = "dashed", color = "grey50", linewidth = 0.4) +
-    ggplot2::facet_wrap(~ location, scales = "free_x", ncol = 3) +
-    ggplot2::labs(
+    scale_color_manual(values = c(Observed = "red", Simulated = "steelblue")) +
+    geom_vline(xintercept = 64, linetype = "dashed", color = "grey50", linewidth = 0.4) +
+    facet_wrap(~ location, scales = "free_x", ncol = 3) +
+    labs(
       x = "Annual maximum site wind (kt)",
       y = "Exceedance probability (log scale)",
       title = "Exceedance Probability: Simulated vs Observed",

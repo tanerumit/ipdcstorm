@@ -54,7 +54,8 @@
 #' @param advanced Optional named list of expert parameters. Most users should
 #'   leave this as `NULL`. Supported names:
 #'   `ts_threshold_kt`, `strong_storm_threshold_kt`, `hurricane_threshold_kt`,
-#'   `r34_cap_nm`, `r50_cap_nm`, `r64_cap_nm`.
+#'   `r34_cap_nm`, `r50_cap_nm`, `r64_cap_nm`,
+#'   `lambda_scaling_mode` (`"target"` or `"down_only"`).
 #'
 #' @return A list with class `c("hazard_cfg", "list")`.
 #' @export
@@ -72,7 +73,8 @@ make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv
     hurricane_threshold_kt = 64,
     r34_cap_nm = 600,
     r50_cap_nm = 400,
-    r64_cap_nm = 250
+    r64_cap_nm = 250,
+    lambda_scaling_mode = "target"
   )
 
   if (is.null(advanced)) {
@@ -101,6 +103,7 @@ make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv
     copula_robust_scale = TRUE
   )
   class(cfg) <- c("hazard_cfg", "list")
+  cfg$advanced$lambda_scaling_mode <- .normalize_lambda_scaling_mode(cfg$advanced$lambda_scaling_mode)
   cfg
 }
 
@@ -116,6 +119,7 @@ print.hazard_cfg <- function(x, ...) {
     format(x$advanced$ts_threshold_kt, trim = TRUE),
     format(x$advanced$hurricane_threshold_kt, trim = TRUE)
   ))
+  cat(sprintf("  Lambda scaling: %s\n", x$advanced$lambda_scaling_mode))
   invisible(x)
 }
 
@@ -157,6 +161,7 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
 
   ts_threshold_kt <- as.numeric(cfg$advanced$ts_threshold_kt)
   hurricane_threshold_kt <- as.numeric(cfg$advanced$hurricane_threshold_kt)
+  lambda_scaling_mode <- .normalize_lambda_scaling_mode(cfg$advanced$lambda_scaling_mode)
 
   # --- 1) Load IBTrACS (suppress sub-function messages) --------------------
   if (verbose) .cli_h("Loading data")
@@ -269,17 +274,26 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   annual_counts_all <- dplyr::bind_rows(Filter(Negate(is.null), annual_counts_list))
   rates_all         <- dplyr::bind_rows(Filter(Negate(is.null), rates_list))
   fit_all           <- dplyr::bind_rows(Filter(Negate(is.null), fit_list))
-  rate_check_seed <- .build_rate_check_table(list(rates = rates_all))
-  lambda_scalers <- .lambda_scalers_from_rate_check(rate_check_seed)
+  rate_check_seed <- .build_rate_check_table(
+    list(rates = rates_all),
+    lambda_scaling_mode = lambda_scaling_mode
+  )
+  lambda_scalers <- .lambda_scalers_from_rate_check(
+    rate_check_seed,
+    scaling_mode = lambda_scaling_mode
+  )
   lambda_scaler_id <- .lambda_scaler_id(lambda_scalers)
 
   if (verbose && nrow(lambda_scalers) > 0) {
     n_clamped <- sum(lambda_scalers$scale_clamped, na.rm = TRUE)
     n_no_ref <- sum(lambda_scalers$scale_status == "no_ref", na.rm = TRUE)
     .cli_info(sprintf(
-      "Lambda scalers   : %d site/class pairs (id=%s, clamped=%d, no_ref=%d)",
-      nrow(lambda_scalers), lambda_scaler_id, n_clamped, n_no_ref
+      "Lambda scalers   : %d site/class pairs (mode=%s, id=%s, clamped=%d, no_ref=%d)",
+      nrow(lambda_scalers), lambda_scaling_mode, lambda_scaler_id, n_clamped, n_no_ref
     ))
+  }
+  if (verbose && identical(lambda_scaling_mode, "target") && any(lambda_scalers$was_upscaled, na.rm = TRUE)) {
+    message("   [lambda] target mode upscaled one or more site/class rates; set advanced$lambda_scaling_mode='down_only' to disable upscaling.")
   }
 
   # =========================================================================
@@ -420,6 +434,42 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   if (!is.null(sst_info) && !is.null(sst_info$scenario)) {
     cfg_out$sst_scenario <- sst_info$scenario
   }
+  cfg_out$advanced$lambda_scaling_mode <- lambda_scaling_mode
+
+  data_file <- basename(cfg$data_path)
+  data_rows <- nrow(ib_sub)
+  data_id <- paste0(data_file, "|rows=", format(data_rows, scientific = FALSE, trim = TRUE))
+  param_fields <- c(
+    cfg$preset,
+    cfg$data_path,
+    cfg$search_radius_km,
+    cfg$start_year,
+    cfg$n_sim_years,
+    cfg$advanced$ts_threshold_kt,
+    cfg$advanced$hurricane_threshold_kt,
+    cfg$advanced$r34_cap_nm,
+    cfg$advanced$r50_cap_nm,
+    cfg$advanced$r64_cap_nm,
+    lambda_scaling_mode
+  )
+  parameter_id <- .checksum_id_from_text(param_fields, prefix = "params")
+  run_metadata <- list(
+    seed = NA_integer_,
+    ibtracs_file = data_file,
+    ibtracs_rows = as.integer(data_rows),
+    ibtracs_data_id = data_id,
+    parameter_id = parameter_id,
+    lambda_scaling_mode = lambda_scaling_mode
+  )
+  if (verbose) {
+    .cli_info(sprintf(
+      "Run metadata    : seed=%s data=%s params=%s lambda_mode=%s",
+      ifelse(is.na(run_metadata$seed), "NA", as.character(run_metadata$seed)),
+      run_metadata$ibtracs_data_id,
+      run_metadata$parameter_id,
+      run_metadata$lambda_scaling_mode
+    ))
+  }
 
   list(
     sim = sim_all,
@@ -429,6 +479,7 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
     lambda_scalers = lambda_scalers,
     lambda_scaler_id = lambda_scaler_id,
     fit = fit_all,
-    cfg = cfg_out
+    cfg = cfg_out,
+    run_metadata = run_metadata
   )
 }

@@ -244,6 +244,8 @@ val <- res$val    # validation results
 
 This creates an `output/validation/` directory with PNG plots and CSV tables for each tier. The sections below explain what each tier does and how to interpret its output.
 
+In the current validation workflow, Tier 1 is reported in two companion parts. Tier 1A is the existing single-split hindcast return-level check. Tier 1B is the modern blocked-CV companion: it restricts the annual-max series to 1970+ and TS+ storms (`storm_vmax_min = 34 kt`), partitions each site's observed annual-max years into contiguous index-based blocks of 10 observed years (not fixed calendar decades), scores only folds with `test_n_pos_years >= 2`, and reports `folds_used / folds_total`, mean `p0`, mean `q90`, and the `q95` range. The compact manuscript table uses the same defaults and labels the era as `1970+`.
+
 
 ### Tier 1 — Hindcast validation {#sec-tier1}
 

@@ -729,14 +729,25 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
       bearing_to_target = calculate_bearing(.data$lat, .data$lon, target_lat, target_lon),
       quadrant = .get_quadrant(.data$bearing_to_target),
 
-      R34_nm = .get_directional_radius(.data$quadrant, .data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
+      # R34 radii quality gate:
+      # If fewer than 3 quadrants are present, directional radii are often unreliable.
+      # Fall back to mean radius when >=2 quadrants exist; otherwise leave missing
+      # and allow climo infill downstream.
+      nq34 = rowSums(is.finite(cbind(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm))),
+      R34_nm_dir = .get_directional_radius(.data$quadrant, .data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
+      R34_nm_mean = mean_radius_nm(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
+      R34_nm = dplyr::case_when(
+        .data$nq34 >= 3 ~ .data$R34_nm_dir,
+        .data$nq34 >= 2 ~ .data$R34_nm_mean,
+        TRUE ~ NA_real_
+      ),
       R50_nm = .get_directional_radius(.data$quadrant, .data$r50_ne_nm, .data$r50_se_nm, .data$r50_sw_nm, .data$r50_nw_nm),
       R64_nm = .get_directional_radius(.data$quadrant, .data$r64_ne_nm, .data$r64_se_nm, .data$r64_sw_nm, .data$r64_nw_nm),
 
       R34_km = .data$R34_nm * 1.852,
       R50_km = .data$R50_nm * 1.852,
       R64_km = .data$R64_nm * 1.852,
-      R34_mean_km = mean_radius_nm(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm) * 1.852,
+      R34_mean_km = .data$R34_nm_mean * 1.852,
       R50_mean_km = mean_radius_nm(.data$r50_ne_nm, .data$r50_se_nm, .data$r50_sw_nm, .data$r50_nw_nm) * 1.852,
       R64_mean_km = mean_radius_nm(.data$r64_ne_nm, .data$r64_se_nm, .data$r64_sw_nm, .data$r64_nw_nm) * 1.852,
 

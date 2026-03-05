@@ -4,13 +4,21 @@
 \alias{.lambda_scalers_from_rate_check}
 \title{Build multiplicative lambda scalers from a rate-check table}
 \usage{
-.lambda_scalers_from_rate_check(rate_tbl, scale_min = 0.25, scale_max = 4)
+.lambda_scalers_from_rate_check(
+  rate_tbl,
+  scale_min = 0.25,
+  scale_max = 4,
+  scaling_mode = "target"
+)
 }
 \arguments{
 \item{rate_tbl}{Tibble with location, storm_class, lambda_model or
 lambda_model_raw, lambda_ref, and optional expected_ratio.}
 
 \item{scale_min, scale_max}{Numeric scalar clamp bounds for lambda_scale.}
+
+\item{scaling_mode}{Character scalar. \code{"target"} preserves historical behavior;
+\code{"down_only"} prevents lambda upscaling above modeled rates.}
 }
 \value{
 Tibble keyed by location and storm_class with raw lambda, target

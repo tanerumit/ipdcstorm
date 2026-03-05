@@ -11,6 +11,24 @@ suppressPackageStartupMessages({
 
 # ---- helpers ----
 
+# Blocked CV split: contiguous blocks of fixed size (years).
+# Returns a list of folds, each fold is list(train=<int>, test=<int>, fold_id=<int>).
+.split_years_blocked_cv <- function(years, block_size = 5L) {
+  years <- sort(unique(years[is.finite(years)]))
+  if (!length(years)) return(list())
+
+  # make contiguous blocks
+  blocks <- split(years, ceiling(seq_along(years) / block_size))
+
+  folds <- vector("list", length(blocks))
+  for (i in seq_along(blocks)) {
+    test_years <- as.integer(blocks[[i]])
+    train_years <- as.integer(setdiff(years, test_years))
+    folds[[i]] <- list(train = train_years, test = test_years, fold_id = i)
+  }
+  folds
+}
+
 .safe_quantile <- function(x, probs) {
   x <- x[is.finite(x)]
   if (!length(x)) return(rep(NA_real_, length(probs)))
@@ -134,7 +152,12 @@ run_validation_stats <- function(out, targets, sites = NULL,
                                  threshold_kt = 34,
                                  top_k = 5,
                                  min_year = 1970,
-                                 storm_vmax_min = 34) {
+                                 storm_vmax_min = 34,
+                                 split_mode = c("last_block", "blocked_cv"),
+                                 block_size = 5) {
+
+  split_mode <- match.arg(split_mode)
+
   if (is.null(out$trackpoints) || !is.list(out$trackpoints)) {
     stop("`out$trackpoints` must be a named list of per-site trackpoint tables.")
   }
@@ -160,38 +183,60 @@ run_validation_stats <- function(out, targets, sites = NULL,
 
     ann <- .compute_site_annual_max(out$trackpoints[[site]], lat, lon, site,
                                     min_year = min_year, storm_vmax_min = storm_vmax_min)
+
+
     all_years <- sort(unique(ann$year))
-    split <- .split_years_last_block(all_years, holdout_years = holdout_years)
 
-    train_sum <- .summarise_split(ann, split$train, threshold_kt)
-    test_sum  <- .summarise_split(ann, split$test, threshold_kt)
+    folds <- if (split_mode == "last_block") {
+      list(c(.split_years_last_block(all_years, holdout_years = holdout_years), fold_id = 1L))
+    } else {
+      .split_years_blocked_cv(all_years, block_size = as.integer(block_size))
+    }
 
-    summ <- tibble(
-      site = site,
-      holdout_years = holdout_years,
-      threshold_kt = threshold_kt,
-      train_years = paste(split$train, collapse = ","),
-      test_years  = paste(split$test, collapse = ",")
-    ) %>%
-      bind_cols(
-        train_sum %>% rename_with(~paste0("train_", .x)),
-        test_sum  %>% rename_with(~paste0("test_", .x))
-      )
+    for (fold in folds) {
+      train_sum <- .summarise_split(ann, fold$train, threshold_kt)
+      test_sum  <- .summarise_split(ann, fold$test, threshold_kt)
 
-    topk <- .top_k_test(ann, split$test, k = top_k) %>%
-      mutate(
-        r_norm_used = ifelse(is.finite(.data$RMW_used_km) & .data$RMW_used_km > 0,
-                             .data$dist_km / .data$RMW_used_km, NA_real_),
-        v_ratio = ifelse(is.finite(.data$Vmax_kt) & .data$Vmax_kt > 0,
-                         .data$ann_max_kt / .data$Vmax_kt, NA_real_)
-      )
+      summ <- tibble(
+        site = site,
+        split_mode = split_mode,
+        fold_id = as.integer(fold$fold_id),
+        holdout_years = if (split_mode == "last_block") holdout_years else NA_integer_,
+        block_size = if (split_mode == "blocked_cv") as.integer(block_size) else NA_integer_,
+        min_year = min_year,
+        storm_vmax_min = storm_vmax_min,
+        threshold_kt = threshold_kt,
+        train_years = paste(fold$train, collapse = ","),
+        test_years  = paste(fold$test, collapse = ",")
+      ) %>%
+        bind_cols(
+          train_sum %>% rename_with(~paste0("train_", .x)),
+          test_sum  %>% rename_with(~paste0("test_", .x))
+        )
 
-    all_ann[[site]] <- ann
-    out_tbl[[site]] <- summ
-    top_tbl[[site]] <- topk
+      topk <- .top_k_test(ann, fold$test, k = top_k) %>%
+        mutate(
+          r_norm_used = ifelse(is.finite(.data$RMW_used_km) & .data$RMW_used_km > 0,
+                               .data$dist_km / .data$RMW_used_km, NA_real_),
+          v_ratio = ifelse(is.finite(.data$Vmax_kt) & .data$Vmax_kt > 0,
+                           .data$ann_max_kt / .data$Vmax_kt, NA_real_),
+          split_mode = split_mode,
+          fold_id = as.integer(fold$fold_id)
+        )
+
+      out_tbl[[length(out_tbl) + 1L]] <- summ
+      top_tbl[[length(top_tbl) + 1L]] <- topk
+    }
+
+    if (is.null(all_ann[[site]])) all_ann[[site]] <- ann
   }
 
   summary_tbl <- bind_rows(out_tbl)
+
+  if (split_mode == "blocked_cv") {
+    message("\n(Note) blocked_cv: one row per site × fold. Use dplyr to summarise across folds.")
+  }
+
   top_tbl_all <- bind_rows(top_tbl)
   ann_all <- bind_rows(all_ann)
 

@@ -15,6 +15,7 @@
   sst_df = NULL,
   beta_sst = 0,
   gamma_intensity = 0,
+  use_raw_rates = TRUE,
   xi_bounds = c(-0.3, 0.4),
   n_boot = 500
 )

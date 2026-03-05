@@ -71,3 +71,23 @@ test_that("adjusted lambdas are used by the simulation count pipeline", {
   expect_gt(mean(sim_adj$n_total), mean(sim_raw$n_total) * 1.35)
   expect_lt(mean(sim_adj$p_hurricane), mean(sim_raw$p_hurricane))
 })
+
+test_that("down_only mode prevents lambda upscaling", {
+  rate_tbl <- tibble::tibble(
+    location = c("Saba", "Saba"),
+    storm_class = c("TS34plus", "HUR"),
+    lambda_model_raw = c(0.6, 0.2),
+    lambda_ref = c(2.0, 0.8),
+    expected_ratio = c(0.75, 0.45)
+  )
+
+  scalers <- ipdcstorm:::.lambda_scalers_from_rate_check(
+    rate_tbl,
+    scaling_mode = "down_only"
+  )
+
+  expect_true(all(scalers$lambda_scale <= 1 + 1e-12, na.rm = TRUE))
+  expect_true(all(!scalers$was_upscaled))
+  expect_equal(scalers$lambda_scale_applied, scalers$lambda_scale, tolerance = 1e-12)
+  expect_equal(scalers$lambda_adj, scalers$lambda_model_raw, tolerance = 1e-12)
+})

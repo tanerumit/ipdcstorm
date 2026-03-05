@@ -53,7 +53,7 @@ Follows the same pattern as \code{make_hazard_cfg()} and \code{make_sst_cfg()}:
 common parameters up front, expert-only knobs in \code{advanced}.
 }
 \examples{
-# Defaults — suitable for most users
+# Defaults â€” suitable for most users
 val_cfg <- make_validation_cfg()
 
 # Custom holdout and output location
