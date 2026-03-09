@@ -40,3 +40,20 @@ test_that("gamma intensity is constrained to non-negative values", {
 
   expect_gte(gamma_fit$gamma, 0)
 })
+
+test_that("run_hazard_model resolves packaged IBTrACS data and accepts location targets", {
+  cfg <- make_hazard_cfg(n_sim = 3L)
+  targets <- tibble::tibble(
+    location = "Saba",
+    lat = 17.63,
+    lon = -63.23
+  )
+
+  expect_no_error(
+    out <- run_hazard_model(cfg, targets, verbose = FALSE)
+  )
+  expect_true(all(c("sim", "events", "rates", "fit", "cfg") %in% names(out)))
+  expect_true(nrow(out$sim) > 0)
+  expect_true(all(out$sim$location == "Saba"))
+  expect_match(out$cfg$data_path, "ibtracs\\.NA\\.list\\.v04r01\\.csv$")
+})

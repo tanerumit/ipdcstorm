@@ -44,6 +44,58 @@
   as.integer(1000L)
 }
 
+#' Resolve an IBTrACS path in dev and installed package contexts
+#' @keywords internal
+.resolve_ibtracs_path <- function(path) {
+  path <- as.character(path)[1]
+  if (is.na(path) || !nzchar(path)) {
+    stop("cfg$data_path must be a non-empty character path.", call. = FALSE)
+  }
+  if (file.exists(path)) {
+    return(path)
+  }
+
+  base_name <- basename(path)
+  candidates <- c(
+    file.path("inst", "extdata", "ibtracs", base_name),
+    file.path("inst", "extdata", base_name),
+    system.file("extdata", "ibtracs", base_name, package = "ipdcstorm"),
+    system.file("extdata", base_name, package = "ipdcstorm")
+  )
+  candidates <- unique(candidates[nzchar(candidates)])
+  existing <- candidates[file.exists(candidates)]
+  if (length(existing) > 0) {
+    return(existing[[1]])
+  }
+
+  stop("File not found: ", path, call. = FALSE)
+}
+
+#' Normalize user-supplied targets to the required schema
+#' @keywords internal
+.normalize_hazard_targets <- function(targets) {
+  if (!is.data.frame(targets)) {
+    stop("targets must be a data frame with columns name, lat, lon.", call. = FALSE)
+  }
+  if (!("name" %in% names(targets)) && "location" %in% names(targets)) {
+    targets <- dplyr::rename(targets, name = "location")
+  }
+
+  required_cols <- c("name", "lat", "lon")
+  missing_cols <- setdiff(required_cols, names(targets))
+  if (length(missing_cols) > 0) {
+    stop(
+      "targets must contain columns: ",
+      paste(required_cols, collapse = ", "),
+      ". Missing: ",
+      paste(missing_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  targets
+}
+
 # =============================================================================
 # 1) Hazard configuration
 # =============================================================================
@@ -183,18 +235,20 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
     severities = severities,
     warn_legacy = !is.null(severities)
   )
+  targets <- .normalize_hazard_targets(targets)
   cfg$n_sim <- .resolve_hazard_n_sim(n_sim = cfg$n_sim, n_sim_years = cfg$n_sim_years)
   cfg$n_sim_years <- cfg$n_sim
 
   ts_threshold_kt <- as.numeric(cfg$advanced$ts_threshold_kt)
   hurricane_threshold_kt <- as.numeric(cfg$advanced$hurricane_threshold_kt)
   lambda_scaling_mode <- .normalize_lambda_scaling_mode(cfg$advanced$lambda_scaling_mode)
+  data_path <- .resolve_ibtracs_path(cfg$data_path)
 
   # --- 1) Load IBTrACS (suppress sub-function messages) --------------------
   if (verbose) .cli_h("Loading data")
 
   ib_sub <- read_ibtracs_clean(
-    ibtracs_csv = cfg$data_path,
+    ibtracs_csv = data_path,
     basin = "NA",
     season = NULL,
     keep_all = TRUE,
@@ -462,13 +516,14 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
     cfg_out$sst_scenario <- sst_info$scenario
   }
   cfg_out$advanced$lambda_scaling_mode <- lambda_scaling_mode
+  cfg_out$data_path <- data_path
 
-  data_file <- basename(cfg$data_path)
+  data_file <- basename(data_path)
   data_rows <- nrow(ib_sub)
   data_id <- paste0(data_file, "|rows=", format(data_rows, scientific = FALSE, trim = TRUE))
   param_fields <- c(
     cfg$preset,
-    cfg$data_path,
+    data_path,
     cfg$search_radius_km,
     cfg$start_year,
     cfg$n_sim,
