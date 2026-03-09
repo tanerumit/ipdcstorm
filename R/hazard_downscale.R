@@ -31,6 +31,27 @@
   )
 }
 
+.classify_downscaled_event_peak <- function(peak_kt) {
+  peak_kt <- as.numeric(peak_kt)
+
+  if (any(is.finite(peak_kt) & peak_kt < 0, na.rm = TRUE)) {
+    stop("`peak_kt` must not contain negative realized event peaks.", call. = FALSE)
+  }
+
+  classify_fun <- get0("classify_severity", mode = "function")
+  if (is.function(classify_fun)) {
+    out <- classify_fun(
+      peak_kt,
+      ts_threshold_kt = 34,
+      hurricane_threshold_kt = 64
+    )
+    out[out == "unknown"] <- NA_character_
+    return(out)
+  }
+
+  .assign_severity_simple(peak_kt)
+}
+
 
 #' Build an empirical event library for resampling (seasonality + stratified events)
 #'
@@ -656,6 +677,8 @@ generate_daily_year_extended <- function(year, sampled_events,
   rmw_km <- rep(NA_real_, n)
 
   best_wind_contrib <- rep(-Inf, n)
+  event_peak_map <- numeric(0)
+  event_class_map <- character(0)
 
   if (nrow(sampled_events) > 0) {
     for (k in seq_len(nrow(sampled_events))) {
@@ -677,6 +700,16 @@ generate_daily_year_extended <- function(year, sampled_events,
       pe <- ps + (idx1c - idx0c)
 
       contrib <- pulse[ps:pe]
+      realized_peak <- suppressWarnings(max(contrib, na.rm = TRUE))
+      if (!is.finite(realized_peak)) {
+        realized_peak <- NA_real_
+      }
+      event_class_k <- .classify_downscaled_event_peak(realized_peak)
+
+      if (!is.na(id) && is.finite(realized_peak)) {
+        event_peak_map[[id]] <- realized_peak
+        event_class_map[[id]] <- event_class_k
+      }
 
       wind[idx0c:idx1c] <- pmax(wind[idx0c:idx1c], contrib)
 
@@ -685,11 +718,29 @@ generate_daily_year_extended <- function(year, sampled_events,
         ii <- (idx0c:idx1c)[take]
         best_wind_contrib[ii] <- contrib[take]
         event_id[ii] <- id
-        event_class[ii] <- sampled_events$event_class[k]
+        event_class[ii] <- event_class_k
         pressure_hpa[ii]  <- sampled_events$Pc_min_hPa[k]
         pressure_deficit_hpa[ii]  <- sampled_events$dP_max_hPa[k]
         rmw_km[ii] <- sampled_events$RMW_mean_km[k]
       }
+    }
+  }
+
+  if (length(event_peak_map) > 0) {
+    event_check <- tibble::tibble(
+      event_id = names(event_peak_map),
+      realized_peak_kt = as.numeric(event_peak_map),
+      event_class = unname(event_class_map)
+    ) |>
+      dplyr::mutate(
+        implied_class = .classify_downscaled_event_peak(.data$realized_peak_kt),
+        mismatch = !is.na(.data$event_class) &
+          !is.na(.data$implied_class) &
+          .data$event_class != .data$implied_class
+      )
+
+    if (any(event_check$mismatch, na.rm = TRUE)) {
+      stop("Internal error: inconsistent `event_class` after realized-peak classification.", call. = FALSE)
     }
   }
 

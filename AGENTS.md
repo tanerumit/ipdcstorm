@@ -1,41 +1,45 @@
 # ipdc storm — Agent Instructions (canonical)
 
+Generic R coding constraints (API stability, minimal diff, deps, style, validation) live in `.agents/skills/r-coding/SKILL.md` and always apply.
+
 ## Repo map
-- Code: R/
-- Tests: tests/testthat/
-- Docs: man/ (generated), vignettes/
-- Skills: .agents/skills/
-- Reports: tools/codex_reports/
+
+| Path | Contents |
+|------|----------|
+| `R/` | Package source |
+| `tests/testthat/` | Unit tests |
+| `man/` (generated) | Roxygen2 documentation |
+| `vignettes/` | Long-form docs (Quarto) |
+| `inst/extcode/pipelines/` | Entry-point pipeline scripts |
+| `.agents/skills/` | Agent skill files |
+| `tools/codex_reports/` | Completion reports |
 
 ## Scientific correctness and transparency
+
 - Disclose scientific/numerical assumptions and simplifications before code when explanation is requested.
 - No silent simplifications of equations/physics/algorithms.
-- Track units/dimensions when applicable; enforce dimensional consistency.
-- Deterministic by default; fixed seeds for randomness unless stochastic behavior is requested.
 - State key numerical/physical/model limitations when explanation is requested.
+- Climate modification levels follow a three-tier hierarchy (L1 → SST-rate, L2 → intensity shift, L3 → storm perturbation) defined in `R/hazard_climate.R`.
+- Internal units: wind in m/s, distances in km, pressure in hPa. Convert at output boundaries only.
 
-## Non-negotiable constraints
-- Encoding: UTF-8 (no BOM).
-- Minimal diff: only necessary changes; no style-only refactors; no renames/moves unless asked.
-- Public API stability: do not change exported function names, arguments, defaults, return types, column names, or classes unless explicitly instructed.
-- Dependencies: do not add new external dependencies; do not add runtime reliance on Suggests. If unavoidable, guard with requireNamespace() and justify.
-- Style: avoid purrr; prefer explicit loops and base R idioms (unless the codebase already uses something else locally).
-- Determinism: preserve deterministic behavior; control randomness/seeds explicitly.
-- User-visible behavior: no silent changes to outputs/warnings/errors/messages; document any required change.
-- Data integrity: do not silently drop columns/fields/rows.
+## Allowed dependencies
 
-## Required workflow
-- Read relevant files first: R/, tests/testthat/, DESCRIPTION, NAMESPACE.
-- Implement the smallest safe fix.
-- If behavior/assumptions change: update tests and (if exported) roxygen.
-- Do not conclude until validation is done (or explicitly skipped with reason).
+Core (already used throughout): `dplyr`, `tidyr`, `ggplot2`, `patchwork`, `data.table`, `sf`.
+Do not add anything outside this set without explicit approval.
 
-## Required validation (minimum)
-- Rscript -e "parse(file='R/<touched-file>.R')" for each touched R file
-- If roxygen changed: regenerate docs and record it.
+## Branch and commit conventions
+
+- **Never commit directly to `main`.** All agent work happens on the `agent` branch.
+- If `agent` does not exist, create it from `master` before starting.
+- Commit message: `<type>: <what changed>` — one line, max 72 chars.
+  - Types: `fix`, `feat`, `refactor`, `docs`, `test`, `chore`
+  - Example: `fix: correct Holland B parameter bounds check`
+- One logical change per commit. Do not bundle unrelated fixes.
+- Merge to `master` is manual (by the user), never by the agent.
+
 
 ## Completion gates and reporting (mandatory)
-- Ensure tools/codex_reports/ exists.
-- Create/update exactly one report file:
-  tools/codex_reports/YYYY-MM-DD__HHMM__<task-slug>.md
+
+- Ensure `tools/codex_reports/` exists.
+- Create exactly one report file per task: `tools/codex_reports/YYYY-MM-DD__HHMM__<task-slug>.md`
 - Report must include: goal, scope, summary, files changed, commands run, test results, behavior changes, follow-ups/risks.

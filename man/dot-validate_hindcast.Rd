@@ -11,7 +11,7 @@
   n_sim = 5000,
   return_periods = c(5, 10, 25, 50),
   conf_level = 0.9,
-  severities = c("TS", "HUR"),
+  storm_classes = c("TS", "HUR"),
   seed = 42,
   sst_df = NULL,
   beta_sst = 0,

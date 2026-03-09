@@ -6,7 +6,7 @@
 \usage{
 make_validation_cfg(
   holdout_years = 10L,
-  n_sim = 5000L,
+  n_sim = NULL,
   return_periods = c(5, 10, 25, 50),
   conf_level = 0.9,
   seed = 42L,
@@ -20,8 +20,9 @@ make_validation_cfg(
 \item{holdout_years}{Integer; number of years to hold out from the end of
 the historical record for train/test split (default: 10).}
 
-\item{n_sim}{Integer; number of synthetic years to simulate for hindcast
-comparison (default: 5000).}
+\item{n_sim}{Integer or \code{NULL}; number of synthetic years to simulate for
+hindcast comparison. If \code{NULL} (default), \code{run_validation_suite()}
+inherits the simulation length from the hazard model output.}
 
 \item{return_periods}{Numeric vector of return periods (years) to compare
 (default: 5, 10, 25, 50).}

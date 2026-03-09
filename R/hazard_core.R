@@ -934,25 +934,51 @@ make_storm_events <- function(track_df) {
 # 5) Rate model helpers (per-severity annual counts)
 # =============================================================================
 
+#' @keywords internal
+.normalize_storm_classes <- function(storm_classes = NULL,
+                                     severities = NULL,
+                                     warn_legacy = FALSE) {
+  if (!is.null(severities)) {
+    if (warn_legacy) {
+      warning("`severities` is deprecated; use `storm_classes`.", call. = FALSE)
+    }
+    storm_classes <- severities
+  }
+  if (is.null(storm_classes)) {
+    storm_classes <- c("TS", "HUR")
+  }
+  storm_classes <- unique(as.character(storm_classes))
+  storm_classes[storm_classes == "TS34plus"] <- "TS"
+  storm_classes
+}
+
 #' Compute annual counts of unique storm events by storm class
 #'
 #' @param events Tibble with at least columns: year, storm_class, storm_id.
-#' @param severities Character vector of classes to include.
+#' @param storm_classes Character vector of classes to include.
+#' @param severities Deprecated alias for `storm_classes`.
 #'
 #' @return Tibble with columns year, storm_class, n_events, completed to include
 #'   all years and classes with zeros.
 #'
 #' @export
-compute_annual_counts <- function(events, severities = c("TS", "HUR")) {
+compute_annual_counts <- function(events,
+                                  storm_classes = c("TS", "HUR"),
+                                  severities = NULL) {
   if (!requireNamespace("tidyr", quietly = TRUE)) stop("Package `tidyr` is required.")
+  storm_classes <- .normalize_storm_classes(
+    storm_classes = storm_classes,
+    severities = severities,
+    warn_legacy = !is.null(severities)
+  )
 
   events |>
-    dplyr::filter(.data$storm_class %in% severities) |>
+    dplyr::filter(.data$storm_class %in% storm_classes) |>
     dplyr::distinct(.data$year, .data$storm_class, .data$storm_id) |>
     dplyr::count(.data$year, .data$storm_class, name = "n_events") |>
     tidyr::complete(
       year = tidyr::full_seq(range(.data$year, na.rm = TRUE), 1),
-      storm_class = severities,
+      storm_class = storm_classes,
       fill = list(n_events = 0)
     )
 }
@@ -1001,7 +1027,7 @@ get_annual_counts <- function(out) {
   events |>
     dplyr::filter(is.finite(.data$year), !is.na(.data$location), !is.na(.data$storm_class)) |>
     dplyr::group_by(.data$location) |>
-    dplyr::group_modify(~ compute_annual_counts(.x, severities = classes)) |>
+    dplyr::group_modify(~ compute_annual_counts(.x, storm_classes = classes)) |>
     dplyr::ungroup() |>
     dplyr::arrange(.data$location, .data$year, .data$storm_class)
 }

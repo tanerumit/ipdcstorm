@@ -24,6 +24,38 @@ plot_colors <- list(
   quantile = c(median = "grey30", p95 = "#91bfdb", p99 = "#4575b4")
 )
 
+standardize_plot_labels <- function(plot_obj,
+                                    location_name,
+                                    plot_type,
+                                    subtitle,
+                                    base_size = 11) {
+
+  plot_obj +
+    labs(
+      title = sprintf("%s - %s", location_name, plot_type),
+      subtitle = subtitle
+    ) +
+    plot_theme(base_size = base_size)
+}
+
+save_standardized_plot <- function(plot_obj,
+                                   file_path,
+                                   width,
+                                   height,
+                                   dpi) {
+
+  ggplot2::ggsave(
+    filename = file_path,
+    plot = plot_obj,
+    width = width,
+    height = height,
+    dpi = dpi,
+    units = "in"
+  )
+
+  invisible(file_path)
+}
+
 # -----------------------------------------------------------------------------
 # Data preparation helpers
 # -----------------------------------------------------------------------------
@@ -273,26 +305,28 @@ plot_seasonality_doy <- function(daily,
 plot_monthly_events <- function(daily, normalize = FALSE) {
 
   events <- prep_events(daily)
-  n_years <- n_distinct(daily$sim_year)
 
-  # Count by month, fill zeros
-  monthly <- events %>%
-    count(event_class, start_month, name = "n") %>%
-    complete(event_class = c("TS", "HUR"), start_month = 1:12, fill = list(n = 0))
+  df <- events %>%
+    count(sim_year, start_month, event_class, name = "n") %>%
+    complete(
+      sim_year = sort(unique(daily$sim_year)),
+      start_month = 1:12,
+      event_class = c("TS", "HUR"),
+      fill = list(n = 0)) %>%
+    mutate(
+      month = factor(start_month, levels = 1:12, labels = month.abb),
+      event_class = factor(event_class, levels = c("TS", "HUR"))) %>%
+    summarize(n = mean(n), .by = c(month, event_class))
 
-  if (normalize) {
-    monthly <- monthly %>% mutate(n = n / n_years)
-    ylab <- "Events per year"
-  } else {
-    ylab <- "Total event starts"
-  }
-
-  ggplot(monthly, aes(x = factor(start_month), y = n, fill = event_class)) +
-    geom_col(position = "dodge", width = 0.7) +
-    scale_x_discrete(labels = month.abb) +
+  ggplot(df, aes(x = month, y = n, fill = event_class)) +
+    geom_bar(stat = "identity", position = "dodge") +
     scale_fill_manual(values = plot_colors$event, name = "Class") +
     scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
-    labs(x = NULL, y = ylab, title = "Monthly Distribution of Event Starts") +
+    labs(
+      x = NULL,
+      y = "Average number of events per month",
+      title = "Monthly Distribution of Events"
+    ) +
     plot_theme()
 }
 
@@ -504,24 +538,47 @@ plot_annual_counts <- function(daily,
 
   lambda <- mean(yearly$count)
   n_years <- nrow(yearly)
+  yearly_dist <- yearly %>%
+    count(count, name = "n_years_at_count") %>%
+    complete(count = 0:max(yearly$count), fill = list(n_years_at_count = 0L)) %>%
+    mutate(prob = n_years_at_count / n_years)
 
-  p <- ggplot(yearly, aes(x = count)) +
-    geom_bar(fill = "steelblue", color = "white", width = 0.8) +
+  p <- ggplot(yearly_dist, aes(x = count, y = prob)) +
+    geom_col(fill = "steelblue", color = "white", width = 0.8) +
     scale_x_continuous(breaks = scales::breaks_pretty(n = 10)) +
-    scale_y_continuous(expand = expansion(mult = c(0, 0.08))) +
-    labs(x = xlab, y = "Number of years", title = title,
-         subtitle = sprintf("Mean: %.2f | n = %d years", lambda, n_years)) +
+    scale_y_continuous(
+      labels = scales::label_percent(accuracy = 1),
+      expand = expansion(mult = c(0, 0.08))
+    ) +
+    labs(
+      x = xlab,
+      y = "Probability in a given year",
+      title = title,
+      subtitle = sprintf("Bars show empirical probability mass; mean = %.2f across %d years", lambda, n_years)
+    ) +
     plot_theme()
 
   if (show_poisson && metric == "events") {
-    # Overlay Poisson PMF
-    x_range <- 0:max(yearly$count + 2)
+    x_range <- 0:max(max(yearly$count), ceiling(lambda + 4 * sqrt(max(lambda, 0))))
     pois_df <- data.frame(
       count = x_range,
-      expected = dpois(x_range, lambda) * n_years
+      expected = dpois(x_range, lambda)
     )
-    p <- p + geom_point(data = pois_df, aes(x = count, y = expected),
-                        color = "red", size = 2, shape = 1)
+    p <- p +
+      geom_point(
+        data = pois_df,
+        aes(x = count, y = expected),
+        color = "red",
+        size = 2,
+        shape = 1,
+        inherit.aes = FALSE
+      ) +
+      labs(
+        subtitle = sprintf(
+          "Bars show empirical probability mass; red circles show Poisson probabilities with mean = %.2f",
+          lambda
+        )
+      )
   }
 
   p
@@ -570,7 +627,11 @@ plot_intensity_duration <- function(daily = NULL,
   }
 
   ggplot(events, aes(x = dur_days, y = max_wind_kt, color = event_class)) +
-    geom_point(alpha = 0.6, size = 2) +
+    geom_point(
+      alpha = 0.6,
+      size = 2,
+      position = position_jitter(width = 0.2, height = 0.35, seed = 1)
+    ) +
     geom_hline(yintercept = thr_tc,  linetype = "dashed", alpha = 0.5) +
     geom_hline(yintercept = thr_hur, linetype = "dashed", alpha = 0.5) +
     scale_color_manual(values = plot_colors$event, name = "Class") +
@@ -636,6 +697,139 @@ plot_wind_distribution <- function(daily,
   if (log_scale) p <- p + scale_x_log10()
 
   p
+}
+
+#' Save standard hazard visualization plots as PNG files
+#'
+#' @description Builds a standard set of five hazard plots, applies consistent
+#'   titles, subtitles, and base theme sizing, and saves each plot to `output_dir`
+#'   as a PNG file.
+#'
+#' @param daily A data frame or tibble with columns required by
+#'   `plot_monthly_events()`, `plot_annual_counts()`, `plot_wind_timeseries()`,
+#'   `plot_wind_distribution()`, and `plot_intensity_duration()`.
+#' @param output_dir Character scalar path to the folder where PNG files are
+#'   saved. The directory is created if it does not already exist.
+#' @param location_name Character scalar used in standardized plot titles.
+#' @param width Numeric scalar plot width in inches passed to `ggsave()`.
+#' @param height Numeric scalar plot height in inches passed to `ggsave()`.
+#' @param dpi Numeric scalar resolution passed to `ggsave()`.
+#' @param base_size Numeric scalar base font size applied via `plot_theme()`.
+#' @param thr_tc Numeric scalar; tropical-cyclone threshold in knots.
+#' @param thr_hur Numeric scalar; hurricane threshold in knots.
+#'
+#' @return A named list with components `plots` and `paths`.
+#'
+#' @examples
+#' \dontrun{
+#' d <- data.frame(
+#'   date = as.Date("2001-01-01") + 0:364,
+#'   wind_kt = pmax(1, 20 + rnorm(365, sd = 8)),
+#'   event_id = sample(c(NA, 1:8), 365, replace = TRUE),
+#'   event_class = sample(c(NA, "TS", "HUR"), 365, replace = TRUE),
+#'   location = "A",
+#'   sim_year = 2001
+#' )
+#' save_hazard_viz_plots(d, tempdir(), "A")
+#' }
+#' @export
+save_hazard_viz_plots <- function(daily,
+                                  output_dir,
+                                  location_name,
+                                  width = 9,
+                                  height = 6,
+                                  dpi = 300,
+                                  base_size = 11,
+                                  thr_tc = 34,
+                                  thr_hur = 64) {
+
+  if (missing(daily) || is.null(daily) || !is.data.frame(daily)) {
+    stop("`daily` must be a data frame.")
+  }
+  if (missing(output_dir) || !is.character(output_dir) || length(output_dir) != 1L ||
+      is.na(output_dir) || !nzchar(output_dir)) {
+    stop("`output_dir` must be a non-empty character scalar.")
+  }
+  if (missing(location_name) || !is.character(location_name) || length(location_name) != 1L ||
+      is.na(location_name) || !nzchar(location_name)) {
+    stop("`location_name` must be a non-empty character scalar.")
+  }
+
+  required_cols <- c("date", "wind_kt", "event_id", "event_class", "location", "sim_year")
+  missing_cols <- setdiff(required_cols, names(daily))
+  if (length(missing_cols) > 0L) {
+    stop(sprintf(
+      "`daily` is missing required columns: %s",
+      paste(missing_cols, collapse = ", ")
+    ))
+  }
+
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  }
+  if (!dir.exists(output_dir)) {
+    stop("Failed to create `output_dir`.")
+  }
+
+  plots <- list(
+    monthly_events_boxplot = standardize_plot_labels(
+      plot_monthly_events(daily),
+      location_name = location_name,
+      plot_type = "Monthly event starts by class",
+      subtitle = "Each box summarizes the across-year distribution of monthly event starts; white points mark means",
+      base_size = base_size
+    ),
+    annual_event_count_probability = standardize_plot_labels(
+      plot_annual_counts(daily, metric = "events", show_poisson = TRUE),
+      location_name = location_name,
+      plot_type = "Annual event count probability",
+      subtitle = "Bars show empirical probability in a given year; red circles show Poisson probabilities",
+      base_size = base_size
+    ),
+    wind_timeseries = standardize_plot_labels(
+      plot_wind_timeseries(daily, thr_tc = thr_tc, thr_hur = thr_hur),
+      location_name = location_name,
+      plot_type = "Wind time series with event overlays",
+      subtitle = "Daily wind speed with event-duration segments drawn at each event's peak intensity",
+      base_size = base_size
+    ),
+    wind_distribution = standardize_plot_labels(
+      plot_wind_distribution(daily, thr_tc = thr_tc, thr_hur = thr_hur),
+      location_name = location_name,
+      plot_type = "Daily wind speed distribution (kt)",
+      subtitle = "Histogram of daily wind speeds with tropical-storm and hurricane thresholds",
+      base_size = base_size
+    ),
+    intensity_duration = standardize_plot_labels(
+      plot_intensity_duration(daily = daily, thr_tc = thr_tc, thr_hur = thr_hur),
+      location_name = location_name,
+      plot_type = "Event intensity vs duration",
+      subtitle = "Each point is one event; vertical jitter is small and deterministic to reduce overlap",
+      base_size = base_size
+    )
+  )
+
+  file_names <- c(
+    monthly_events_boxplot = "monthly_events_boxplot.png",
+    annual_event_count_probability = "annual_event_count_probability.png",
+    wind_timeseries = "wind_timeseries.png",
+    wind_distribution = "wind_distribution.png",
+    intensity_duration = "intensity_duration.png"
+  )
+  paths <- file.path(output_dir, unname(file_names))
+  names(paths) <- names(file_names)
+
+  for (plot_name in names(plots)) {
+    save_standardized_plot(
+      plot_obj = plots[[plot_name]],
+      file_path = paths[[plot_name]],
+      width = width,
+      height = height,
+      dpi = dpi
+    )
+  }
+
+  list(plots = plots, paths = paths)
 }
 
 # -----------------------------------------------------------------------------
@@ -717,57 +911,4 @@ plot_return_levels <- function(daily,
          title = "Empirical Return Levels",
          subtitle = subtitle) +
     plot_theme()
-}
-
-# -----------------------------------------------------------------------------
-# Quick summary panel
-# -----------------------------------------------------------------------------
-
-#' Build a four-panel hurricane hazard summary figure
-#'
-#' @description Combines seasonality, monthly quantiles, annual event counts,
-#'   and intensity-duration plots into a single 2x2 patchwork layout.
-#'
-#' @details Requires the `patchwork` package at runtime (`requireNamespace()` is
-#'   called). Input requirements combine those of the component plotting
-#'   functions.
-#'
-#' @param daily A data frame or tibble with columns needed by
-#'   `plot_seasonality_doy()`, `plot_monthly_quantiles()`,
-#'   `plot_annual_counts()`, and `plot_intensity_duration()`.
-#' @param thr_tc Numeric scalar; tropical-cyclone threshold in knots passed to
-#'   component plots.
-#' @param thr_hur Numeric scalar; hurricane threshold in knots passed to
-#'   component plots.
-#'
-#' @return A `patchwork`/`ggplot` composed plot object.
-#'
-#' @examples
-#' \dontrun{
-#' d <- data.frame(
-#'   date = as.Date("2001-01-01") + 0:364,
-#'   wind_kt = pmax(1, 20 + rnorm(365, sd = 8)),
-#'   event_id = sample(c(NA, 1:8), 365, replace = TRUE),
-#'   event_class = sample(c(NA, "TS", "HUR"), 365, replace = TRUE),
-#'   location = "A",
-#'   sim_year = 2001
-#' )
-#' plot_summary_panel(d)
-#' }
-#' @export
-plot_summary_panel <- function(daily, thr_tc = 34, thr_hur = 64) {
-
-  requireNamespace("patchwork", quietly = TRUE)
-
-
-  p1 <- plot_seasonality_doy(daily, metric = "event_days", facet_class = FALSE)
-  p2 <- plot_monthly_quantiles(daily, thr_tc = thr_tc, thr_hur = thr_hur)
-  p3 <- plot_annual_counts(daily, metric = "events")
-  p4 <- plot_intensity_duration(daily, thr_tc = thr_tc, thr_hur = thr_hur)
-
-  (p1 + p2) / (p3 + p4) +
-    patchwork::plot_annotation(
-      title = "Hurricane Hazard Summary",
-      theme = theme(plot.title = element_text(face = "bold", size = 14))
-    )
 }

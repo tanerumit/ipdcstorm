@@ -4,12 +4,18 @@
 \alias{compute_annual_counts}
 \title{Compute annual counts of unique storm events by storm class}
 \usage{
-compute_annual_counts(events, severities = c("TS", "HUR"))
+compute_annual_counts(
+  events,
+  storm_classes = c("TS", "HUR"),
+  severities = NULL
+)
 }
 \arguments{
 \item{events}{Tibble with at least columns: year, storm_class, storm_id.}
 
-\item{severities}{Character vector of classes to include.}
+\item{storm_classes}{Character vector of classes to include.}
+
+\item{severities}{Deprecated alias for \code{storm_classes}.}
 }
 \value{
 Tibble with columns year, storm_class, n_events, completed to include

@@ -128,6 +128,10 @@
                                             scale_max = 4,
                                             scaling_mode = "target") {
   rt <- tibble::as_tibble(rate_tbl)
+  if ("storm_class" %in% names(rt)) {
+    rt$storm_class <- as.character(rt$storm_class)
+    rt$storm_class[rt$storm_class == "TS34plus"] <- "TS"
+  }
   required <- c("location", "storm_class", "lambda_ref")
     missing_cols <- setdiff(required, names(rt))
     if (length(missing_cols) > 0) {
@@ -210,11 +214,16 @@
         was_upscaled = .data$lambda_scale_applied > (1 + 1e-12)
       ) |>
       dplyr::select(
-        "location", "storm_class",
-        "lambda_model_raw", "lambda_ref", "expected_ratio",
-        "lambda_target", "lambda_scale", "lambda_adj",
-        "scale_status", "scale_clamped",
-        "lambda_scaling_mode", "lambda_scale_applied", "was_upscaled"
+        dplyr::any_of(c(
+          "location", "storm_class",
+          "lambda_model_raw", "lambda_model_total_raw",
+          "lambda_ref", "lambda_ref_total",
+          "expected_ratio", "expected_ratio_total",
+          "lambda_target", "lambda_target_total",
+          "lambda_scale", "lambda_adj",
+          "scale_status", "scale_clamped",
+          "lambda_scaling_mode", "lambda_scale_applied", "was_upscaled"
+        ))
       )
 
   if (any(!is.finite(out$lambda_adj), na.rm = TRUE) || any(out$lambda_adj < 0, na.rm = TRUE)) {
@@ -261,7 +270,8 @@
       return(lt)
     }
 
-    scaler_tbl <- tibble::as_tibble(lambda_scalers) |>
+  scaler_tbl <- tibble::as_tibble(lambda_scalers) |>
+      dplyr::mutate(storm_class = dplyr::if_else(.data$storm_class == "TS34plus", "TS", .data$storm_class)) |>
       dplyr::filter(.data$location == .env$location)
 
     if (nrow(scaler_tbl) == 0) {
@@ -269,13 +279,32 @@
     }
 
     scale_total <- scaler_tbl |>
-      dplyr::filter(.data$storm_class == "TS34plus") |>
-      dplyr::pull("lambda_scale")
+      dplyr::filter(.data$storm_class == "TS")
     scale_hur <- scaler_tbl |>
       dplyr::filter(.data$storm_class == "HUR") |>
       dplyr::pull("lambda_scale")
 
-    scale_total <- if (length(scale_total) > 0 && is.finite(scale_total[1])) scale_total[1] else 1
+    scale_total <- if (nrow(scale_total) > 0) {
+      total_target <- if ("lambda_target_total" %in% names(scale_total)) {
+        scale_total$lambda_target_total[1]
+      } else {
+        NA_real_
+      }
+      total_model <- if ("lambda_model_total_raw" %in% names(scale_total)) {
+        scale_total$lambda_model_total_raw[1]
+      } else {
+        NA_real_
+      }
+      if (is.finite(total_target) && is.finite(total_model) && total_model > 0) {
+        total_target / total_model
+      } else if (is.finite(scale_total$lambda_scale[1])) {
+        scale_total$lambda_scale[1]
+      } else {
+        1
+      }
+    } else {
+      1
+    }
     scale_hur <- if (length(scale_hur) > 0 && is.finite(scale_hur[1])) scale_hur[1] else 1
 
     idx_ts <- which(lt$storm_class == "TS")

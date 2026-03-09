@@ -28,7 +28,7 @@ model_cfg <- make_hazard_cfg(
   data_path       = ibtracs_file_path,
   search_radius_km = 800,
   start_year       = 1970L,
-  n_sim_years      = 2000L
+  n_sim_years      = 500L
 )
 
 
@@ -47,7 +47,7 @@ out <- run_hazard_model(
 # Validation
 validation_cfg <- make_validation_cfg(
   holdout_years = 10L,
-  n_sim = 5000L,
+  n_sim = 500L,
   return_periods = c(5, 10, 25, 50),
   conf_level = 0.90,
   seed = 42L,
@@ -82,46 +82,19 @@ daily_all <- generate_daily_hazard_impact(
 # ==============================================================================
 
 # 3) Outputs (per-location) ------------------------------------------
+
 for (loc in names(daily_all)) {
 
-  # Current location
-  daily <- daily_all[[loc]]
   loc_dir <- file.path(output_dir, gsub("[^A-Za-z0-9_]", "_", loc))
-  if (!dir.exists(loc_dir)) dir.create(loc_dir, recursive = TRUE)
 
-  # P1: Wind time series
-  p1 <- plot_wind_timeseries(daily, title  = paste(loc, "— Daily series"))
-  ggsave(file.path(loc_dir, "01_wind_timeseries.png"), p1,
-         width = 8, height = 4)
+  save_hazard_viz_plots(daily = daily_all[[loc]],
+    output_dir = loc_dir,
+    location_name = loc,
+    width = 9, height = 6, dpi = 300, base_size = 11,
+    thr_tc = 34, thr_hur = 64)
 
-  # P2: Seasonality (DOY histogram, event-days) --
-  p2 <- plot_seasonality_doy(daily, metric = "event_days", facet_class = FALSE)
-  ggsave(file.path(loc_dir, "02_seasonality_doy.png"), p2,
-         width = 8, height = 4)
-
-  # P3: Monthly event counts (normalized to annual rate) --
-  p3 <- plot_monthly_events(daily, normalize = TRUE)
-  ggsave(file.path(loc_dir, "03_monthly_events.png"), p3,
-         width = 8, height = 4)
-
-  # P4: Annual event count distribution with Poisson overlay --
-  p4 <- plot_annual_counts(daily, metric = "events", show_poisson = TRUE)
-  ggsave(file.path(loc_dir, "04_annual_counts.png"), p4,
-         width = 8, height = 4)
-
-  # -- P7: Intensity vs duration scatter --
-  p5 <- plot_intensity_duration(daily = daily)
-  ggsave(file.path(loc_dir, "05_intensity_duration.png"), p5,
-         width = 5, height = 5)
-
-  # -- P8: Wind speed distribution (density) --
-  p6_data <- daily |> dplyr::filter(.data$wind_kt > 0)
-  p6 <- plot_wind_distribution(p6_data, type = "histogram")
-  ggsave(file.path(loc_dir, "06_wind_distribution.png"), p6,
-         width = 8, height = 4)
-
-  message("[VIZ] Saved plots for ", loc, " → ", loc_dir)
 }
+
 # ==============================================================================
 
 # 4) Outputs (cross-location comparison ) ----------------------------

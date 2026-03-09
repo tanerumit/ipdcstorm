@@ -8,7 +8,8 @@ validate_hazard_model(
   cfg,
   targets,
   validation_cfg = make_validation_cfg(),
-  severities = c("TS", "HUR"),
+  storm_classes = c("TS", "HUR"),
+  severities = NULL,
   sst_cfg = NULL
 )
 }
@@ -26,11 +27,13 @@ basin, year range, search radius, and core model parameters.}
 \item{validation_cfg}{A \code{validation_cfg} object from
 \code{make_validation_cfg()}. Controls holdout period, simulation size,
 return periods, confidence level, and output paths. Default uses 90\%
-CI with 10-year holdout and 5000 synthetic years.}
+CI with 10-year holdout and inherited synthetic years from the hazard model output.}
 
-\item{severities}{Character vector of storm classes to include
+\item{storm_classes}{Character vector of storm classes to include
 (default: \code{c("TS", "HUR")}). Must match IBTrACS classification codes.
 Use \code{"HUR"} alone for hurricane-only analysis.}
+
+\item{severities}{Deprecated alias for \code{storm_classes}.}
 
 \item{sst_cfg}{Optional \code{sst_cfg} object from \code{make_sst_cfg()} for
 SST-conditioned rate scaling (climate Level 1). When \code{NULL}, SST
@@ -80,7 +83,7 @@ targets_df <- data.frame(
 )
 
 result <- validate_hazard_model(
-  cfg     = make_hazard_cfg(basin = "NA", year_range = c(1980, 2023)),
+  cfg     = make_hazard_cfg(n_sim = 2000),
   targets = targets_df
 )
 
@@ -91,7 +94,7 @@ result$artifacts$plots            # Paths to saved figures
 
 # --- Stricter validation with 95\% CI ---
 result_95 <- validate_hazard_model(
-  cfg            = make_hazard_cfg(basin = "NA"),
+  cfg            = make_hazard_cfg(n_sim = 4000),
   targets        = targets_df,
   validation_cfg = make_validation_cfg(
     conf_level     = 0.95,
@@ -102,7 +105,7 @@ result_95 <- validate_hazard_model(
 
 # --- With SST conditioning ---
 result_sst <- validate_hazard_model(
-  cfg     = make_hazard_cfg(basin = "NA"),
+  cfg     = make_hazard_cfg(),
   targets = targets_df,
   sst_cfg = make_sst_cfg()
 )

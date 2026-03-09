@@ -36,8 +36,9 @@ if (!exists("%||%", mode = "function")) {
 #'
 #' @param holdout_years Integer; number of years to hold out from the end of
 #'   the historical record for train/test split (default: 10).
-#' @param n_sim Integer; number of synthetic years to simulate for hindcast
-#'   comparison (default: 5000).
+#' @param n_sim Integer or `NULL`; number of synthetic years to simulate for
+#'   hindcast comparison. If `NULL` (default), `run_validation_suite()`
+#'   inherits the simulation length from the hazard model output.
 #' @param return_periods Numeric vector of return periods (years) to compare
 #'   (default: 5, 10, 25, 50).
 #' @param conf_level Numeric; confidence level for return-level CIs
@@ -79,7 +80,7 @@ if (!exists("%||%", mode = "function")) {
 #'   advanced = list(xi_bounds = c(-0.4, 0.5), base_size = 13)
 #' )
 make_validation_cfg <- function(holdout_years  = 10L,
-                                n_sim          = 5000L,
+                                n_sim          = NULL,
                                 return_periods = c(5, 10, 25, 50),
                                 conf_level     = 0.90,
                                 seed           = 42L,
@@ -109,12 +110,14 @@ make_validation_cfg <- function(holdout_years  = 10L,
 
   # Input validation
   holdout_years  <- as.integer(holdout_years)
-  n_sim          <- as.integer(n_sim)
+  if (!is.null(n_sim)) {
+    n_sim <- as.integer(n_sim)
+  }
   return_periods <- as.numeric(return_periods)
   seed           <- as.integer(seed)
 
   if (holdout_years < 1L) stop("holdout_years must be >= 1.", call. = FALSE)
-  if (n_sim < 100L) stop("n_sim must be >= 100.", call. = FALSE)
+  if (!is.null(n_sim) && n_sim < 100L) stop("n_sim must be >= 100.", call. = FALSE)
   if (length(return_periods) == 0) stop("return_periods must have at least one value.", call. = FALSE)
   if (any(return_periods <= 1)) stop("return_periods must all be > 1.", call. = FALSE)
 
@@ -148,8 +151,15 @@ make_validation_cfg <- function(holdout_years  = 10L,
 print.validation_cfg <- function(x, ...) {
   cat("Validation configuration\n")
   cat(sprintf("  Holdout       : %d years\n", x$holdout_years))
-  cat(sprintf("  Simulation    : %s synthetic years\n",
-              format(x$n_sim, big.mark = ",", scientific = FALSE, trim = TRUE)))
+  sim_label <- if (is.null(x$n_sim)) {
+    "inherit from hazard model output"
+  } else {
+    sprintf(
+      "%s synthetic years",
+      format(x$n_sim, big.mark = ",", scientific = FALSE, trim = TRUE)
+    )
+  }
+  cat(sprintf("  Simulation    : %s\n", sim_label))
   cat(sprintf("  Return periods: %s yr\n", paste(x$return_periods, collapse = ", ")))
   cat(sprintf("  Conf. level   : %.0f%%\n", (x$conf_level %||% 0.90) * 100))
   cat(sprintf("  Seed          : %d\n", x$seed))
@@ -159,6 +169,36 @@ print.validation_cfg <- function(x, ...) {
   cat(sprintf("  GEV xi bounds : [%.2f, %.2f]\n",
               x$advanced$xi_bounds[1], x$advanced$xi_bounds[2]))
   invisible(x)
+}
+
+#' Resolve validation simulation length with inheritance
+#' @keywords internal
+.resolve_validation_n_sim <- function(cfg, out) {
+  if (!is.null(cfg$n_sim)) {
+    n_sim <- as.integer(cfg$n_sim)
+    source <- "validation_cfg$n_sim"
+  } else {
+    out_config <- out$config %||% out$cfg
+    if (is.null(out_config)) {
+      stop(
+        "Validation n_sim is NULL and model output does not contain out$config or out$cfg.",
+        call. = FALSE
+      )
+    }
+    n_sim <- out_config$n_sim %||% out_config$n_sim_years
+    if (is.null(n_sim)) {
+      stop(
+        "Validation n_sim is NULL and model output config does not contain n_sim or n_sim_years.",
+        call. = FALSE
+      )
+    }
+    n_sim <- as.integer(n_sim)
+    source <- if (!is.null(out_config$n_sim)) "model output config$n_sim" else "model output config$n_sim_years"
+  }
+  if (!is.finite(n_sim) || length(n_sim) != 1L || n_sim < 100L) {
+    stop("Effective n_sim must be a single integer >= 100.", call. = FALSE)
+  }
+  list(n_sim = n_sim, source = source)
 }
 
 
@@ -763,7 +803,7 @@ bootstrap_return_level_ci <- function(annual_max,
                                n_sim = 5000,
                                return_periods = c(5, 10, 25, 50),
                                conf_level = 0.90,
-                               severities = c("TS", "HUR"),
+                               storm_classes = c("TS", "HUR"),
                                seed = 42,
                                sst_df = NULL,
                                beta_sst = 0,
@@ -773,9 +813,10 @@ bootstrap_return_level_ci <- function(annual_max,
                                n_boot = 500) {
 
   set.seed(seed)
+  storm_classes <- .normalize_storm_classes(storm_classes = storm_classes)
 
   ev <- events_island |>
-    dplyr::filter(.data$storm_class %in% c(severities, "none"),
+    dplyr::filter(.data$storm_class %in% c(storm_classes, "none"),
                   is.finite(.data$peak_wind_kt))
 
   # Tier 1A alignment with Tier 1B "modern TS+ annual-max" regime:
@@ -799,7 +840,7 @@ bootstrap_return_level_ci <- function(annual_max,
 
   # TS+ events for observed annual-max construction (years with no TS+ -> 0 via join below)
   ev_tsplus <- ev |>
-    dplyr::filter(.data$storm_class %in% severities)
+    dplyr::filter(.data$storm_class %in% storm_classes)
 
   min_train_years <- 10L
   min_holdout_years <- 3L
@@ -854,7 +895,7 @@ bootstrap_return_level_ci <- function(annual_max,
   ev_train <- events_island |>
     dplyr::filter(.data$year %in% train_years)
 
-  ac_train <- compute_annual_counts(ev_train, severities = severities)
+  ac_train <- compute_annual_counts(ev_train, storm_classes = storm_classes)
   lt_train <- compute_lambda_table(ac_train)
   rate_check_train <- .build_rate_check_table(list(
     rates = lt_train |>
@@ -1167,13 +1208,13 @@ bootstrap_return_level_ci <- function(annual_max,
 get_reference_rates <- function() {
   tibble::tribble(
     ~region,            ~storm_class,    ~lambda_ref, ~source,                           ~gate_approx_nm, ~period,
-    "Leeward_Islands",  "TS34plus",   2.0,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
+    "Leeward_Islands",  "TS",   2.0,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
     "Leeward_Islands",  "HUR",  0.55,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
-    "St_Martin",        "TS34plus",   1.2,         "NOAA TC Climo (65nm, 1970-2023)", 65,              "1970-2023",
+    "St_Martin",        "TS",   1.2,         "NOAA TC Climo (65nm, 1970-2023)", 65,              "1970-2023",
     "St_Martin",        "HUR",  0.40,        "NOAA TC Climo (65nm, 1970-2023)", 65,              "1970-2023",
-    "Puerto_Rico",      "TS34plus",   1.8,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
+    "Puerto_Rico",      "TS",   1.8,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
     "Puerto_Rico",      "HUR",  0.45,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
-    "Miami",            "TS34plus",   1.5,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
+    "Miami",            "TS",   1.5,         "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020",
     "Miami",            "HUR",  0.35,        "NHC Climo (100nm, 1970-2020)",    100,             "1970-2020"
   )
 }
@@ -1219,10 +1260,6 @@ get_reference_rates <- function() {
   if (!("TS" %in% names(model_rates2))) model_rates2$TS <- 0
   if (!("HUR" %in% names(model_rates2))) model_rates2$HUR <- 0
 
-  model_rates2 <- model_rates2 |>
-    dplyr::mutate(TS34plus = TS + HUR) |>
-    tidyr::pivot_longer(c("TS34plus", "HUR"), names_to = "storm_class", values_to = "lambda_model_raw")
-
   island_to_region <- tibble::tribble(
     ~location,        ~region,
     "St_Martin",      "St_Martin",
@@ -1232,17 +1269,69 @@ get_reference_rates <- function() {
     "Miami",          "Miami"
   )
 
+  ref_wide <- ref_rates |>
+    dplyr::mutate(storm_class = as.character(.data$storm_class)) |>
+    tidyr::pivot_wider(
+      names_from = storm_class,
+      values_from = c(lambda_ref, source, gate_approx_nm, period),
+      names_sep = "__"
+    )
+
   comp_base <- model_rates2 |>
     dplyr::left_join(island_to_region, by = "location") |>
-    dplyr::left_join(ref_rates, by = c("region", "storm_class")) |>
+    dplyr::left_join(ref_wide, by = "region") |>
     dplyr::mutate(
-      expected_ratio = dplyr::case_when(
-        .data$storm_class == "TS34plus" & .data$gate_approx_nm >= 100 ~ 0.55,
-        .data$storm_class == "TS34plus" & .data$gate_approx_nm < 100  ~ 0.75,
-        .data$storm_class == "HUR" & .data$gate_approx_nm >= 100 ~ 0.30,
-        .data$storm_class == "HUR" & .data$gate_approx_nm < 100  ~ 0.45,
-        TRUE ~ 0.50
+      expected_ratio_total = dplyr::if_else(.data$gate_approx_nm__TS >= 100, 0.55, 0.75),
+      expected_ratio_hur = dplyr::if_else(.data$gate_approx_nm__HUR >= 100, 0.30, 0.45),
+      lambda_ref_ts = pmax(.data$lambda_ref__TS - .data$lambda_ref__HUR, 0),
+      lambda_target_total = .data$lambda_ref__TS * .data$expected_ratio_total,
+      lambda_target_hur = .data$lambda_ref__HUR * .data$expected_ratio_hur,
+      lambda_target_ts = pmax(.data$lambda_target_total - .data$lambda_target_hur, 0),
+      expected_ratio_ts = dplyr::if_else(
+        is.finite(.data$lambda_ref_ts) & .data$lambda_ref_ts > 0,
+        .data$lambda_target_ts / .data$lambda_ref_ts,
+        .data$expected_ratio_total
       )
+    ) |>
+    dplyr::transmute(
+      location = .data$location,
+      region = .data$region,
+      storm_class = "TS",
+      lambda_model_raw = .data$TS,
+      lambda_model_total_raw = .data$TS + .data$HUR,
+      lambda_ref = .data$lambda_ref_ts,
+      lambda_ref_total = .data$lambda_ref__TS,
+      lambda_target_total = .data$lambda_target_total,
+      source = .data$source__TS,
+      gate_approx_nm = .data$gate_approx_nm__TS,
+      period = .data$period__TS,
+      expected_ratio = .data$expected_ratio_ts,
+      expected_ratio_total = .data$expected_ratio_total,
+      n_years_model = .data$n_years_model
+    ) |>
+    dplyr::bind_rows(
+      model_rates2 |>
+        dplyr::left_join(island_to_region, by = "location") |>
+        dplyr::left_join(ref_wide, by = "region") |>
+        dplyr::mutate(
+          expected_ratio = dplyr::if_else(.data$gate_approx_nm__HUR >= 100, 0.30, 0.45)
+        ) |>
+        dplyr::transmute(
+          location = .data$location,
+          region = .data$region,
+          storm_class = "HUR",
+          lambda_model_raw = .data$HUR,
+          lambda_model_total_raw = .data$TS + .data$HUR,
+          lambda_ref = .data$lambda_ref__HUR,
+          lambda_ref_total = .data$lambda_ref__TS,
+          lambda_target_total = .data$lambda_ref__TS * dplyr::if_else(.data$gate_approx_nm__TS >= 100, 0.55, 0.75),
+          source = .data$source__HUR,
+          gate_approx_nm = .data$gate_approx_nm__HUR,
+          period = .data$period__HUR,
+          expected_ratio = .data$expected_ratio,
+          expected_ratio_total = dplyr::if_else(.data$gate_approx_nm__TS >= 100, 0.55, 0.75),
+          n_years_model = .data$n_years_model
+        )
     )
 
   lambda_scalers <- out$lambda_scalers
@@ -1254,9 +1343,11 @@ get_reference_rates <- function() {
     dplyr::left_join(
       dplyr::select(
         tibble::as_tibble(lambda_scalers),
-        "location", "storm_class", "lambda_scaling_mode",
-        "lambda_target", "lambda_scale", "lambda_adj",
-        "scale_status", "scale_clamped"
+        dplyr::any_of(c(
+          "location", "storm_class", "lambda_scaling_mode",
+          "lambda_target", "lambda_scale", "lambda_adj",
+          "scale_status", "scale_clamped"
+        ))
       ),
       by = c("location", "storm_class")
     ) |>
@@ -1589,7 +1680,7 @@ validate_wind_field <- function(out, obs_table = NULL) {
     idx <- idx + 1L
     rows[[idx]] <- tibble::tibble(
       location = loc,
-      storm_class = "TS34plus",
+      storm_class = "TS",
       delta_top1_p50 = .safe_quantile_scalar(sim_top, 0.50) - .safe_quantile_scalar(obs_top, 0.50),
       delta_overall_p99 = sim_p99 - obs_p99
     )
@@ -1660,8 +1751,9 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     stop("cfg must be created by make_validation_cfg().", call. = FALSE)
   }
 
+  n_sim_info <- .resolve_validation_n_sim(cfg = cfg, out = out)
   holdout_years  <- cfg$holdout_years
-  n_sim          <- cfg$n_sim
+  n_sim          <- n_sim_info$n_sim
   return_periods <- cfg$return_periods
   conf_level     <- cfg$conf_level %||% 0.90
   seed           <- cfg$seed
@@ -1674,9 +1766,10 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 
   # â”€â”€ Header â”€â”€
   .val_header("HAZARD MODEL VALIDATION SUITE")
-  message(sprintf("  CI: %s | Holdout: %d yr | Sim: %s yr",
+  message(sprintf("  CI: %s | Holdout: %d yr | Sim: %s yr (%s)",
                   ci_pct, holdout_years,
-                  format(n_sim, big.mark = ",", scientific = FALSE, trim = TRUE)))
+                  format(n_sim, big.mark = ",", scientific = FALSE, trim = TRUE),
+                  n_sim_info$source))
   .val_header_close()
 
   # --- Extract climate info ---
@@ -1955,10 +2048,11 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #' @param validation_cfg A `validation_cfg` object from
 #'   `make_validation_cfg()`. Controls holdout period, simulation size,
 #'   return periods, confidence level, and output paths. Default uses 90%
-#'   CI with 10-year holdout and 5000 synthetic years.
-#' @param severities Character vector of storm classes to include
+#'   CI with 10-year holdout and inherited synthetic years from the hazard model output.
+#' @param storm_classes Character vector of storm classes to include
 #'   (default: `c("TS", "HUR")`). Must match IBTrACS classification codes.
 #'   Use `"HUR"` alone for hurricane-only analysis.
+#' @param severities Deprecated alias for `storm_classes`.
 #' @param sst_cfg Optional `sst_cfg` object from `make_sst_cfg()` for
 #'   SST-conditioned rate scaling (climate Level 1). When `NULL`, SST
 #'   conditioning is disabled.
@@ -1990,7 +2084,7 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #' )
 #'
 #' result <- validate_hazard_model(
-#'   cfg     = make_hazard_cfg(basin = "NA", year_range = c(1980, 2023)),
+#'   cfg     = make_hazard_cfg(n_sim = 2000),
 #'   targets = targets_df
 #' )
 #'
@@ -2001,7 +2095,7 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #'
 #' # --- Stricter validation with 95% CI ---
 #' result_95 <- validate_hazard_model(
-#'   cfg            = make_hazard_cfg(basin = "NA"),
+#'   cfg            = make_hazard_cfg(n_sim = 4000),
 #'   targets        = targets_df,
 #'   validation_cfg = make_validation_cfg(
 #'     conf_level     = 0.95,
@@ -2012,23 +2106,29 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #'
 #' # --- With SST conditioning ---
 #' result_sst <- validate_hazard_model(
-#'   cfg     = make_hazard_cfg(basin = "NA"),
+#'   cfg     = make_hazard_cfg(),
 #'   targets = targets_df,
 #'   sst_cfg = make_sst_cfg()
 #' )
 validate_hazard_model <- function(cfg,
                                   targets,
                                   validation_cfg = make_validation_cfg(),
-                                  severities = c("TS", "HUR"),
+                                  storm_classes = c("TS", "HUR"),
+                                  severities = NULL,
                                   sst_cfg = NULL) {
   if (!inherits(validation_cfg, "validation_cfg")) {
     stop("validation_cfg must be created by make_validation_cfg().", call. = FALSE)
   }
+  storm_classes <- .normalize_storm_classes(
+    storm_classes = storm_classes,
+    severities = severities,
+    warn_legacy = !is.null(severities)
+  )
 
   out <- run_hazard_model(
     cfg = cfg,
     targets = targets,
-    severities = severities,
+    storm_classes = storm_classes,
     sst_cfg = sst_cfg
   )
 

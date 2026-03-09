@@ -8,7 +8,8 @@ run_hazard_model(
   cfg,
   targets,
   per_target_cfg = list(),
-  severities = c("TS", "HUR"),
+  storm_classes = c("TS", "HUR"),
+  severities = NULL,
   sst_cfg = NULL,
   verbose = TRUE
 )
@@ -20,7 +21,9 @@ run_hazard_model(
 
 \item{per_target_cfg}{Named list of per-target options (currently unused).}
 
-\item{severities}{Character vector of storm classes to model (default TS and HUR).}
+\item{storm_classes}{Character vector of storm classes to model (default TS and HUR).}
+
+\item{severities}{Deprecated alias for \code{storm_classes}.}
 
 \item{sst_cfg}{Optional SST configuration from \code{make_sst_cfg()}. When provided
 and enabled, the annual count simulation uses SST-conditioned rate scaling.}
@@ -30,7 +33,7 @@ and enabled, the annual count simulation uses SST-conditioned rate scaling.}
 \value{
 A list with elements:
 \code{sim}, \code{events}, \code{trackpoints}, \code{rates}, \code{fit},
-and \code{cfg}.
+and \code{cfg}. The same configuration is also returned in \code{config}.
 }
 \description{
 End-to-end workflow:
