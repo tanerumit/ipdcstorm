@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_validation.R
 \name{validate_hazard_model}
 \alias{validate_hazard_model}
-\title{Validate the hazard model end-to-end}
+\title{Run hazard model and validate in one step}
 \usage{
 validate_hazard_model(
   cfg,
@@ -13,20 +13,97 @@ validate_hazard_model(
 )
 }
 \arguments{
-\item{cfg}{Hazard configuration from \code{make_hazard_cfg()}.}
+\item{cfg}{A \code{hazard_cfg} object from \code{make_hazard_cfg()}. Controls
+basin, year range, search radius, and core model parameters.}
 
-\item{targets}{Target locations tibble/data.frame.}
+\item{targets}{Data frame of target locations with columns:
+\itemize{
+\item \code{location} (character): Site name (e.g., "Saba")
+\item \code{lat} / \code{lon} (numeric): Coordinates in decimal degrees
+\item \code{search_radius_km} (numeric): Radius for storm proximity filtering
+}}
 
-\item{validation_cfg}{Validation configuration from \code{make_validation_cfg()}.}
+\item{validation_cfg}{A \code{validation_cfg} object from
+\code{make_validation_cfg()}. Controls holdout period, simulation size,
+return periods, confidence level, and output options. Default uses 90\%
+CI with 10-year holdout and 5000 synthetic years.}
 
-\item{severities}{Character vector of storm classes to simulate.}
+\item{severities}{Character vector of storm classes to include
+(default: \code{c("TS", "HUR")}). Must match IBTrACS classification codes.
+Use \code{"HUR"} alone for hurricane-only analysis.}
 
-\item{sst_cfg}{Optional SST configuration from \code{make_sst_cfg()}.}
+\item{sst_cfg}{Optional \code{sst_cfg} object from \code{make_sst_cfg()} for
+SST-conditioned rate scaling (climate Level 1). When \code{NULL}, SST
+conditioning is disabled.}
 }
 \value{
-A list with elements \code{out}, \code{val}, and \code{artifacts} (saved paths).
+A list with three elements:
+\describe{
+\item{\code{out}}{Full hazard model output from \code{run_hazard_model()},
+containing \code{events}, \code{fit}, \code{annual_max}, and \code{config} components.}
+\item{\code{val}}{Validation results from \code{run_validation_suite()}:
+- \code{hindcast}: Per-island return level comparison table with CI
+membership flags. Access via \code{val$hindcast$comparison}.
+- \code{rate_check}: Rate sanity check results with OK/FLAG status.
+- \code{wind_field}: Wind field spot-check results with bias estimates.
+- \code{summary}: Tibble with pass/total/pct per validation tier.}
+\item{\code{artifacts}}{Named list of saved file paths:
+- \code{plots}: Named character vector of PNG paths.
+- \code{tables}: Named character vector of CSV/MD paths.}
+}
 }
 \description{
-Convenience wrapper that runs the hazard model, executes the validation suite,
-and saves all standard figures and tables to the configured directory.
+End-to-end convenience wrapper: runs \code{run_hazard_model()} then
+\code{run_validation_suite()}. This is the recommended entry point for
+standard validation workflows.
+
+The validation uses a three-tier framework:
+\itemize{
+\item \strong{Tier 1 (Hindcast)}: Hold out the last N years of the historical
+record, simulate synthetic annual maxima from the training period, and
+compare return levels. The simulated return level should fall within the
+observed return level's confidence interval (computed via delta-method
+or parametric bootstrap of the hurdle-GEV model).
+\item \strong{Tier 2 (Rate check)}: Compare model storm rates (lambda) against
+published HURDAT2/IBTrACS climatologies for the target region.
+\item \strong{Tier 3 (Wind field)}: Spot-check site-level winds from the Holland
+wind profile model against historical station observations.
+}
+}
+\examples{
+# --- Basic validation with defaults (90\% CI) ---
+targets_df <- data.frame(
+  location         = c("Saba", "St. Eustatius", "St. Martin"),
+  lat              = c(17.63, 17.49, 18.04),
+  lon              = c(-63.23, -62.97, -63.07),
+  search_radius_km = c(200, 200, 200)
+)
+
+result <- validate_hazard_model(
+  cfg     = make_hazard_cfg(basin = "NA", year_range = c(1980, 2023)),
+  targets = targets_df
+)
+
+# Inspect results
+result$val$summary                # Pass/fail scorecard
+result$val$hindcast$comparison    # Detailed return-level table
+result$artifacts$plots            # Paths to saved figures
+
+# --- Stricter validation with 95\% CI ---
+result_95 <- validate_hazard_model(
+  cfg            = make_hazard_cfg(basin = "NA"),
+  targets        = targets_df,
+  validation_cfg = make_validation_cfg(
+    conf_level     = 0.95,
+    n_sim          = 10000,
+    return_periods = c(10, 25, 50, 100)
+  )
+)
+
+# --- With SST conditioning ---
+result_sst <- validate_hazard_model(
+  cfg     = make_hazard_cfg(basin = "NA"),
+  targets = targets_df,
+  sst_cfg = make_sst_cfg()
+)
 }

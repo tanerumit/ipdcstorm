@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_validation.R
 \name{run_validation_suite}
 \alias{run_validation_suite}
-\title{Run the full validation suite}
+\title{RUN VALIDATION SUITE}
 \usage{
 run_validation_suite(out, cfg = make_validation_cfg())
 }
@@ -17,7 +17,5 @@ List with elements: \code{hindcast}, \code{rate_check}, \code{wind_field}, \code
 and \code{artifacts} (paths of saved plots/tables, if any).
 }
 \description{
-Executes all three validation tiers (hindcast, rate check, wind field),
-produces a consolidated diagnostic report, and optionally saves all plots
-and tables to the configured output directory.
+RUN VALIDATION SUITE
 }

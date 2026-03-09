@@ -186,18 +186,29 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
 # A finite, positive `R34_km` supplied by the caller is treated as an observed
 # track-point radius. When `.estimate_site_wind_holland()` has to infill a
 # missing/non-positive R34 via `estimate_R34_climo()`, it marks that row as a
-# fallback radius and uses the looser 1.8x multiplier instead.
+# fallback radius and uses the climo-specific multiplier.
+.holland_outer_cutoff_multipliers <- function() {
+  list(
+    observed = 1.5,
+    climo = 1.5
+  )
+}
+
 .resolve_holland_outer_cutoff_km <- function(R34_km, R34_is_fallback = FALSE) {
+  mult_cfg <- .holland_outer_cutoff_multipliers()
   n <- length(R34_km)
   R_outer_km <- rep(300, n)
   R34_is_fallback <- rep_len(R34_is_fallback, n)
   has_R34 <- is.finite(R34_km) & (R34_km > 0)
 
   if (any(has_R34)) {
-    mult <- rep(1.5, sum(has_R34))
-    mult[R34_is_fallback[has_R34]] <- 1.8
+    mult <- rep(mult_cfg$observed, sum(has_R34))
+    mult[R34_is_fallback[has_R34]] <- mult_cfg$climo
     R_outer_km[has_R34] <- mult * R34_km[has_R34]
   }
+
+  R_outer_km[!is.finite(R_outer_km)] <- 300
+  R_outer_km <- pmax(0, R_outer_km)
 
   R_outer_km
 }
@@ -511,12 +522,11 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
 
       # Blend if climatological R34: reduce calibration weight since
       # climo R34 tends to overestimate (represents mean, not storm-specific
-      # structure). Reduced from 0.7 to 0.5 based on validation showing
-      # systematic overprediction for pre-2004 storms lacking radii data.
+      # structure). Reduced from 0.5 to 0.3 for tighter tail geometry.
       is_climo_u <- R34_is_climo[use][can_cal]
       blend <- is_climo_u & good
       if (any(blend)) {
-        cal_factor[blend] <- 1 + 0.5 * (cal_factor[blend] - 1)
+        cal_factor[blend] <- 1 + 0.3 * (cal_factor[blend] - 1)
       }
 
       idx <- which(can_cal)
@@ -524,11 +534,8 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
     }
   }
 
-  # Outer cutoff â€” tightened to reduce wind exposure footprint
-  # Previous: 1.8Ã— observed, 2.4Ã— climo; typical R34~200km â†’ 360-480 km exposure
-  # New: 1.5Ã— observed, 1.8Ã— climo; â†’ 300-360 km, closer to NHC wind field extent
-  # Outer cutoff is deterministic: 1.5x for observed track-point R34, 1.8x for
-  # fallback/climatological R34 that this function had to infill above.
+  # Outer cutoff is deterministic and pathway-specific.
+  # Both observed and fallback/climatological pathways currently use 1.5x.
   R_outer <- .resolve_holland_outer_cutoff_km(
     R34_km = R34_eff[use],
     R34_is_fallback = R34_is_climo[use]

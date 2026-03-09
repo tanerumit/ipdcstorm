@@ -8,14 +8,14 @@ test_that("observed R34 uses a 1.5x Holland outer cutoff", {
   expect_equal(R_outer_km / R34_km, c(1.5, 1.5))
 })
 
-test_that("fallback R34 uses a 1.8x Holland outer cutoff", {
+test_that("fallback R34 uses a 1.5x Holland outer cutoff", {
   R34_km <- c(80, 120)
   R_outer_km <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_km,
     R34_is_fallback = TRUE
   )
 
-  expect_equal(R_outer_km / R34_km, c(1.8, 1.8))
+  expect_equal(R_outer_km / R34_km, c(1.5, 1.5))
 })
 
 test_that("observed R34 decays immediately beyond the 1.5x cutoff", {
@@ -48,7 +48,7 @@ test_that("observed R34 decays immediately beyond the 1.5x cutoff", {
   expect_equal(wind_with_decay, wind_no_decay * expected_decay, tolerance = 1e-10)
 })
 
-test_that("fallback R34 decays immediately beyond the 1.8x cutoff", {
+test_that("fallback R34 decays immediately beyond the 1.5x cutoff", {
   Vmax_kt <- 34
   RMW_km <- 200
   lat <- 25

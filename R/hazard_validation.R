@@ -40,6 +40,14 @@ if (!exists("%||%", mode = "function")) {
 #'   comparison (default: 5000).
 #' @param return_periods Numeric vector of return periods (years) to compare
 #'   (default: 5, 10, 25, 50).
+#' @param conf_level Numeric; confidence level for return-level CIs
+#'   (default: 0.90). Must be in `(0, 1)`. This controls the width of the
+#'   confidence interval around GEV-based return level estimates, computed
+#'   via the delta method or parametric bootstrap of the hurdle-GEV model.
+#'   Common choices: 0.90 (standard), 0.95 (stricter), 0.80 (exploratory).
+#'   **Note**: this quantifies estimation uncertainty in return levels given
+#'   the observed record length --- it is not a prediction interval for
+#'   future storm intensities.
 #' @param seed Integer; random seed for reproducibility.
 #' @param out_dir Character; output directory for saved plots and tables.
 #' @param save_plots Logical; whether to save standard validation figures.
@@ -73,6 +81,7 @@ if (!exists("%||%", mode = "function")) {
 make_validation_cfg <- function(holdout_years  = 10L,
                                 n_sim          = 5000L,
                                 return_periods = c(5, 10, 25, 50),
+                                conf_level     = 0.90,
                                 seed           = 42L,
                                 out_dir        = "output/validation",
                                 save_plots     = TRUE,
@@ -110,10 +119,21 @@ make_validation_cfg <- function(holdout_years  = 10L,
   if (length(return_periods) == 0) stop("return_periods must have at least one value.", call. = FALSE)
   if (any(return_periods <= 1)) stop("return_periods must all be > 1.", call. = FALSE)
 
+  conf_level <- as.numeric(conf_level)
+  if (length(conf_level) != 1 || !is.finite(conf_level) ||
+      conf_level <= 0 || conf_level >= 1) {
+    stop("conf_level must be a single number in (0, 1).", call. = FALSE)
+  }
+  if (conf_level < 0.50 || conf_level > 0.99) {
+    warning("conf_level = ", conf_level, " is outside the typical range [0.50, 0.99]. ",
+            "Are you sure?", call. = FALSE)
+  }
+
   cfg <- list(
     holdout_years  = holdout_years,
     n_sim          = n_sim,
     return_periods = return_periods,
+    conf_level     = conf_level,
     seed           = seed,
     out_dir        = as.character(out_dir),
     save_plots     = isTRUE(save_plots),
@@ -137,6 +157,7 @@ print.validation_cfg <- function(x, ...) {
   cat(sprintf("  Simulation    : %s synthetic years\n",
               format(x$n_sim, big.mark = ",", scientific = FALSE, trim = TRUE)))
   cat(sprintf("  Return periods: %s yr\n", paste(x$return_periods, collapse = ", ")))
+  cat(sprintf("  Conf. level   : %.0f%%\n", (x$conf_level %||% 0.90) * 100))
   cat(sprintf("  Seed          : %d\n", x$seed))
   cat(sprintf("  Output dir    : %s\n", x$out_dir))
   cat(sprintf("  Output level  : %s\n", output_level))
@@ -523,13 +544,17 @@ compute_return_levels_gev <- function(annual_max,
 #' @param return_periods Numeric vector of return periods.
 #' @param n_boot Integer; number of bootstrap replicates.
 #' @param xi_bounds Bounds on GEV shape.
+#' @param conf_level Numeric; confidence level for CIs (default: 0.90).
 #'
-#' @return Tibble with return_period, median, lo_90, hi_90, lo_50, hi_50.
+#' @return Tibble with columns: `return_period`, `sim_median`, `sim_ci_lo`,
+#'   `sim_ci_hi`, `sim_lo_50`, `sim_hi_50`. The `ci_lo`/`ci_hi` columns
+#'   correspond to the specified `conf_level`.
 #' @export
 bootstrap_return_level_ci <- function(annual_max,
                                       return_periods = c(5, 10, 25, 50),
                                       n_boot = 500,
-                                      xi_bounds = c(-0.3, 0.4)) {
+                                      xi_bounds = c(-0.3, 0.4),
+                                      conf_level = 0.90) {
 
   n <- length(annual_max)
   boot_rl <- matrix(NA_real_, nrow = n_boot, ncol = length(return_periods))
@@ -545,11 +570,12 @@ bootstrap_return_level_ci <- function(annual_max,
     boot_rl[b, ] <- res
   }
 
+  alpha <- (1 - conf_level) / 2
   tibble::tibble(
     return_period = return_periods,
     sim_median = apply(boot_rl, 2, stats::median, na.rm = TRUE),
-    sim_lo_90  = apply(boot_rl, 2, stats::quantile, probs = 0.05, na.rm = TRUE),
-    sim_hi_90  = apply(boot_rl, 2, stats::quantile, probs = 0.95, na.rm = TRUE),
+    sim_ci_lo  = apply(boot_rl, 2, stats::quantile, probs = alpha, na.rm = TRUE),
+    sim_ci_hi  = apply(boot_rl, 2, stats::quantile, probs = 1 - alpha, na.rm = TRUE),
     sim_lo_50  = apply(boot_rl, 2, stats::quantile, probs = 0.25, na.rm = TRUE),
     sim_hi_50  = apply(boot_rl, 2, stats::quantile, probs = 0.75, na.rm = TRUE)
   )
@@ -609,8 +635,8 @@ bootstrap_return_level_ci <- function(annual_max,
   out <- tibble::tibble(
     return_period = return_periods,
     sim_median = as.numeric(base_fit$return_levels),
-    sim_lo_90 = NA_real_,
-    sim_hi_90 = NA_real_,
+    sim_ci_lo = NA_real_,
+    sim_ci_hi = NA_real_,
     sim_lo_50 = NA_real_,
     sim_hi_50 = NA_real_,
     ci_method = "unavailable"
@@ -682,11 +708,11 @@ bootstrap_return_level_ci <- function(annual_max,
       if (is.finite(lo) && is.finite(hi)) {
         lo <- max(0, min(185, lo))
         hi <- max(0, min(185, hi))
-        out$sim_lo_90[i] <- min(lo, hi)
-        out$sim_hi_90[i] <- max(lo, hi)
+        out$sim_ci_lo[i] <- min(lo, hi)
+        out$sim_ci_hi[i] <- max(lo, hi)
       }
     }
-    if (all(is.finite(out$sim_lo_90) & is.finite(out$sim_hi_90))) {
+    if (all(is.finite(out$sim_ci_lo) & is.finite(out$sim_ci_hi))) {
       out$ci_method <- "delta"
       delta_ok <- TRUE
     }
@@ -717,14 +743,15 @@ bootstrap_return_level_ci <- function(annual_max,
     rlj <- boot_rl[, j]
     ok <- is.finite(rlj)
     if (sum(ok) < max(30L, ceiling(0.25 * n_boot))) next
-    qq <- stats::quantile(rlj[ok], probs = c(0.05, 0.25, 0.5, 0.75, 0.95), na.rm = TRUE, names = FALSE, type = 7)
-    out$sim_lo_90[j] <- max(0, min(185, qq[1]))
-    out$sim_hi_90[j] <- max(0, min(185, qq[5]))
+    alpha_fb <- (1 - conf_level) / 2
+    qq <- stats::quantile(rlj[ok], probs = c(alpha_fb, 0.25, 0.5, 0.75, 1 - alpha_fb), na.rm = TRUE, names = FALSE, type = 7)
+    out$sim_ci_lo[j] <- max(0, min(185, qq[1]))
+    out$sim_ci_hi[j] <- max(0, min(185, qq[5]))
     out$sim_lo_50[j] <- max(0, min(185, qq[2]))
     out$sim_median[j] <- max(0, min(185, qq[3]))
     out$sim_hi_50[j] <- max(0, min(185, qq[4]))
   }
-  if (all(is.finite(out$sim_lo_90) & is.finite(out$sim_hi_90))) {
+  if (all(is.finite(out$sim_ci_lo) & is.finite(out$sim_ci_hi))) {
     out$ci_method <- "bootstrap"
   }
   out
@@ -742,6 +769,7 @@ bootstrap_return_level_ci <- function(annual_max,
                                holdout_years = 10,
                                n_sim = 5000,
                                return_periods = c(5, 10, 25, 50),
+                               conf_level = 0.90,
                                severities = c("TS", "HUR"),
                                seed = 42,
                                sst_df = NULL,
@@ -975,7 +1003,7 @@ bootstrap_return_level_ci <- function(annual_max,
     annual_max = obs_full_max,
     return_periods = return_periods,
     xi_bounds = xi_bounds,
-    conf_level = 0.90,
+    conf_level = conf_level,
     n_boot_fallback = if (isTRUE(as.integer(n_boot) > 0L)) n_boot else 300L,
     min_n_pos_ci = 10L,
     seed = seed + 1000L
@@ -986,14 +1014,15 @@ bootstrap_return_level_ci <- function(annual_max,
     sim_rl_ci <- bootstrap_return_level_ci(
       sim_annual_max, return_periods,
       n_boot = min(200L, n_boot),
-      xi_bounds = xi_bounds
+      xi_bounds = xi_bounds,
+      conf_level = conf_level
     )
   } else {
     sim_rl_ci <- tibble::tibble(
       return_period = return_periods,
       sim_median = sim_rl,
-      sim_lo_90 = NA_real_,
-      sim_hi_90 = NA_real_,
+      sim_ci_lo = NA_real_,
+      sim_ci_hi = NA_real_,
       sim_lo_50 = NA_real_,
       sim_hi_50 = NA_real_
     )
@@ -1015,28 +1044,29 @@ bootstrap_return_level_ci <- function(annual_max,
     obs_test_rl = obs_test_rl,
     sim_rl = sim_rl,
     sim_median = sim_rl_ci$sim_median,
-    sim_lo_90 = sim_rl_ci$sim_lo_90,
-    sim_hi_90 = sim_rl_ci$sim_hi_90,
-    obs_lo_90 = obs_rl_ci$sim_lo_90,
-    obs_hi_90 = obs_rl_ci$sim_hi_90,
+    sim_ci_lo = sim_rl_ci$sim_ci_lo,
+    sim_ci_hi = sim_rl_ci$sim_ci_hi,
+    obs_ci_lo = obs_rl_ci$sim_ci_lo,
+    obs_ci_hi = obs_rl_ci$sim_ci_hi,
     obs_ci_method = obs_rl_ci$ci_method,
-    obs_in_90ci = dplyr::if_else(
-      is.finite(obs_rl_ci$sim_lo_90) & is.finite(obs_rl_ci$sim_hi_90),
-      sim_rl >= obs_rl_ci$sim_lo_90 & sim_rl <= obs_rl_ci$sim_hi_90,
+    obs_in_ci = dplyr::if_else(
+      is.finite(obs_rl_ci$sim_ci_lo) & is.finite(obs_rl_ci$sim_ci_hi),
+      sim_rl >= obs_rl_ci$sim_ci_lo & sim_rl <= obs_rl_ci$sim_ci_hi,
       NA
     ),
-    model_in_obs_90ci = dplyr::if_else(
-      is.finite(obs_rl_ci$sim_lo_90) & is.finite(obs_rl_ci$sim_hi_90),
-      sim_rl >= obs_rl_ci$sim_lo_90 & sim_rl <= obs_rl_ci$sim_hi_90,
+    model_in_obs_ci = dplyr::if_else(
+      is.finite(obs_rl_ci$sim_ci_lo) & is.finite(obs_rl_ci$sim_ci_hi),
+      sim_rl >= obs_rl_ci$sim_ci_lo & sim_rl <= obs_rl_ci$sim_ci_hi,
       NA
     ),
-    obs_in_model_90ci = dplyr::if_else(
-      is.finite(sim_rl_ci$sim_lo_90) & is.finite(sim_rl_ci$sim_hi_90),
-      obs_full_rl >= sim_rl_ci$sim_lo_90 & obs_full_rl <= sim_rl_ci$sim_hi_90,
+    obs_in_model_ci = dplyr::if_else(
+      is.finite(sim_rl_ci$sim_ci_lo) & is.finite(sim_rl_ci$sim_ci_hi),
+      obs_full_rl >= sim_rl_ci$sim_ci_lo & obs_full_rl <= sim_rl_ci$sim_ci_hi,
       NA
     ),
     bias_pct = 100 * (sim_rl - obs_full_rl) / pmax(obs_full_rl, 1)
   )
+  attr(comparison, "conf_level") <- conf_level
 
   list(
     location = location,
@@ -1071,6 +1101,7 @@ bootstrap_return_level_ci <- function(annual_max,
                                    holdout_years = 10,
                                    n_sim = 5000,
                                    return_periods = c(5, 10, 25, 50),
+                                   conf_level = 0.90,
                                    seed = 42,
                                    sst_df = NULL,
                                    beta_sst = 0,
@@ -1098,6 +1129,7 @@ bootstrap_return_level_ci <- function(annual_max,
         holdout_years = holdout_years,
         n_sim = n_sim,
         return_periods = return_periods,
+        conf_level = conf_level,
         seed = seed,
         sst_df = sst_df,
         beta_sst = beta_sst,
@@ -1337,43 +1369,60 @@ validate_rates <- function(out, ref_rates = NULL) {
 #'
 #' @description
 #' Returns a tibble of known station/buoy observations during well-documented storms
-#' for comparison against model-estimated site wind.
+#' for comparison against model-estimated site wind. Each observation includes a
+#' quality tier (`obs_quality`) that determines the acceptable bias threshold:
+#' - **A** (Direct): Station measurement, instrument survived (\eqn{\pm}15%).
+#' - **B** (Converted): 10-min reading with averaging-period conversion (\eqn{\pm}25%).
+#' - **C** (Estimated): NHC best-track or indirect estimate (\eqn{\pm}35%).
 #'
 #' @return Tibble with columns: storm_sid, storm_name, year, target_island,
-#'   station, obs_wind_kt, obs_type, obs_source, notes.
+#'   station, obs_wind_kt, obs_type, obs_quality, obs_source, notes.
 #' @export
 get_wind_observations <- function() {
   tibble::tribble(
     ~storm_sid,          ~storm_name, ~year, ~target_island, ~station,
-    ~obs_wind_kt, ~obs_type,       ~obs_source,               ~notes,
-
-    "2017242N16333",     "IRMA",    2017L, "St_Martin",     "Juliana_Airport_TNCM",
-    155,                 "1min_sust",     "NHC TCR (AL112017)",      "Instruments failed; 155 kt is NHC best-track Vmax at landfall",
+    ~obs_wind_kt, ~obs_type,       ~obs_quality, ~obs_source,               ~notes,
 
     "2017242N16333",     "IRMA",    2017L, "St_Martin",     "Meteo_France_SXM",
-    113,                 "10min_sust",    "Meteo France RSMC report", "Last valid reading before instrument failure; 10-min sustained",
+    113,                 "10min_sust",    "B",  "Meteo France RSMC report", "Last valid reading before instrument failure; 10-min sustained",
 
     "2014279N15323",     "GONZALO", 2014L, "St_Martin",     "Juliana_Airport_TNCM",
-    60,                  "1min_sust",     "NHC TCR (AL082014)",      "Marginal TS winds at SXM; storm passed ~50nm north",
+    60,                  "1min_sust",     "A",  "NHC TCR (AL082014)",      "Marginal TS winds at SXM; storm passed ~50nm north",
 
     "2017242N16333",     "IRMA",    2017L, "Saba",          "NHC_estimate",
-    80,                  "1min_sust",     "NHC TCR estimate",        "Estimated from best-track; Saba ~30nm from eye center",
+    80,                  "1min_sust",     "C",  "NHC TCR estimate",        "Estimated from best-track; Saba ~30nm from eye center",
 
     "2017255N12319",     "MARIA",   2017L, "St_Martin",     "Juliana_Airport_TNCM",
-    40,                  "1min_sust",     "NHC TCR (AL152017)",      "Maria passed ~100nm south; TS-force winds at SXM",
+    40,                  "1min_sust",     "A",  "NHC TCR (AL152017)",      "Maria passed ~100nm south; TS-force winds at SXM",
 
     "1989248N12343",     "HUGO",    1989L, "Puerto_Rico",   "Roosevelt_Roads_NAS",
-    104,                 "1min_sust",     "NHC TCR (AL081989)",      "Direct hit eastern PR",
+    104,                 "1min_sust",     "A",  "NHC TCR (AL081989)",      "Direct hit eastern PR",
 
     "1992216N10325",     "ANDREW",  1992L, "Miami",         "NHC_Miami_ASOS",
-    141,                 "1min_sust",     "NHC TCR (AL041992)",      "Before instrument failure at NHC",
+    141,                 "1min_sust",     "A",  "NHC TCR (AL041992)",      "Before instrument failure at NHC",
 
     "1999317N14290",     "LENNY",   1999L, "St_Martin",     "Juliana_Airport_TNCM",
-    55,                  "1min_sust",     "NHC TCR (AL171999)",      "Unusual west-to-east track; Cat 4 but passed south",
+    55,                  "1min_sust",     "A",  "NHC TCR (AL171999)",      "Unusual west-to-east track; Cat 4 but passed south",
 
     "1995241N12330",     "LUIS",    1995L, "St_Martin",     "Juliana_Airport_TNCM",
-    110,                 "1min_sust",     "NHC TCR (AL131995)",      "Cat 4 at closest approach to SXM; major damage"
+    110,                 "1min_sust",     "A",  "NHC TCR (AL131995)",      "Cat 4 at closest approach to SXM; major damage"
   )
+}
+
+
+#' Observation quality bias thresholds for wind field validation
+#'
+#' @description
+#' Returns acceptable absolute bias percentages per observation quality tier.
+#' Quality tiers reflect measurement uncertainty:
+#' - **A** (Direct): Station measurement, instrument survived. Threshold: 15%.
+#' - **B** (Converted): 10-min reading with averaging-period conversion. Threshold: 25%.
+#' - **C** (Estimated): NHC best-track or indirect estimate. Threshold: 35%.
+#'
+#' @return Named numeric vector: quality tier -> acceptable |bias| (%).
+#' @keywords internal
+.wf_quality_thresholds <- function() {
+  c(A = 15, B = 25, C = 35)
 }
 
 
@@ -1382,16 +1431,25 @@ get_wind_observations <- function() {
 #' @description
 #' For each reference observation, finds the matching storm in the model's trackpoint
 #' data, extracts the model's peak site wind for that storm at the target location,
-#' and compares against the observed wind.
+#' and compares against the observed wind. Each observation carries a quality tier
+#' (A/B/C) that determines the acceptable bias threshold.
 #'
 #' @param out List returned by `run_hazard_model()`.
 #' @param obs_table Optional tibble of observations (default: `get_wind_observations()`).
 #'
-#' @return Tibble with model vs observed comparison per storm-station pair.
+#' @return Tibble with model vs observed comparison per storm-station pair,
+#'   including `obs_quality`, `bias_threshold_pct`, and `bias_ok` columns.
 #' @export
 validate_wind_field <- function(out, obs_table = NULL) {
 
   if (is.null(obs_table)) obs_table <- get_wind_observations()
+
+  # Ensure obs_quality column exists (backward compat with user-supplied tables)
+  if (!"obs_quality" %in% names(obs_table)) {
+    obs_table$obs_quality <- "B"
+  }
+
+  quality_thresh <- .wf_quality_thresholds()
 
   # Conversion factor: 10-min to 1-min sustained (WMO standard)
   conv_10min_to_1min <- 1.12
@@ -1441,6 +1499,17 @@ validate_wind_field <- function(out, obs_table = NULL) {
 
     model_best <- if (is.finite(model_V)) model_V else model_V_track
 
+    # Quality-dependent threshold
+    q <- toupper(as.character(obs$obs_quality))
+    if (!q %in% names(quality_thresh)) q <- "B"
+    thresh <- as.numeric(quality_thresh[q])
+
+    bias_pct_val <- if (is.finite(model_best) && obs_1min_kt > 0) {
+      100 * (model_best - obs_1min_kt) / obs_1min_kt
+    } else {
+      NA_real_
+    }
+
     results[[i]] <- tibble::tibble(
       location = location,
       storm_name = obs$storm_name,
@@ -1449,14 +1518,16 @@ validate_wind_field <- function(out, obs_table = NULL) {
       station = obs$station,
       obs_raw_kt = obs$obs_wind_kt,
       obs_type = obs$obs_type,
+      obs_quality = q,
       obs_1min_equiv_kt = obs_1min_kt,
       model_V_site_kt = model_best,
       model_wind_max_kt = model_wind_max,
       min_dist_km = min_dist_km,
       storm_found = storm_found,
       bias_kt = if (is.finite(model_best)) model_best - obs_1min_kt else NA_real_,
-      bias_pct = if (is.finite(model_best) && obs_1min_kt > 0)
-        100 * (model_best - obs_1min_kt) / obs_1min_kt else NA_real_,
+      bias_pct = bias_pct_val,
+      bias_threshold_pct = thresh,
+      bias_ok = if (is.finite(bias_pct_val)) abs(bias_pct_val) <= thresh else NA,
       source = obs$obs_source,
       notes = obs$notes
     )
@@ -1476,10 +1547,11 @@ validate_wind_field <- function(out, obs_table = NULL) {
     message("  Storm-by-storm:")
     for (j in seq_len(nrow(valid))) {
       r <- valid[j, ]
-      sym <- if (abs(r$bias_pct) < 20) "\u2713" else if (abs(r$bias_pct) < 40) "~" else "\u2717"
-      message(sprintf("    %s %-8s @ %-12s: obs=%5.0f kt  model=%5.0f kt  bias=%+.0f kt (%+.0f%%)",
+      sym <- if (isTRUE(r$bias_ok)) "\u2713" else "\u2717"
+      message(sprintf("    %s %-8s @ %-12s: obs=%5.0f kt  model=%5.0f kt  bias=%+.0f kt (%+.0f%%)  [%s \u00b1%d%%]",
                       sym, r$storm_name, r$location, r$obs_1min_equiv_kt,
-                      r$model_V_site_kt, r$bias_kt, r$bias_pct))
+                      r$model_V_site_kt, r$bias_kt, r$bias_pct,
+                      r$obs_quality, r$bias_threshold_pct))
     }
   } else {
     message("[Wind Field Check] No matching storms found in model output.")
@@ -1575,6 +1647,7 @@ validate_wind_field <- function(out, obs_table = NULL) {
 
 # Compute per-site diagnostics for the A-D bias hypotheses.
 .diag_ad <- function(tmp, site_name, tmp_no_cal = NULL) {
+  mult_cfg <- .holland_outer_cutoff_multipliers()
   out <- tibble::tibble(
     site = site_name,
     delta_top1_p50 = NA_real_,
@@ -1592,6 +1665,8 @@ validate_wind_field <- function(out, obs_table = NULL) {
     boost_p90 = NA_real_,
     boost_p99 = NA_real_,
     frac_boost_gt10 = NA_real_,
+    cutoff_mult_observed = mult_cfg$observed,
+    cutoff_mult_climo = mult_cfg$climo,
     note_A = NA_character_,
     note_B = NA_character_,
     note_C = NA_character_,
@@ -1798,6 +1873,8 @@ validate_wind_field <- function(out, obs_table = NULL) {
         boost_p90 = NA_real_,
         boost_p99 = NA_real_,
         frac_boost_gt10 = NA_real_,
+        cutoff_mult_observed = .holland_outer_cutoff_multipliers()$observed,
+        cutoff_mult_climo = .holland_outer_cutoff_multipliers()$climo,
         note_A = paste0("compute failed: ", tmp$message),
         note_B = paste0("compute failed: ", tmp$message),
         note_C = paste0("compute failed: ", tmp$message),
@@ -1833,13 +1910,20 @@ validate_wind_field <- function(out, obs_table = NULL) {
 
     if (is.na(r$note_B)) {
       message(sprintf(
-        "    B) frac_beyond_all=%s; frac_beyond_top1=%s",
+        "    B) frac_beyond_all=%s; frac_beyond_top1=%s; mult_obs=%s; mult_climo=%s",
         .diag_fmt_num(r$frac_beyond_all, digits = 3),
-        .diag_fmt_num(r$frac_beyond_top1, digits = 3)
+        .diag_fmt_num(r$frac_beyond_top1, digits = 3),
+        .diag_fmt_num(r$cutoff_mult_observed, digits = 2),
+        .diag_fmt_num(r$cutoff_mult_climo, digits = 2)
       ))
       message(sprintf("       %s", r$interp_B))
     } else {
-      message(sprintf("    B) skipped: %s", r$note_B))
+      message(sprintf(
+        "    B) skipped: %s (mult_obs=%s; mult_climo=%s)",
+        r$note_B,
+        .diag_fmt_num(r$cutoff_mult_observed, digits = 2),
+        .diag_fmt_num(r$cutoff_mult_climo, digits = 2)
+      ))
     }
 
     if (is.na(r$note_C)) {
@@ -2303,6 +2387,41 @@ validate_wind_field <- function(out, obs_table = NULL) {
 #' produces a consolidated diagnostic report, and optionally saves all plots
 #' and tables to the configured output directory.
 #'
+# =============================================================================
+# CONSOLE FORMATTING HELPERS
+# =============================================================================
+
+.val_header <- function(title, width = 72) {
+  message(paste(rep("\u2550", width), collapse = ""))
+  message("  ", title)
+}
+
+.val_header_close <- function(width = 72) {
+  message(paste(rep("\u2550", width), collapse = ""))
+}
+
+.val_section <- function(title, width = 72) {
+  pad <- width - nchar(title) - 4
+  message("\n\u2500\u2500 ", title, " ", paste(rep("\u2500", max(1, pad)), collapse = ""))
+}
+
+.val_table_row <- function(..., widths = NULL) {
+  args <- list(...)
+  if (is.null(widths)) {
+    message("  ", paste(args, collapse = "  "))
+  } else {
+    parts <- mapply(function(a, w) {
+      formatC(a, width = w, flag = "-")
+    }, args, widths, SIMPLIFY = TRUE)
+    message("  ", paste(parts, collapse = " "))
+  }
+}
+
+.val_table_sep <- function(width = 68) {
+  message("  ", paste(rep("\u2500", width), collapse = ""))
+}
+
+#' RUN VALIDATION SUITE
 #' @param out List returned by `run_hazard_model()`.
 #' @param cfg Validation configuration from `make_validation_cfg()`. If `NULL`,
 #'   default configuration is used.
@@ -2315,10 +2434,11 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     stop("cfg must be created by make_validation_cfg().", call. = FALSE)
   }
 
-  output_level <- .validation_output_level(cfg)
+  output_level <- "full" #.validation_output_level(cfg)
   holdout_years  <- cfg$holdout_years
   n_sim          <- cfg$n_sim
   return_periods <- cfg$return_periods
+  conf_level     <- cfg$conf_level %||% 0.90
   seed           <- cfg$seed
   xi_bounds      <- cfg$advanced$xi_bounds
   n_boot         <- if (identical(output_level, "full")) cfg$advanced$n_boot else 0L
@@ -2326,74 +2446,131 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
   use_raw_rates  <- isTRUE(cfg$advanced$hindcast_use_raw_rates)
   out_dir        <- cfg$out_dir
 
-  message("=" |> rep(72) |> paste(collapse = ""))
-  message("  HAZARD MODEL VALIDATION SUITE")
-  message("  Output level: ", output_level)
-  message("=" |> rep(72) |> paste(collapse = ""))
+  ci_pct <- sprintf("%.0f%%", conf_level * 100)
 
-  # --- Extract climate info from model output (if available) ---
+  # ── Header ──
+  .val_header("HAZARD MODEL VALIDATION SUITE")
+  message(sprintf("  Mode: %s | CI: %s | Holdout: %d yr | Sim: %s yr",
+                  output_level, ci_pct, holdout_years,
+                  format(n_sim, big.mark = ",", scientific = FALSE, trim = TRUE)))
+  .val_header_close()
+
+  # ── Diagnostics A-D (full mode only) ──
+  if (identical(output_level, "full")) {
+    targets_diag <- out$targets
+    if (is.null(targets_diag)) targets_diag <- cfg$targets
+
+    if (is.null(targets_diag)) {
+      .val_section("DIAGNOSTICS A\u2013D")
+      message("  skipped: targets not available. Use validate_hazard_model().")
+    } else {
+      tryCatch(
+        .run_validation_diagnostics_ad(trackpoints = out$trackpoints, targets = targets_diag),
+        error = function(e) {
+          .val_section("DIAGNOSTICS A\u2013D")
+          message("  skipped: ", e$message)
+        }
+      )
+    }
+  }
+
+  # --- Extract climate info ---
   sst_df_val <- NULL
   beta_sst_val <- 0
   gamma_val <- 0
   if (!is.null(out$fit) && nrow(out$fit) > 0) {
     beta_sst_val <- out$fit$beta_sst[1]
     gamma_val <- out$fit$gamma_intensity[1]
-    message(sprintf("  [Climate] beta_SST=%.3f, gamma=%.4f", beta_sst_val, gamma_val))
   }
 
   tier1b_cv <- NULL
 
-  # --- Tier 1A: Hindcast ---
-  message("\n", "-" |> rep(72) |> paste(collapse = ""))
-  message("  TIER 1A: HINDCAST VALIDATION (single-split RL-in-CI; secondary)")
-  message("-" |> rep(72) |> paste(collapse = ""))
+  # ══════════════════════════════════════════════════════════════════════
+  # TIER 1A: HINDCAST
+  # ══════════════════════════════════════════════════════════════════════
+  .val_section("HINDCAST VALIDATION (return levels)")
 
   hc <- tryCatch(
-    .validate_hindcast_all(out,
-                           holdout_years = holdout_years,
-                           n_sim = n_sim,
-                           return_periods = return_periods,
-                           seed = seed,
-                           sst_df = sst_df_val,
-                           beta_sst = beta_sst_val,
-                           gamma_intensity = gamma_val,
-                           use_raw_rates = use_raw_rates,
-                           xi_bounds = xi_bounds,
-                           n_boot = n_boot),
+    suppressMessages(.validate_hindcast_all(out,
+                                            holdout_years = holdout_years,
+                                            n_sim = n_sim,
+                                            return_periods = return_periods,
+                                            conf_level = conf_level,
+                                            seed = seed,
+                                            sst_df = sst_df_val,
+                                            beta_sst = beta_sst_val,
+                                            gamma_intensity = gamma_val,
+                                            use_raw_rates = use_raw_rates,
+                                            xi_bounds = xi_bounds,
+                                            n_boot = n_boot)),
     error = function(e) { message("  ERROR: ", e$message); NULL }
   )
 
-  if (!is.null(hc) && nrow(hc$comparison) > 0) {
-    message("\n  Return-level comparison (kt):")
-    for (i in seq_len(nrow(hc$comparison))) {
-      r <- hc$comparison[i, ]
-      n_pos <- NA_integer_
-      if (!is.null(hc$per_island[[as.character(r$location)]]) &&
-          !is.null(hc$per_island[[as.character(r$location)]]$obs_gev)) {
-        n_pos <- hc$per_island[[as.character(r$location)]]$obs_gev$n_nonzero
-      }
-      ci_available <- is.finite(r$obs_lo_90) && is.finite(r$obs_hi_90)
-      if (ci_available) {
-        ci_tag <- if (isTRUE(r$obs_in_90ci)) "\u2713 in 90% CI" else "\u2717 outside 90% CI"
-        message(sprintf("    %-12s %2d-yr:  obs=%.0f  sim=%.0f  obs90%%CI=[%.0f, %.0f]  bias=%+.0f%%  %s",
-                        r$location, r$return_period, r$obs_full_rl, r$sim_rl,
-                        r$obs_lo_90, r$obs_hi_90, r$bias_pct, ci_tag))
-      } else {
-        message(sprintf("    %-12s %2d-yr:  obs=%.0f  sim=%.0f  obs90%%CI=[NA, NA]  bias=%+.0f%%  - CI unavailable (n_pos=%s)",
-                        r$location, r$return_period, r$obs_full_rl, r$sim_rl,
-                        r$bias_pct, if (is.finite(n_pos)) as.character(as.integer(n_pos)) else "NA"))
+  if (!is.null(hc) && !is.null(hc$per_island) && length(hc$per_island) > 0) {
+    # Training splits summary
+    message("")
+    for (isl in names(hc$per_island)) {
+      hi <- hc$per_island[[isl]]
+      if (is.null(hi) || isTRUE(hi$skipped)) next
+      train_rng <- range(hi$train_years)
+      n_train <- length(hi$train_years)
+      n_test  <- length(hi$test_years %||% numeric(0))
+      end_yr  <- if (n_test > 0) max(hi$test_years) else max(hi$train_years)
+      # GEV summary
+      gev_obs <- hi$obs_gev
+      gev_sim <- hi$gev_fit
+      obs_str <- if (!is.null(gev_obs) && !is.null(gev_obs$gev_fit))
+        sprintf("\u03be=%.2f n=%d", gev_obs$gev_fit$xi, gev_obs$n_nonzero) else "NA"
+      sim_str <- if (!is.null(gev_sim) && !is.null(gev_sim$gev_fit))
+        sprintf("\u03be=%.2f n=%d", gev_sim$gev_fit$xi, gev_sim$n_nonzero) else "NA"
+      message(sprintf("  %-14s %d\u2013%d  obs GEV: %s | sim GEV: %s",
+                      isl, train_rng[1], end_yr, obs_str, sim_str))
+    }
+
+    # Return-level table
+    if (nrow(hc$comparison) > 0) {
+      message("")
+      w <- c(14, 4, 7, 7, 14, 6, 4)
+      .val_table_row("Location", "RP", "Obs kt", "Sim kt",
+                     paste0(ci_pct, " CI"), "Bias", "",
+                     widths = w)
+      .val_table_sep()
+
+      for (i in seq_len(nrow(hc$comparison))) {
+        r <- hc$comparison[i, ]
+        ci_str <- if (is.finite(r$obs_ci_lo) && is.finite(r$obs_ci_hi)) {
+          sprintf("[%3.0f, %3.0f]", r$obs_ci_lo, r$obs_ci_hi)
+        } else {
+          "  [NA,  NA]"
+        }
+        status <- if (!is.finite(r$obs_ci_lo) || !is.finite(r$obs_ci_hi)) {
+          "\u2014"
+        } else if (isTRUE(r$obs_in_ci)) {
+          "\u2713"
+        } else {
+          "\u2717"
+        }
+        .val_table_row(
+          r$location,
+          sprintf("%d", r$return_period),
+          sprintf("%.0f", r$obs_full_rl),
+          sprintf("%.0f", r$sim_rl),
+          ci_str,
+          sprintf("%+.0f%%", r$bias_pct),
+          status,
+          widths = w
+        )
       }
     }
   }
 
+  # ══════════════════════════════════════════════════════════════════════
+  # TIER 1B: BLOCKED CV
+  # ══════════════════════════════════════════════════════════════════════
   if (identical(output_level, "full")) {
-    # --- Tier 1B: Modern blocked CV ---
-    message("\n", "-" |> rep(72) |> paste(collapse = ""))
-    message("  TIER 1B: MODERN BLOCKED CV (annual maxima, TS+)")
-    message("-" |> rep(72) |> paste(collapse = ""))
-
+    .val_section("BLOCKED CV VALIDATION (annual maxima, TS+)")
     tier1b_cv <- tryCatch(
-      .run_tier1b_modern_blocked_cv(
+      suppressMessages(.run_tier1b_modern_blocked_cv(
         out = out,
         min_year = 1970L,
         storm_vmax_min = 34,
@@ -2402,63 +2579,118 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
         threshold_kt = 34,
         min_test_pos_years = 2L,
         top_k = 3L,
-        save_tables = isTRUE(cfg$save_tables),
+        save_tables = FALSE,
         out_dir = out_dir
-      ),
+      )),
       error = function(e) { message("  ERROR: ", e$message); NULL }
     )
-  } else {
-    message("\n", "-" |> rep(72) |> paste(collapse = ""))
-    message("  TIER 1B: MODERN BLOCKED CV (annual maxima, TS+) [skipped in minimal mode]")
-    message("-" |> rep(72) |> paste(collapse = ""))
   }
 
-  # --- Tier 2: Rate check ---
-  message("\n", "-" |> rep(72) |> paste(collapse = ""))
-  message("  TIER 2: RATE SANITY CHECK")
-  message("-" |> rep(72) |> paste(collapse = ""))
+  # ══════════════════════════════════════════════════════════════════════
+  # TIER 2: RATE CHECK
+  # ══════════════════════════════════════════════════════════════════════
+  if (identical(output_level, "full")) {
+    .val_section("RATE SANITY CHECK")
+  }
 
   rc <- tryCatch(
-    validate_rates(out),
-    error = function(e) { message("  ERROR: ", e$message); NULL }
+    suppressMessages(validate_rates(out)),
+    error = function(e) {
+      if (identical(output_level, "full")) message("  ERROR: ", e$message)
+      NULL
+    }
   )
 
-  # --- Tier 3: Wind field ---
-  message("\n", "-" |> rep(72) |> paste(collapse = ""))
-  message("  TIER 3: WIND FIELD SPOT-CHECKS")
-  message("-" |> rep(72) |> paste(collapse = ""))
+  if (identical(output_level, "full") && !is.null(rc) && nrow(rc) > 0) {
+    message("")
+    w_rc <- c(14, 8, 6, 6, 6, 6)
+    .val_table_row("Location", "Class", "Raw", "Ref", "Adj", "",
+                   widths = w_rc)
+    .val_table_sep(50)
 
-  wf <- tryCatch(
-    validate_wind_field(out),
-    error = function(e) { message("  ERROR: ", e$message); NULL }
-  )
-
-  # --- Summary ---
-  message("\n", "=" |> rep(72) |> paste(collapse = ""))
-  message("  VALIDATION SUMMARY")
-  message("=" |> rep(72) |> paste(collapse = ""))
-
-  hc_comp_scored <- NULL
-  if (!is.null(hc) && !is.null(hc$comparison) && nrow(hc$comparison) > 0) {
-    hc_comp_scored <- dplyr::filter(hc$comparison, .data$return_period >= 25)
+    for (i in seq_len(nrow(rc))) {
+      r <- rc[i, ]
+      sym <- if (r$flag == "OK") "\u2713" else if (grepl("^(HIGH|LOW)", r$flag)) "\u2717" else "~"
+      .val_table_row(
+        r$location,
+        r$storm_class,
+        sprintf("%.2f", r$lambda_model_raw),
+        sprintf("%.2f", if (is.na(r$lambda_ref)) NA else r$lambda_ref),
+        sprintf("%.2f", r$lambda_adj),
+        sym,
+        widths = w_rc
+      )
+    }
   }
 
-  n_rl_ok <- if (!is.null(hc_comp_scored)) sum(hc_comp_scored$obs_in_90ci, na.rm = TRUE) else 0
-  n_rl_total <- if (!is.null(hc_comp_scored)) sum(!is.na(hc_comp_scored$obs_in_90ci)) else 0
+  # ══════════════════════════════════════════════════════════════════════
+  # TIER 3: WIND FIELD
+  # ══════════════════════════════════════════════════════════════════════
+  .val_section("WIND FIELD SPOT-CHECKS")
+
+  wf <- tryCatch(
+    suppressMessages(validate_wind_field(out)),
+    error = function(e) { message("  ERROR: ", e$message); NULL }
+  )
+
+  if (!is.null(wf)) {
+    valid_wf <- wf[is.finite(wf$bias_kt), , drop = FALSE]
+    if (nrow(valid_wf) > 0) {
+      mae  <- mean(abs(valid_wf$bias_kt))
+      rmse <- sqrt(mean(valid_wf$bias_kt^2))
+      mb   <- mean(valid_wf$bias_kt)
+      message(sprintf("  Mean bias: %+.1f kt | MAE: %.1f kt | RMSE: %.1f kt (%d storms)",
+                      mb, mae, rmse, nrow(valid_wf)))
+      message("")
+      w_wf <- c(9, 14, 6, 6, 7, 6, 4)
+      .val_table_row("Storm", "Location", "Obs", "Model", "Bias", "Tol", "",
+                     widths = w_wf)
+      .val_table_sep(55)
+      for (j in seq_len(nrow(valid_wf))) {
+        r <- valid_wf[j, ]
+        sym <- if (isTRUE(r$bias_ok)) "\u2713" else "\u2717"
+        tol_str <- sprintf("%s\u00b1%d%%", r$obs_quality, r$bias_threshold_pct)
+        .val_table_row(
+          r$storm_name,
+          r$location,
+          sprintf("%.0f", r$obs_1min_equiv_kt),
+          sprintf("%.0f", r$model_V_site_kt),
+          sprintf("%+.0f%%", r$bias_pct),
+          tol_str,
+          sym,
+          widths = w_wf
+        )
+      }
+      message("  Tol: A=direct station (\u00b115%) | B=converted/10-min (\u00b125%) | C=estimated (\u00b135%)")
+    } else {
+      message("  No matching storms found.")
+    }
+  }
+
+  # ══════════════════════════════════════════════════════════════════════
+  # SUMMARY
+  # ══════════════════════════════════════════════════════════════════════
+  hc_comp_scored <- NULL
+  if (!is.null(hc) && !is.null(hc$comparison) && nrow(hc$comparison) > 0) {
+    hc_comp_scored <- hc$comparison
+  }
+
+  n_rl_ok <- if (!is.null(hc_comp_scored)) sum(hc_comp_scored$obs_in_ci, na.rm = TRUE) else 0
+  n_rl_total <- if (!is.null(hc_comp_scored)) sum(!is.na(hc_comp_scored$obs_in_ci)) else 0
 
   n_rate_ok <- if (!is.null(rc)) sum(rc$flag == "OK", na.rm = TRUE) else 0
   n_rate_total <- if (!is.null(rc)) sum(!is.na(rc$flag)) else 0
 
   n_wf_ok <- if (!is.null(wf)) {
-    sum(abs(wf$bias_pct) < 30, na.rm = TRUE)
+    sum(wf$bias_ok, na.rm = TRUE)
   } else 0
-  n_wf_total <- if (!is.null(wf)) sum(is.finite(wf$bias_pct)) else 0
+  n_wf_total <- if (!is.null(wf)) sum(!is.na(wf$bias_ok)) else 0
 
   summary_tbl <- if (identical(output_level, "minimal")) {
     .minimal_diagnostics_from_hindcast(hc)
   } else {
     tibble::tibble(
-      tier = c("Hindcast (RL in 90% CI)", "Rate check (flag OK)", "Wind field (|bias| < 30%)"),
+      tier = c(sprintf("Hindcast (RL in %s CI)", ci_pct), "Rate check (flag OK)", "Wind field (within tolerance)"),
       pass = c(n_rl_ok, n_rate_ok, n_wf_ok),
       total = c(n_rl_total, n_rate_total, n_wf_total),
       pct = round(100 * c(n_rl_ok, n_rate_ok, n_wf_ok) /
@@ -2466,10 +2698,19 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     )
   }
 
-  message(sprintf("  Hindcast (RP>=25): %d / %d return levels within 90%% CI", n_rl_ok, n_rl_total))
-  message(sprintf("  Rate check: %d / %d rates flagged OK", n_rate_ok, n_rate_total))
-  message(sprintf("  Wind field: %d / %d storms within 30%% bias", n_wf_ok, n_wf_total))
-  message("=" |> rep(72) |> paste(collapse = ""))
+  rl_sym  <- if (n_rl_total > 0 && n_rl_ok == n_rl_total) "\u2713" else if (n_rl_total == 0) "\u2014" else "\u2717"
+  rc_sym  <- if (n_rate_total > 0 && n_rate_ok == n_rate_total) "\u2713" else if (n_rate_total == 0) "\u2014" else "\u2717"
+  wf_sym  <- if (n_wf_total > 0 && n_wf_ok == n_wf_total) "\u2713" else if (n_wf_total == 0) "\u2014" else "\u2717"
+
+  message("")
+  .val_header("SUMMARY")
+  message(sprintf("  Hindcast         : %2d / %2d within %s CI     %s",
+                  n_rl_ok, n_rl_total, ci_pct, rl_sym))
+  message(sprintf("  Rate check       : %2d / %2d flagged OK        %s",
+                  n_rate_ok, n_rate_total, rc_sym))
+  message(sprintf("  Wind field       : %2d / %2d within tolerance  %s",
+                  n_wf_ok, n_wf_total, wf_sym))
+  .val_header_close()
 
   val <- list(
     hindcast = hc,
@@ -2486,7 +2727,7 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
   if (isTRUE(cfg$save_plots)) {
     .validate_dir_create(out_dir)
     artifacts$plots$hindcast <- plot_hindcast_validation(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
-    artifacts$plots$bias_diagnostics <- plot_bias_diagnostics(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
+    artifacts$plots$bias_decomposition <- plot_bias_diagnostics(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
     if (identical(output_level, "full")) {
       artifacts$plots$rate_check <- plot_rate_validation(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
       artifacts$plots$wind_field <- plot_wind_field_validation(val, out = out, cfg = cfg, out_dir = out_dir, base_size = base_size)
@@ -2524,8 +2765,6 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     } else {
       tables <- list(
         `Hindcast Return Levels` = val$hindcast$comparison,
-        `Modern Blocked CV`      = if (!is.null(tier1b_cv)) tier1b_cv$site_summary else NULL,
-        `Modern Blocked CV Compact` = if (!is.null(tier1b_cv)) tier1b_cv$paper_table else NULL,
         `Rate Comparison`        = val$rate_check,
         `Wind Field Spot-Checks` = val$wind_field,
         `Summary`                = val$summary
@@ -2534,11 +2773,6 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
       if (!is.null(val$hindcast$comparison)) {
         artifacts$tables$hindcast_csv <- file.path(out_dir, "hindcast_return_levels.csv")
         .validate_write_csv(val$hindcast$comparison, artifacts$tables$hindcast_csv)
-      }
-      if (!is.null(tier1b_cv)) {
-        artifacts$tables$modern_blocked_cv_csv <- file.path(out_dir, "modern_blocked_cv_summary.csv")
-        .validate_write_csv(tier1b_cv$site_summary, artifacts$tables$modern_blocked_cv_csv)
-        artifacts$tables$modern_blocked_cv_compact_csv <- attr(tier1b_cv$paper_table, "csv_path")
       }
       if (!is.null(val$rate_check)) {
         artifacts$tables$rate_check_csv <- file.path(out_dir, "rate_check.csv")
@@ -2567,20 +2801,94 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 # 10) END-TO-END CONVENIENCE WRAPPER
 # =============================================================================
 
-#' Validate the hazard model end-to-end
+#' Run hazard model and validate in one step
 #'
 #' @description
-#' Convenience wrapper that runs the hazard model, executes the validation suite,
-#' and saves all standard figures and tables to the configured directory.
+#' End-to-end convenience wrapper: runs `run_hazard_model()` then
+#' `run_validation_suite()`. This is the recommended entry point for
+#' standard validation workflows.
 #'
-#' @param cfg Hazard configuration from `make_hazard_cfg()`.
-#' @param targets Target locations tibble/data.frame.
-#' @param validation_cfg Validation configuration from `make_validation_cfg()`.
-#' @param severities Character vector of storm classes to simulate.
-#' @param sst_cfg Optional SST configuration from `make_sst_cfg()`.
+#' The validation uses a three-tier framework:
+#' - **Tier 1 (Hindcast)**: Hold out the last N years of the historical
+#'   record, simulate synthetic annual maxima from the training period, and
+#'   compare return levels. The simulated return level should fall within the
+#'   observed return level's confidence interval (computed via delta-method
+#'   or parametric bootstrap of the hurdle-GEV model).
+#' - **Tier 2 (Rate check)**: Compare model storm rates (lambda) against
+#'   published HURDAT2/IBTrACS climatologies for the target region.
+#' - **Tier 3 (Wind field)**: Spot-check site-level winds from the Holland
+#'   wind profile model against historical station observations.
 #'
-#' @return A list with elements `out`, `val`, and `artifacts` (saved paths).
+#' @param cfg A `hazard_cfg` object from `make_hazard_cfg()`. Controls
+#'   basin, year range, search radius, and core model parameters.
+#' @param targets Data frame of target locations with columns:
+#'   - `location` (character): Site name (e.g., "Saba")
+#'   - `lat` / `lon` (numeric): Coordinates in decimal degrees
+#'   - `search_radius_km` (numeric): Radius for storm proximity filtering
+#' @param validation_cfg A `validation_cfg` object from
+#'   `make_validation_cfg()`. Controls holdout period, simulation size,
+#'   return periods, confidence level, and output options. Default uses 90%
+#'   CI with 10-year holdout and 5000 synthetic years.
+#' @param severities Character vector of storm classes to include
+#'   (default: `c("TS", "HUR")`). Must match IBTrACS classification codes.
+#'   Use `"HUR"` alone for hurricane-only analysis.
+#' @param sst_cfg Optional `sst_cfg` object from `make_sst_cfg()` for
+#'   SST-conditioned rate scaling (climate Level 1). When `NULL`, SST
+#'   conditioning is disabled.
+#'
+#' @return A list with three elements:
+#'   \describe{
+#'     \item{`out`}{Full hazard model output from `run_hazard_model()`,
+#'       containing `events`, `fit`, `annual_max`, and `config` components.}
+#'     \item{`val`}{Validation results from `run_validation_suite()`:
+#'       - `hindcast`: Per-island return level comparison table with CI
+#'         membership flags. Access via `val$hindcast$comparison`.
+#'       - `rate_check`: Rate sanity check results with OK/FLAG status.
+#'       - `wind_field`: Wind field spot-check results with bias estimates.
+#'       - `summary`: Tibble with pass/total/pct per validation tier.}
+#'     \item{`artifacts`}{Named list of saved file paths:
+#'       - `plots`: Named character vector of PNG paths.
+#'       - `tables`: Named character vector of CSV/MD paths.}
+#'   }
+#'
 #' @export
+#'
+#' @examples
+#' # --- Basic validation with defaults (90% CI) ---
+#' targets_df <- data.frame(
+#'   location         = c("Saba", "St. Eustatius", "St. Martin"),
+#'   lat              = c(17.63, 17.49, 18.04),
+#'   lon              = c(-63.23, -62.97, -63.07),
+#'   search_radius_km = c(200, 200, 200)
+#' )
+#'
+#' result <- validate_hazard_model(
+#'   cfg     = make_hazard_cfg(basin = "NA", year_range = c(1980, 2023)),
+#'   targets = targets_df
+#' )
+#'
+#' # Inspect results
+#' result$val$summary                # Pass/fail scorecard
+#' result$val$hindcast$comparison    # Detailed return-level table
+#' result$artifacts$plots            # Paths to saved figures
+#'
+#' # --- Stricter validation with 95% CI ---
+#' result_95 <- validate_hazard_model(
+#'   cfg            = make_hazard_cfg(basin = "NA"),
+#'   targets        = targets_df,
+#'   validation_cfg = make_validation_cfg(
+#'     conf_level     = 0.95,
+#'     n_sim          = 10000,
+#'     return_periods = c(10, 25, 50, 100)
+#'   )
+#' )
+#'
+#' # --- With SST conditioning ---
+#' result_sst <- validate_hazard_model(
+#'   cfg     = make_hazard_cfg(basin = "NA"),
+#'   targets = targets_df,
+#'   sst_cfg = make_sst_cfg()
+#' )
 validate_hazard_model <- function(cfg,
                                   targets,
                                   validation_cfg = make_validation_cfg(),
@@ -2595,17 +2903,6 @@ validate_hazard_model <- function(cfg,
     targets = targets,
     severities = severities,
     sst_cfg = sst_cfg
-  )
-
-  output_level <- .validation_output_level(validation_cfg)
-  if (identical(output_level, "full")) tryCatch(
-    .run_validation_diagnostics_ad(trackpoints = out$trackpoints, targets = targets),
-    error = function(e) {
-      message("\n", "-" |> rep(72) |> paste(collapse = ""))
-      message("  DIAGNOSTICS Aâ€“D")
-      message("-" |> rep(72) |> paste(collapse = ""))
-      message("  skipped: ", e$message)
-    }
   )
 
   val <- run_validation_suite(out = out, cfg = validation_cfg)
@@ -2712,14 +3009,16 @@ plot_hindcast_validation <- function(val,
       subtitle = "Blue dot = model; Red triangle = observed (full record); dashed = 64 kt HUR threshold"
     ) +
     ggtheme
-  if (identical(output_level, "full") && any(is.finite(comp$obs_lo_90) & is.finite(comp$obs_hi_90))) {
+  if (any(is.finite(comp$obs_ci_lo) & is.finite(comp$obs_ci_hi))) {
+    ci_pct <- attr(comp, "conf_level") %||% 0.90
+    ci_label <- sprintf("%.0f%%", ci_pct * 100)
     p_rl <- p_rl +
       geom_errorbar(
-        aes(ymin = obs_lo_90, ymax = obs_hi_90),
+        aes(ymin = obs_ci_lo, ymax = obs_ci_hi),
         width = 0.3, color = "red", linewidth = 0.8, alpha = 0.7
       ) +
       labs(
-        subtitle = "Blue dot = model; Red triangle [90% CI] = observed (full record); dashed = 64 kt HUR threshold"
+        subtitle = paste0("Blue dot = model; Red triangle [", ci_label, " CI] = observed (full record); dashed = 64 kt HUR threshold")
       )
   }
 
@@ -2831,8 +3130,7 @@ plot_rate_validation <- function(val,
 #' Plot wind-field validation figures
 #'
 #' @param val Output from `run_validation_suite()`.
-#' @param out Model output list from `run_hazard_model()`. Only needed for the
-#'   Irma distance-profile plot.
+#' @param out Model output list from `run_hazard_model()`.
 #' @param cfg Optional `validation_cfg` object.
 #' @param out_dir Directory to save plots in. Overrides `cfg$out_dir`.
 #' @param base_size Base font size for plots. Overrides `cfg$advanced$base_size`.
@@ -2881,49 +3179,6 @@ plot_wind_field_validation <- function(val,
   paths[["wind_field_scatter"]] <- file.path(out_dir, "wind_field_scatter.png")
   .validate_save_plot(p_wf, paths[["wind_field_scatter"]], width = 8, height = 6, dpi = 150)
 
-  # Optional per-storm distance profile for Irma at St. Martin
-  if (!is.null(out) && !is.null(out$trackpoints$St_Martin)) {
-    irma_tp <- dplyr::filter(out$trackpoints$St_Martin, SID == "2017242N16333")
-    wind_col <- if ("site_wind_kt" %in% names(irma_tp)) {
-      "site_wind_kt"
-    } else if ("V_site_kt" %in% names(irma_tp)) {
-      "V_site_kt"
-    } else {
-      NULL
-    }
-    if (!is.null(wind_col)) {
-      irma_tp <- dplyr::filter(irma_tp, is.finite(.data[[wind_col]]), is.finite(dist_km))
-    } else {
-      irma_tp <- irma_tp[0, , drop = FALSE]
-    }
-
-    if (nrow(irma_tp) > 0) {
-      p_irma <- ggplot(irma_tp, aes(x = dist_km, y = .data[[wind_col]])) +
-        geom_line(color = "steelblue", linewidth = 0.8) +
-        geom_point(color = "steelblue", size = 1.5) +
-        geom_hline(yintercept = c(34, 64), linetype = "dashed", color = c("orange", "red")) +
-        geom_hline(yintercept = 155, linetype = "solid", color = "red", alpha = 0.5) +
-        annotate(
-          "text",
-          x = max(irma_tp$dist_km) * 0.7,
-          y = 155,
-          label = "NHC best-track Vmax = 155 kt",
-          size = 3,
-          color = "red"
-        ) +
-        labs(
-          x = "Distance from St. Martin (km)",
-          y = "Model site wind (kt)",
-          title = "Hurricane Irma (2017): Wind Profile at St. Martin",
-          subtitle = "Modeled site wind vs distance at each 6-hourly track point"
-        ) +
-        ggtheme
-
-      paths[["irma_stmartin_profile"]] <- file.path(out_dir, "irma_stmartin_profile.png")
-      .validate_save_plot(p_irma, paths[["irma_stmartin_profile"]], width = 8, height = 5, dpi = 150)
-    }
-  }
-
   invisible(paths)
 }
 
@@ -2942,49 +3197,12 @@ plot_bias_diagnostics <- function(val,
                                   out_dir = NULL,
                                   base_size = NULL) {
   plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
-  output_level <- if (!is.null(cfg)) .validation_output_level(cfg) else "full"
   out_dir <- plot_cfg$out_dir
   ggtheme <- plot_cfg$theme
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
 
   .validate_dir_create(out_dir)
-  if (identical(output_level, "minimal")) {
-    diag_tbl <- val$bias_diagnostics
-    if (is.null(diag_tbl) || nrow(diag_tbl) == 0) return(invisible(NULL))
-    if (!all(c("location", "storm_class", "delta_top1_p50", "delta_overall_p99") %in% names(diag_tbl))) {
-      return(invisible(NULL))
-    }
-
-    bias_long <- diag_tbl |>
-      dplyr::select("location", "storm_class", "delta_top1_p50", "delta_overall_p99") |>
-      tidyr::pivot_longer(
-        cols = c("delta_top1_p50", "delta_overall_p99"),
-        names_to = "metric",
-        values_to = "delta_kt"
-      )
-
-    p_min <- ggplot(
-      bias_long,
-      aes(x = .data$location, y = .data$delta_kt, color = .data$storm_class)
-    ) +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "grey60", linewidth = 0.5) +
-      geom_point(size = 3, alpha = 0.9) +
-      facet_wrap(~ metric, scales = "free_y", ncol = 1) +
-      labs(
-        x = NULL,
-        y = "Simulated - observed (kt)",
-        title = "Bias Diagnostics by Location",
-        subtitle = "Minimal mode metrics: delta_top1_p50 and delta_overall_p99",
-        color = "storm_class"
-      ) +
-      ggtheme +
-      theme(axis.text.x = element_text(angle = 30, hjust = 1))
-
-    path <- file.path(out_dir, "plot_bias_diagnostics.png")
-    .validate_save_plot(p_min, path, width = 9, height = 6, dpi = 150)
-    return(invisible(path))
-  }
 
   if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
   paths <- character(0)
@@ -3051,40 +3269,6 @@ plot_bias_diagnostics <- function(val,
 
   paths[["bias_decomposition"]] <- file.path(out_dir, "bias_decomposition.png")
   .validate_save_plot(p_decomp, paths[["bias_decomposition"]], width = 8, height = 5, dpi = 150)
-
-  # --- Panel 2: Frequency & intensity scatter ---
-  p_freq <- ggplot(bias_df, aes(x = obs_event_rate, y = sim_event_rate)) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
-    geom_point(size = 3.5, color = "steelblue") +
-    geom_text(aes(label = location), nudge_y = 0.02, size = 3, check_overlap = TRUE) +
-    coord_equal() +
-    labs(
-      x = "Observed P(any event)", y = "Simulated P(any event)",
-      title = "Frequency Bias: Event Occurrence Rate",
-      subtitle = "Dashed = 1:1 line"
-    ) +
-    ggtheme
-
-  p_int <- ggplot(bias_df, aes(x = obs_mean_int_kt, y = sim_mean_int_kt)) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey50") +
-    geom_point(size = 3.5, color = "#D55E00") +
-    geom_text(aes(label = location), nudge_y = 1.5, size = 3, check_overlap = TRUE) +
-    coord_equal() +
-    labs(
-      x = "Observed E[max | event] (kt)", y = "Simulated E[max | event] (kt)",
-      title = "Intensity Bias: Conditional Mean Wind",
-      subtitle = "Dashed = 1:1 line"
-    ) +
-    ggtheme
-
-  paths[["freq_scatter"]] <- file.path(out_dir, "bias_frequency_scatter.png")
-  .validate_save_plot(p_freq, paths[["freq_scatter"]], width = 6, height = 5, dpi = 150)
-  paths[["int_scatter"]] <- file.path(out_dir, "bias_intensity_scatter.png")
-  .validate_save_plot(p_int, paths[["int_scatter"]], width = 6, height = 5, dpi = 150)
-
-  # --- Save decomposition table ---
-  paths[["bias_table"]] <- file.path(out_dir, "bias_decomposition.csv")
-  .validate_write_csv(bias_df, paths[["bias_table"]])
 
   invisible(paths)
 }
@@ -3250,28 +3434,6 @@ plot_cdf_comparison <- function(val,
   paths <- character(0)
   paths[["cdf_comparison"]] <- file.path(out_dir, "cdf_comparison.png")
   .validate_save_plot(p_cdf, paths[["cdf_comparison"]], width = 12, height = 7, dpi = 150)
-
-  # --- Exceedance probability plot (1-CDF, log scale) ---
-  p_exceed <- ggplot(cdf_df, aes(x = wind_kt, y = 1 - ecdf, color = source)) +
-    geom_step(linewidth = 0.7, alpha = 0.85) +
-    scale_y_log10(
-      limits = c(0.001, 1),
-      labels = scales::label_percent(accuracy = 0.1)
-    ) +
-    scale_color_manual(values = c(Observed = "red", Simulated = "steelblue")) +
-    geom_vline(xintercept = 64, linetype = "dashed", color = "grey50", linewidth = 0.4) +
-    facet_wrap(~ location, scales = "free_x", ncol = 3) +
-    labs(
-      x = "Annual maximum site wind (kt)",
-      y = "Exceedance probability (log scale)",
-      title = "Exceedance Probability: Simulated vs Observed",
-      subtitle = "Higher exceedance at a given wind speed = model overpredicts that intensity",
-      color = "Source"
-    ) +
-    ggtheme
-
-  paths[["exceedance_plot"]] <- file.path(out_dir, "exceedance_comparison.png")
-  .validate_save_plot(p_exceed, paths[["exceedance_plot"]], width = 12, height = 7, dpi = 150)
 
   invisible(paths)
 }

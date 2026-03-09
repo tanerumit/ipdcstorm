@@ -1,13 +1,19 @@
 
-# Load packages & parameters
+# ==============================================================================
+# Model configuration ----------------------------------------------------------
+
+
+# Required packages
 library(ipdcstorm)
 library(ggplot2)
 library(dplyr)
 
-# root for all saved outputs
-out_dir <- "output/baseline"
-if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+# Files and folders
+ibtracs_file_path <- "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
+output_dir <- "output/baseline"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
 
+# Target locations for storm hazard analysis
 targets <- tibble::tribble(
   ~name,        ~lat,      ~lon,
   "St_Martin",   18.0708,  -63.0501,
@@ -17,68 +23,48 @@ targets <- tibble::tribble(
   "Miami",       25.7617,  -80.1918
 )
 
-cfg_validation <- make_hazard_cfg(
-  data_path       = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
+# Model configuration parameters
+model_cfg <- make_hazard_cfg(
+  data_path       = ibtracs_file_path,
   search_radius_km = 800,
   start_year       = 1970L,
-  n_sim_years      = 2000L)
-
-res <- validate_hazard_model(
-  cfg = cfg_validation,
-  targets = targets,
-  validation_cfg = make_validation_cfg(),
-  severities = c("TS", "HUR"),
-  sst_cfg = NULL
+  n_sim_years      = 2000L
 )
 
-res_cv <- run_validation_stats(
-  out = out,
-  targets = targets,
-  sites = c("Miami","Saba","Statia"),
-  min_year = 1970,
-  storm_vmax_min = 34,
-  split_mode = "blocked_cv",
-  block_size = 10,
-  top_k = 3
-)
 
-res_cv10_summary <- res_cv$summary %>%
-  dplyr::distinct(site, split_mode, fold_id, .keep_all = TRUE)
+# ==============================================================================
 
 
+# 1) Run hazard model ----------------------------------------------------------
 
-
-# =============================================================================
-# Model configuration
-# =============================================================================
-
-cfg <- make_hazard_cfg(
-  data_path       = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
-  search_radius_km = 800,
-  start_year       = 1970L,
-  n_sim_years      = 500L)
-
-# Stationary baseline — no climate modifications
-sst_cfg <- make_sst_cfg(enabled = FALSE)
-
-targets <- tibble::tribble(
-  ~name,        ~lat,      ~lon,
-  "St_Martin",   18.0708,  -63.0501,
-  "Saba",        17.6350,  -63.2300,
-  "Statia",      17.4890,  -62.9740,
-  "Puerto_Rico", 18.2208,  -66.5901,
-  "Miami",       25.7617,  -80.1918
-)
-
-# --- 2) Run hazard model ----------------------------------------------------
-
+# Run hazard model
 out <- run_hazard_model(
-  cfg        = cfg,
+  cfg        = model_cfg,
   targets    = targets,
-  sst_cfg    = sst_cfg
+  sst_cfg    = NULL
 )
 
-# --- 3) Generate daily hazard + impact series --------------------------------
+# Validation
+validation_cfg <- make_validation_cfg(
+  holdout_years = 10L,
+  n_sim = 5000L,
+  return_periods = c(5, 10, 25, 50),
+  conf_level = 0.90,
+  seed = 42L,
+  out_dir = "output/validation",
+  save_plots = TRUE,
+  save_tables = TRUE,
+  advanced = NULL
+)
+
+res <- run_validation_suite(
+  out = out,
+  cfg = validation_cfg
+)
+
+# ==============================================================================
+
+# 2) Simulate daily hazard series and impacts ------------------------------
 
 daily_all <- generate_daily_hazard_impact(
   out       = out,
@@ -93,91 +79,14 @@ daily_all <- generate_daily_hazard_impact(
   seed           = 42
 )
 
+# ==============================================================================
 
-# =============================================================================
-# Model validation against historical events
-# =============================================================================
-
-
-cfg_validation <- make_hazard_cfg(
-  data_path       = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
-  search_radius_km = 800,
-  start_year       = 1970L,
-  n_sim_years      = 2000L)
-
-res <- validate_hazard_model(
-  cfg = cfg_validation,
-  targets = targets,
-  validation_cfg = make_validation_cfg(),
-  severities = c("TS", "HUR"),
-  sst_cfg = NULL
-)
-
-# Validation outputs
-out <- res$out
-val <- res$val
-
-
-res_cv <- run_validation_stats(
-  out = out,
-  targets = targets,
-  sites = c("Miami","Saba","Statia"),
-  min_year = 1970,
-  storm_vmax_min = 34,
-  split_mode = "blocked_cv",
-  block_size = 10,
-  top_k = 3
-)
-
-res_cv10_summary <- res_cv$summary %>%
-  dplyr::distinct(site, split_mode, fold_id, .keep_all = TRUE)
-
-
-print(n = 21, res_cv10_summary)
-
-cv_ok <- res_cv10_summary %>%
-  dplyr::filter(test_n_pos_years >= 2)
-
-cv_ok %>%
-  dplyr::group_by(site) %>%
-  dplyr::summarise(
-    folds_total = dplyr::n_distinct(fold_id),
-    folds_used  = dplyr::n(),
-    mean_test_p0 = mean(test_p0, na.rm = TRUE),
-    mean_test_q90 = mean(test_q90, na.rm = TRUE),
-    max_test_q95 = max(test_q95, na.rm = TRUE)
-  )
-
-
-
-res_cv10_top <- res_cv$top_test %>%
-  dplyr::distinct(site, split_mode, fold_id, year, .keep_all = TRUE)
-
-
-res_cv10_summary
-score <- res_cv$summary %>%
-  dplyr::filter(test_n_pos_years >= 2) %>%
-  dplyr::group_by(site) %>%
-  dplyr::summarise(
-    folds_used = dplyr::n(),
-    mean_test_p0 = mean(test_p0, na.rm = TRUE),
-    mean_test_q90 = mean(test_q90, na.rm = TRUE),
-    max_test_q95 = max(test_q95, na.rm = TRUE)
-  )
-
-
-# =============================================================================
-# Visualize outputs
-# =============================================================================
-
-
-# --- 4) Per-location visualizations ------------------------------------------
-
+# 3) Outputs (per-location) ------------------------------------------
 for (loc in names(daily_all)) {
 
   # Current location
   daily <- daily_all[[loc]]
-  loc_dir <- file.path(out_dir, gsub("[^A-Za-z0-9_]", "_", loc))
+  loc_dir <- file.path(output_dir, gsub("[^A-Za-z0-9_]", "_", loc))
   if (!dir.exists(loc_dir)) dir.create(loc_dir, recursive = TRUE)
 
   # P1: Wind time series
@@ -213,10 +122,12 @@ for (loc in names(daily_all)) {
 
   message("[VIZ] Saved plots for ", loc, " → ", loc_dir)
 }
+# ==============================================================================
 
-# --- 5) Cross-location comparison plots --------------------------------------
+# 4) Outputs (cross-location comparison ) ----------------------------
 
-comp_dir <- file.path(out_dir, "comparison")
+# Cross-location comparison
+comp_dir <- file.path(output_dir, "comparison")
 if (!dir.exists(comp_dir)) dir.create(comp_dir, recursive = TRUE)
 
 # 5A: Rate table — observed annual Poisson rates by island
@@ -287,7 +198,9 @@ p_sim <- ggplot(sim_summary, aes(x = n_total)) +
 ggsave(file.path(comp_dir, "sim_annual_totals.png"), p_sim,
        width = 7, height = 8)
 
-message("\n[DONE] All baseline outputs saved to: ", out_dir)
+message("\n[DONE] All baseline outputs saved to: ", output_dir)
 
 
 
+
+# ==============================================================================

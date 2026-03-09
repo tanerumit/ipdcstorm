@@ -15,8 +15,7 @@ plot_wind_field_validation(
 \arguments{
 \item{val}{Output from \code{run_validation_suite()}.}
 
-\item{out}{Model output list from \code{run_hazard_model()}. Only needed for the
-Irma distance-profile plot.}
+\item{out}{Model output list from \code{run_hazard_model()}.}
 
 \item{cfg}{Optional \code{validation_cfg} object.}
 

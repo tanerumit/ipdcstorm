@@ -8,7 +8,8 @@ bootstrap_return_level_ci(
   annual_max,
   return_periods = c(5, 10, 25, 50),
   n_boot = 500,
-  xi_bounds = c(-0.3, 0.4)
+  xi_bounds = c(-0.3, 0.4),
+  conf_level = 0.9
 )
 }
 \arguments{
@@ -19,9 +20,13 @@ bootstrap_return_level_ci(
 \item{n_boot}{Integer; number of bootstrap replicates.}
 
 \item{xi_bounds}{Bounds on GEV shape.}
+
+\item{conf_level}{Numeric; confidence level for CIs (default: 0.90).}
 }
 \value{
-Tibble with return_period, median, lo_90, hi_90, lo_50, hi_50.
+Tibble with columns: \code{return_period}, \code{sim_median}, \code{sim_ci_lo},
+\code{sim_ci_hi}, \code{sim_lo_50}, \code{sim_hi_50}. The \code{ci_lo}/\code{ci_hi} columns
+correspond to the specified \code{conf_level}.
 }
 \description{
 Generates bootstrap CIs by:

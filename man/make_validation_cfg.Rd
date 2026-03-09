@@ -8,6 +8,7 @@ make_validation_cfg(
   holdout_years = 10L,
   n_sim = 5000L,
   return_periods = c(5, 10, 25, 50),
+  conf_level = 0.9,
   seed = 42L,
   out_dir = "output/validation",
   save_plots = TRUE,
@@ -24,6 +25,15 @@ comparison (default: 5000).}
 
 \item{return_periods}{Numeric vector of return periods (years) to compare
 (default: 5, 10, 25, 50).}
+
+\item{conf_level}{Numeric; confidence level for return-level CIs
+(default: 0.90). Must be in \verb{(0, 1)}. This controls the width of the
+confidence interval around GEV-based return level estimates, computed
+via the delta method or parametric bootstrap of the hurdle-GEV model.
+Common choices: 0.90 (standard), 0.95 (stricter), 0.80 (exploratory).
+\strong{Note}: this quantifies estimation uncertainty in return levels given
+the observed record length --- it is not a prediction interval for
+future storm intensities.}
 
 \item{seed}{Integer; random seed for reproducibility.}
 

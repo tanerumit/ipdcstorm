@@ -8,9 +8,15 @@ get_wind_observations()
 }
 \value{
 Tibble with columns: storm_sid, storm_name, year, target_island,
-station, obs_wind_kt, obs_type, obs_source, notes.
+station, obs_wind_kt, obs_type, obs_quality, obs_source, notes.
 }
 \description{
 Returns a tibble of known station/buoy observations during well-documented storms
-for comparison against model-estimated site wind.
+for comparison against model-estimated site wind. Each observation includes a
+quality tier (\code{obs_quality}) that determines the acceptable bias threshold:
+\itemize{
+\item \strong{A} (Direct): Station measurement, instrument survived (\eqn{\pm}15\%).
+\item \strong{B} (Converted): 10-min reading with averaging-period conversion (\eqn{\pm}25\%).
+\item \strong{C} (Estimated): NHC best-track or indirect estimate (\eqn{\pm}35\%).
+}
 }
