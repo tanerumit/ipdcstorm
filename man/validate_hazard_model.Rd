@@ -25,7 +25,7 @@ basin, year range, search radius, and core model parameters.}
 
 \item{validation_cfg}{A \code{validation_cfg} object from
 \code{make_validation_cfg()}. Controls holdout period, simulation size,
-return periods, confidence level, and output options. Default uses 90\%
+return periods, confidence level, and output paths. Default uses 90\%
 CI with 10-year holdout and 5000 synthetic years.}
 
 \item{severities}{Character vector of storm classes to include
@@ -46,7 +46,7 @@ containing \code{events}, \code{fit}, \code{annual_max}, and \code{config} compo
 membership flags. Access via \code{val$hindcast$comparison}.
 - \code{rate_check}: Rate sanity check results with OK/FLAG status.
 - \code{wind_field}: Wind field spot-check results with bias estimates.
-- \code{summary}: Tibble with pass/total/pct per validation tier.}
+- \code{summary}: Tibble with compact hindcast tail-diagnostic columns.}
 \item{\code{artifacts}}{Named list of saved file paths:
 - \code{plots}: Named character vector of PNG paths.
 - \code{tables}: Named character vector of CSV/MD paths.}
@@ -85,7 +85,7 @@ result <- validate_hazard_model(
 )
 
 # Inspect results
-result$val$summary                # Pass/fail scorecard
+result$val$summary                # Compact hindcast summary diagnostics
 result$val$hindcast$comparison    # Detailed return-level table
 result$artifacts$plots            # Paths to saved figures
 

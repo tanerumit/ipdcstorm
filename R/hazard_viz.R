@@ -759,6 +759,7 @@ plot_summary_panel <- function(daily, thr_tc = 34, thr_hur = 64) {
 
   requireNamespace("patchwork", quietly = TRUE)
 
+
   p1 <- plot_seasonality_doy(daily, metric = "event_days", facet_class = FALSE)
   p2 <- plot_monthly_quantiles(daily, thr_tc = thr_tc, thr_hur = thr_hur)
   p3 <- plot_annual_counts(daily, metric = "events")

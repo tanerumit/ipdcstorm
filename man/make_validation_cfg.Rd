@@ -48,10 +48,10 @@ leave this as \code{NULL}. Supported names:
 \describe{
 \item{\code{xi_bounds}}{Numeric vector of length 2; allowed range for GEV
 shape parameter (default: \code{c(-0.3, 0.4)}).}
-\item{\code{n_boot}}{Integer; bootstrap replicates for return level CIs
-(default: 500).}
 \item{\code{base_size}}{Numeric; base font size for ggplot themes
 (default: 11).}
+\item{\code{hindcast_use_raw_rates}}{Logical; whether Tier 1A hindcast uses
+raw fitted rates instead of adjusted rates (default: \code{TRUE}).}
 }}
 }
 \value{
@@ -63,7 +63,7 @@ Follows the same pattern as \code{make_hazard_cfg()} and \code{make_sst_cfg()}:
 common parameters up front, expert-only knobs in \code{advanced}.
 }
 \examples{
-# Defaults â€” suitable for most users
+# Defaults - suitable for most users
 val_cfg <- make_validation_cfg()
 
 # Custom holdout and output location
@@ -72,6 +72,6 @@ val_cfg <- make_validation_cfg(holdout_years = 15, out_dir = "results/val")
 # Expert tuning
 val_cfg <- make_validation_cfg(
   n_sim = 10000,
-  advanced = list(xi_bounds = c(-0.4, 0.5), n_boot = 1000, base_size = 13)
+  advanced = list(xi_bounds = c(-0.4, 0.5), base_size = 13)
 )
 }

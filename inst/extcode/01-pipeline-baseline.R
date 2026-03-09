@@ -69,8 +69,8 @@ res <- run_validation_suite(
 daily_all <- generate_daily_hazard_impact(
   out       = out,
   location  = targets$name,
-  sim_years = seq_len(cfg$n_sim_years),
-  year0     = cfg$start_year,
+  sim_years = seq_len(model_cfg$n_sim_years),
+  year0     = model_cfg$start_year,
   gust_factor    = 1.3,   # sustained → 3-sec gust conversion
   damage_method  = "powerlaw",
   damage_params  = list(thr = 34, V_ref = 80, d_ref = 0.03, p = 3, d_max = 0.10),

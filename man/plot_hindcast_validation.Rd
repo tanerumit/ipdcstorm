@@ -20,6 +20,5 @@ plot_hindcast_validation(val, cfg = NULL, out_dir = NULL, base_size = NULL)
 Named character vector of saved plot paths (invisibly) or \code{NULL}.
 }
 \description{
-Creates the main hindcast validation figures (return-level comparison and
-per-location annual-max distribution plots).
+Creates the retained hindcast return-level comparison figure.
 }
