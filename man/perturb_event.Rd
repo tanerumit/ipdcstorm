@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_climate.R
 \name{perturb_event}
 \alias{perturb_event}
-\title{Perturb sampled event properties for climate change (Level 3)}
+\title{Perturb sampled event properties for climate sensitivity}
 \usage{
 perturb_event(events, delta_sst, cc_params = NULL)
 }

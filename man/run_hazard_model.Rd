@@ -10,6 +10,7 @@ run_hazard_model(
   per_target_cfg = list(),
   storm_classes = c("TS", "HUR"),
   severities = NULL,
+  climate_cfg = NULL,
   sst_cfg = NULL,
   verbose = TRUE
 )
@@ -25,8 +26,9 @@ run_hazard_model(
 
 \item{severities}{Deprecated alias for \code{storm_classes}.}
 
-\item{sst_cfg}{Optional SST configuration from \code{make_sst_cfg()}. When provided
-and enabled, the annual count simulation uses SST-conditioned rate scaling.}
+\item{climate_cfg}{Optional climate configuration from \code{make_climate_cfg()}.
+When provided and enabled, the annual count simulation uses the default
+climate workflow: rate effect plus intensity effect.}
 
 \item{verbose}{Logical; if TRUE (default), print progress to console.}
 }
@@ -42,7 +44,7 @@ End-to-end workflow:
 \item Gate track points within cfg$search_radius_km of each target
 \item Compute site winds and storm event summaries
 \item Classify storm classes and compute annual rates
-\item Optionally estimate beta_SST from historical SST-activity relationship
-\item Simulate annual counts with SST-conditioned rate scaling (Level 1 climate mod)
+\item Optionally estimate climate rate and intensity effects from historical MDR SST
+\item Simulate annual counts with climate-adjusted activity and TS/HUR split
 }
 }

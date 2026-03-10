@@ -8,7 +8,7 @@
 # - sample_events_for_year_extended(): sample events with additional attributes.
 # - generate_daily_year_extended(): daily wind + dominant event attributes.
 # - generate_daily_hazard_impact(): daily wind + event + damage forcing series
-#     (with Level 3 storm perturbation integration via perturb_event()).
+#     (with optional storm perturbation via perturb_event()).
 # - add_damage_forcing(): intensity + damage rate from daily wind.
 # - damage_rate_from_wind(): bounded power-law damage rate function.
 # =============================================================================
@@ -888,11 +888,15 @@ generate_daily_hazard_impact <- function(
   n_ts_vec  <- .get_sim_col(sim, c("n_ts"))
   n_hur_vec <- .get_sim_col(sim, c("n_hur"))
 
-  # --- Level 3: resolve SST anomaly vector for storm perturbation ---
+  # Resolve SST anomaly vector for optional storm perturbation.
   sst_anom_vec <- if (!is.null(out$cfg) && !is.null(out$cfg$sst_scenario)) out$cfg$sst_scenario$sst_anomaly else NULL
+  perturb_cfg <- if (!is.null(out$fit)) attr(out$fit, "perturb") else NULL
   cc_params <- if (!is.null(out$fit)) attr(out$fit, "cc_params") else NULL
+  if (is.null(perturb_cfg)) {
+    perturb_cfg <- cc_params
+  }
 
-  l3_enabled <- !is.null(cc_params) && !is.null(sst_anom_vec)
+  perturb_enabled <- !is.null(perturb_cfg) && !is.null(sst_anom_vec)
 
   daily_list <- vector("list", nrow(sim))
 
@@ -906,15 +910,15 @@ generate_daily_hazard_impact <- function(
       n_hur = n_hur_vec[i]
     )
 
-    # --- Level 3: perturb storm characteristics ---
-    if (l3_enabled && nrow(sampled) > 0) {
+    # Apply storm perturbation only when explicitly enabled in the climate config.
+    if (perturb_enabled && nrow(sampled) > 0) {
       sy <- sim$sim_year[i]
       delta_sst_i <- if (sy >= 1L && sy <= length(sst_anom_vec)) {
         sst_anom_vec[sy]
       } else {
         0
       }
-      sampled <- perturb_event(sampled, delta_sst = delta_sst_i, cc_params = cc_params)
+      sampled <- perturb_event(sampled, delta_sst = delta_sst_i, cc_params = perturb_cfg)
     }
 
     daily0 <- generate_daily_year_extended(

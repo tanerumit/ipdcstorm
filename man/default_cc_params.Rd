@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_climate.R
 \name{default_cc_params}
 \alias{default_cc_params}
-\title{Default climate-change perturbation parameters}
+\title{Default storm-perturbation parameters for climate sensitivity}
 \usage{
 default_cc_params()
 }
@@ -10,6 +10,6 @@ default_cc_params()
 Named list with elements v_scale, r_scale, speed_scale, precip_scale.
 }
 \description{
-Returns a named list of per-degC scaling factors for Level 3 storm property
+Returns a named list of per-degC scaling factors for storm-property
 perturbation.
 }
