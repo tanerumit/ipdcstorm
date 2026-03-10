@@ -1,7 +1,7 @@
 validation_out_fixture <- function() {
   list(
     config = list(n_sim = 150L),
-    cfg = list(n_sim = 150L, n_sim_years = 150L),
+    cfg = list(n_sim = 150L),
     events = tibble::tibble(
       location = c("Saba", "Saba"),
       storm_class = c("TS", "HUR"),
@@ -178,8 +178,8 @@ test_that("validation wrappers return structured outputs and normalize forwarded
   expect_true(all(c("hindcast", "rate_check", "wind_field", "summary", "artifacts") %in% names(val)))
 
   local_mocked_bindings(
-    run_hazard_model = function(cfg, targets, storm_classes, sst_cfg = NULL) {
-      list(cfg = cfg, targets = targets, storm_classes = storm_classes, sst_cfg = sst_cfg)
+    run_hazard_model = function(cfg, targets, storm_classes, climate_cfg = NULL) {
+      list(cfg = cfg, targets = targets, storm_classes = storm_classes, climate_cfg = climate_cfg)
     },
     run_validation_suite = function(out, cfg) {
       list(summary = tibble::tibble(location = "Saba"), artifacts = list(plots = list(), tables = list()), out = out, cfg = cfg)
@@ -187,14 +187,11 @@ test_that("validation wrappers return structured outputs and normalize forwarded
     .package = "ipdcstorm"
   )
 
-  expect_warning(
-    result <- validate_hazard_model(
-      cfg = make_hazard_cfg(n_sim = 120L),
-      targets = tibble::tibble(location = "Saba", lat = 17.63, lon = -63.23, search_radius_km = 200),
-      validation_cfg = make_validation_cfg(n_sim = 120L, save_plots = FALSE, save_tables = FALSE),
-      severities = "TS34plus"
-    ),
-    "deprecated"
+  result <- validate_hazard_model(
+    cfg = make_hazard_cfg(simulation_years = 120L),
+    targets = tibble::tibble(location = "Saba", lat = 17.63, lon = -63.23, search_radius_km = 200),
+    validation_cfg = make_validation_cfg(n_sim = 120L, save_plots = FALSE, save_tables = FALSE),
+    storm_classes = "TS"
   )
 
   expect_equal(result$out$storm_classes, "TS")

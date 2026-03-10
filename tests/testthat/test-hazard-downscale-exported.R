@@ -41,6 +41,7 @@ test_that("downscale library and samplers expose expected public behavior", {
   lib <- build_event_library(
     track_df = downscale_track_fixture(),
     event_df = downscale_event_fixture(),
+    storm_classes = c("TD", "TS", "HUR"),
     seed = 10
   )
   lib_from_out <- build_event_library_from_out(
@@ -61,6 +62,7 @@ test_that("downscale library and samplers expose expected public behavior", {
   expect_true(is.function(lib$sample_doy))
   expect_true(is.function(lib$sample_event))
   expect_true(nrow(lib$events) >= 2)
+  expect_identical(levels(lib$events$severity), c("TD", "TS", "HUR"))
   expect_equal(nrow(lib_from_out$events), nrow(lib$events))
   expect_equal(sort(sampled$event_class), c("HUR", "TS"))
   expect_true(all(sampled$dur_days >= 1L))

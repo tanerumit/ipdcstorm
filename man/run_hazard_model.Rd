@@ -7,11 +7,8 @@
 run_hazard_model(
   cfg,
   targets,
-  per_target_cfg = list(),
   storm_classes = c("TS", "HUR"),
-  severities = NULL,
   climate_cfg = NULL,
-  sst_cfg = NULL,
   seed = NULL,
   verbose = TRUE
 )
@@ -21,11 +18,7 @@ run_hazard_model(
 
 \item{targets}{Data frame/tibble with columns: name, lat, lon.}
 
-\item{per_target_cfg}{Named list of per-target options (currently unused).}
-
 \item{storm_classes}{Character vector of storm classes to model (default TS and HUR).}
-
-\item{severities}{Deprecated alias for \code{storm_classes}.}
 
 \item{climate_cfg}{Optional climate configuration from \code{make_climate_cfg()}.
 When provided and enabled, the annual count simulation uses the default

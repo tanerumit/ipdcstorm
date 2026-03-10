@@ -28,5 +28,6 @@ Input tibble with additional logical columns:
 \code{port_disrupt}, \code{infra_disrupt}, \code{surge_disrupt}.
 }
 \description{
-Compute disruption flags from daily hazard output
+Adds logical disruption indicators to a daily hazard table by comparing daily
+wind or surge values with user-supplied thresholds.
 }

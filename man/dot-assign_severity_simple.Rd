@@ -13,6 +13,7 @@
 Character scalar in \code{c("TD", "TS", "HUR")} (or \code{NA}).
 }
 \description{
-Assign simple severity class from peak wind
+Applies fixed tropical-depression, tropical-storm, and hurricane wind
+thresholds to a realized peak wind value.
 }
 \keyword{internal}

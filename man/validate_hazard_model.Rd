@@ -9,8 +9,7 @@ validate_hazard_model(
   targets,
   validation_cfg = make_validation_cfg(),
   storm_classes = c("TS", "HUR"),
-  severities = NULL,
-  sst_cfg = NULL
+  climate_cfg = NULL
 )
 }
 \arguments{
@@ -33,11 +32,9 @@ CI with 10-year holdout and inherited synthetic years from the hazard model outp
 (default: \code{c("TS", "HUR")}). Must match IBTrACS classification codes.
 Use \code{"HUR"} alone for hurricane-only analysis.}
 
-\item{severities}{Deprecated alias for \code{storm_classes}.}
-
-\item{sst_cfg}{Optional \code{sst_cfg} object from \code{make_sst_cfg()} for
-SST-conditioned rate scaling (climate Level 1). When \code{NULL}, SST
-conditioning is disabled.}
+\item{climate_cfg}{Optional climate configuration from \code{make_climate_cfg()}
+for hazard-model climate conditioning. When \code{NULL}, climate conditioning
+is disabled.}
 }
 \value{
 A list with three elements:
@@ -83,7 +80,7 @@ targets_df <- data.frame(
 )
 
 result <- validate_hazard_model(
-  cfg     = make_hazard_cfg(n_sim = 2000),
+  cfg     = make_hazard_cfg(simulation_years = 2000),
   targets = targets_df
 )
 
@@ -94,7 +91,7 @@ result$artifacts$plots            # Paths to saved figures
 
 # --- Stricter validation with 95\% CI ---
 result_95 <- validate_hazard_model(
-  cfg            = make_hazard_cfg(n_sim = 4000),
+  cfg            = make_hazard_cfg(simulation_years = 4000),
   targets        = targets_df,
   validation_cfg = make_validation_cfg(
     conf_level     = 0.95,
@@ -103,10 +100,10 @@ result_95 <- validate_hazard_model(
   )
 )
 
-# --- With SST conditioning ---
-result_sst <- validate_hazard_model(
+# --- With climate conditioning ---
+result_climate <- validate_hazard_model(
   cfg     = make_hazard_cfg(),
   targets = targets_df,
-  sst_cfg = make_sst_cfg()
+  climate_cfg = make_climate_cfg()
 )
 }

@@ -22,6 +22,6 @@ Tibble with added columns:
 damage_intensity, damage_rate.
 }
 \description{
-Maps daily wind speed to a bounded hazard intensity (0..1) and a bounded daily
-damage rate (0..dmax).
+Maps daily sustained wind speed to a bounded hazard intensity index and a
+bounded daily damage rate for downstream impact calculations.
 }

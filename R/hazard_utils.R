@@ -5,17 +5,13 @@
   # - .min_na(): NA-safe min for numeric vectors.
   # - .mean_na(): NA-safe mean for numeric vectors.
   # - .to_radii_nm(): parse wind radii fields with caps and sentinels.
-  #
-  # Conventions used:
-  # - Internal helpers: .name() + @keywords internal + not exported
-  # - User-facing functions: exported with @export
-  # - Package deps referenced with :: and requireNamespace() where needed
+
   ################################################################################
-  
+
   # =============================================================================
   # 0) Internal utilities (type checks, NA-safe summaries)
   # =============================================================================
-  
+
   #' Quiet numeric parsing for messy IBTrACS string fields
   #'
   #' @description
@@ -38,7 +34,7 @@
     )
     x <- stringr::str_replace_all(x, stringr::regex("\\b(deg|degrees?)\\b", ignore_case = TRUE), "")
     x <- stringr::str_trim(x)
-    
+
     out <- suppressWarnings(readr::parse_number(x, na = c("", "NA", "N/A", "NULL", "null")))
     out[out %in% c(-999, -99, 999)] <- NA_real_
     out
@@ -52,7 +48,7 @@
     x <- x[is.finite(x)]
     if (length(x) == 0L) NA_real_ else max(x)
   }
-  
+
   #' NA-safe min for numeric vectors
   #' @param x Numeric vector.
   #' @return Scalar numeric; NA if no finite values.
@@ -61,7 +57,7 @@
     x <- x[is.finite(x)]
     if (length(x) == 0L) NA_real_ else min(x)
   }
-  
+
   #' NA-safe mean for numeric vectors
   #' @param x Numeric vector.
   #' @return Scalar numeric; NA if no finite values.
@@ -82,7 +78,7 @@
 .to_radii_nm <- function(x, cap_nm) {
     x <- stringr::str_trim(as.character(x))
     x[x %in% c("", "NA", "N/A", "NULL", "null", ".", "-")] <- NA_character_
-    
+
     out <- suppressWarnings(readr::parse_number(x, na = c("", "NA", "N/A", "NULL", "null")))
     out[out %in% c(-999, -99, 0, 99, 999, 9999, 99999)] <- NA_real_
     out[is.finite(out) & out > cap_nm] <- NA_real_

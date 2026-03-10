@@ -13,5 +13,6 @@ peak_wind_by_year(daily)
 Tibble with \code{location}, \code{sim_year}, \code{scenario}, \code{peak_wind_kt}.
 }
 \description{
-Summarise peak wind per simulation year
+Aggregates a daily hazard table to annual peak sustained wind by location,
+simulation year, and scenario.
 }

@@ -7,9 +7,8 @@
 make_hazard_cfg(
   data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv",
   search_radius_km = 800,
-  start_year = 1970L,
-  n_sim = NULL,
-  n_sim_years = NULL,
+  historical_start_year = 1970L,
+  simulation_years = 1000L,
   preset = "default",
   advanced = NULL
 )
@@ -20,12 +19,9 @@ make_hazard_cfg(
 \item{search_radius_km}{Numeric; maximum distance from each target used to
 include track points.}
 
-\item{start_year}{Integer; first historical year used to fit rates.}
+\item{historical_start_year}{Integer; first historical year used to fit rates.}
 
-\item{n_sim}{Integer; number of synthetic years to simulate.
-If both \code{n_sim} and legacy \code{n_sim_years} are supplied, \code{n_sim} takes precedence.}
-
-\item{n_sim_years}{Deprecated legacy alias for \code{n_sim}.}
+\item{simulation_years}{Integer; number of synthetic years to simulate.}
 
 \item{preset}{Character; currently only \code{"default"}.}
 

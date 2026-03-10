@@ -46,50 +46,54 @@ targets <- tibble::tribble(
   "Miami",       25.7617,  -80.1918
 )
 
-# Optional per-target metadata for downstream impact interpretation.
-# run_hazard_model() currently does not use these directly, but they can still
-# be kept here for later daily-impact or damage analysis.
-per_target_cfg <- list(
-  Saba      = list(thr_port = 40, thr_infra = 55),
-  Statia    = list(thr_port = 38, thr_infra = 52),
-  St_Martin = list(thr_port = 45, thr_infra = 60)
-)
-
-seed_compare <- 123
+# Randomization seed (use for deterministic results)
+seed <- 123
 
 # =============================================================================
 # 2) Stationary baseline
 # =============================================================================
-# Run the model without climate adjustments. This is the reference case.
 
+# Run the model without climate adjustments. This is the reference case.
 out_baseline <- run_hazard_model(
   cfg = cfg,
   targets = targets,
   per_target_cfg = per_target_cfg,
-  seed = seed_compare,
+  seed = seed,
   climate_cfg = NULL
 
 )
 
 # =============================================================================
-# 3) Climate scenario definitions
+# 3) Climate scenarios
 # =============================================================================
-# Define climate scenarios using the refactored climate configuration.
-# By default, the climate workflow applies:
-#   - rate effect (beta_sst)
-#   - hurricane-fraction/intensity effect (gamma)
+
+# Define climate scenarios via rate effects (beta_sst) and hurricane-fraction/intensity effects (gamma)
 # Storm perturbation is optional and off unless explicitly supplied.
 
 clim_245 <- make_climate_cfg(
   enabled = TRUE,
-  scenario = "ssp245",
-  sst_source = "builtin",
-  baseline_years = 1991L:2020L,
-  start_year = 2025L,
-  beta_sst = NULL,   # estimate from data
-  gamma = NULL,      # estimate from data
-  perturb = NULL     # no storm perturbation in this simple illustration
+  scenario = "ssp245",             # future climate pathway used to generate projected SST anomalies
+  sst_source = "builtin",          # source of historical MDR SST data used to compute anomalies
+  baseline_years = 1991L:2020L,    # user-specified
+  start_year = 2025L,              # user-specified
+  beta_sst = NULL,                 # estimate from data
+  gamma = NULL,                    # estimate from data
+  perturb = NULL                   # no storm perturbation in this simple illustration
 )
+
+scen_245 <- generate_sst_scenario(
+  n_years = 200,
+  mode = clim_245$scenario,
+  start_year = clim_245$start_year,
+  baseline_years = clim_245$baseline_years
+)
+
+head(scen_245)
+plot(scen_245$calendar_year, scen_245$sst_anomaly, type = "l")
+
+
+
+
 
 clim_585 <- make_climate_cfg(
   enabled = TRUE,
@@ -126,21 +130,21 @@ clim_585 <- make_climate_cfg(
 # =============================================================================
 # Run the same hazard model under two climate scenarios.
 
-set.seed(seed_compare)
+set.seed(seed)
 out_245 <- run_hazard_model(
   cfg = cfg,
   targets = targets,
   per_target_cfg = per_target_cfg,
-  seed = seed_compare,
+  seed = seed,
   climate_cfg = clim_245
 )
 
-set.seed(seed_compare)
+set.seed(seed)
 out_585 <- run_hazard_model(
   cfg = cfg,
   targets = targets,
   per_target_cfg = per_target_cfg,
-  seed = seed_compare,
+  seed = seed,
   climate_cfg = clim_585
 )
 
@@ -254,7 +258,7 @@ daily_baseline <- generate_daily_hazard_impact(
   gust_factor = 1.25,
   damage_method = "powerlaw",
   scenario = "baseline",
-  seed = seed_compare
+  seed = seed
 )$Saba
 
 daily_585 <- generate_daily_hazard_impact(
@@ -265,7 +269,7 @@ daily_585 <- generate_daily_hazard_impact(
   gust_factor = 1.25,
   damage_method = "powerlaw",
   scenario = "ssp585",
-  seed = seed_compare
+  seed = seed
 )$Saba
 
 daily_compare <- bind_rows(daily_baseline, daily_585)

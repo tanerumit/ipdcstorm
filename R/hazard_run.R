@@ -32,18 +32,6 @@
 #' @keywords internal
 .fmt_n <- function(x) format(x, big.mark = ",", scientific = FALSE, trim = TRUE)
 
-#' Resolve hazard simulation length with legacy compatibility
-#' @keywords internal
-.resolve_hazard_n_sim <- function(n_sim = NULL, n_sim_years = NULL) {
-  if (!is.null(n_sim)) {
-    return(as.integer(n_sim))
-  }
-  if (!is.null(n_sim_years)) {
-    return(as.integer(n_sim_years))
-  }
-  as.integer(1000L)
-}
-
 #' Resolve an IBTrACS path in dev and installed package contexts
 #' @keywords internal
 .resolve_ibtracs_path <- function(path) {
@@ -112,10 +100,8 @@
 #' @param data_path Character; path to IBTrACS CSV input data.
 #' @param search_radius_km Numeric; maximum distance from each target used to
 #'   include track points.
-#' @param start_year Integer; first historical year used to fit rates.
-#' @param n_sim Integer; number of synthetic years to simulate.
-#'   If both `n_sim` and legacy `n_sim_years` are supplied, `n_sim` takes precedence.
-#' @param n_sim_years Deprecated legacy alias for `n_sim`.
+#' @param historical_start_year Integer; first historical year used to fit rates.
+#' @param simulation_years Integer; number of synthetic years to simulate.
 #' @param preset Character; currently only `"default"`.
 #' @param advanced Optional named list of expert parameters. Most users should
 #'   leave this as `NULL`. Supported names:
@@ -127,9 +113,8 @@
 #' @export
 make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv",
                             search_radius_km = 800,
-                            start_year = 1970L,
-                            n_sim = NULL,
-                            n_sim_years = NULL,
+                            historical_start_year = 1970L,
+                            simulation_years = 1000L,
                             preset = "default",
                             advanced = NULL) {
 
@@ -158,15 +143,12 @@ make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv
     advanced <- utils::modifyList(defaults, advanced)
   }
 
-  n_sim_resolved <- .resolve_hazard_n_sim(n_sim = n_sim, n_sim_years = n_sim_years)
-
   cfg <- list(
     preset = preset,
     data_path = as.character(data_path),
     search_radius_km = as.numeric(search_radius_km),
-    start_year = as.integer(start_year),
-    n_sim = n_sim_resolved,
-    n_sim_years = n_sim_resolved,
+    start_year = as.integer(historical_start_year),
+    n_sim = as.integer(simulation_years),
     advanced = advanced,
     resampling_method = "stratified",
     copula_min_n = 30L,
@@ -211,9 +193,7 @@ print.hazard_cfg <- function(x, ...) {
 #'
 #' @param cfg Hazard configuration from `make_hazard_cfg()`.
 #' @param targets Data frame/tibble with columns: name, lat, lon.
-#' @param per_target_cfg Named list of per-target options (currently unused).
 #' @param storm_classes Character vector of storm classes to model (default TS and HUR).
-#' @param severities Deprecated alias for `storm_classes`.
 #' @param climate_cfg Optional climate configuration from `make_climate_cfg()`.
 #'   When provided and enabled, the annual count simulation uses the default
 #'   climate workflow: rate effect plus intensity effect.
@@ -227,28 +207,16 @@ print.hazard_cfg <- function(x, ...) {
 #'   and \code{cfg}. The same configuration is also returned in \code{config}.
 #'
 #' @export
-run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
+run_hazard_model <- function(cfg, targets,
                              storm_classes = c("TS", "HUR"),
-                             severities = NULL,
                              climate_cfg = NULL,
-                             sst_cfg = NULL,
                              seed = NULL,
                              verbose = TRUE) {
   if (!inherits(cfg, "hazard_cfg")) {
     stop("cfg must be created by make_hazard_cfg().", call. = FALSE)
   }
-  storm_classes <- .normalize_storm_classes(
-    storm_classes = storm_classes,
-    severities = severities,
-    warn_legacy = !is.null(severities)
-  )
+  storm_classes <- .normalize_storm_classes(storm_classes = storm_classes)
   targets <- .normalize_hazard_targets(targets)
-  cfg$n_sim <- .resolve_hazard_n_sim(n_sim = cfg$n_sim, n_sim_years = cfg$n_sim_years)
-  cfg$n_sim_years <- cfg$n_sim
-
-  if (is.null(climate_cfg) && !is.null(sst_cfg)) {
-    climate_cfg <- sst_cfg
-  }
 
   ts_threshold_kt <- as.numeric(cfg$advanced$ts_threshold_kt)
   hurricane_threshold_kt <- as.numeric(cfg$advanced$hurricane_threshold_kt)

@@ -18,6 +18,7 @@ Tibble with columns: date, wind_kt, event_id, event_class, pressure_hpa,
 pressure_deficit_hpa, rmw_km.
 }
 \description{
-Extended daily series used for SD coupling: tracks dominant event per day
-and carries key storm attributes (pressure, pressure deficit, RMW).
+Converts sampled storm events for one calendar year into a daily sustained
+wind series while tracking the dominant event and key event attributes for
+each day.
 }

@@ -42,7 +42,7 @@ test_that("gamma intensity is constrained to non-negative values", {
 })
 
 test_that("run_hazard_model resolves packaged IBTrACS data and accepts location targets", {
-  cfg <- make_hazard_cfg(n_sim = 3L)
+  cfg <- make_hazard_cfg(simulation_years = 3L)
   targets <- tibble::tibble(
     location = "Saba",
     lat = 17.63,
@@ -59,7 +59,7 @@ test_that("run_hazard_model resolves packaged IBTrACS data and accepts location 
 })
 
 test_that("run_hazard_model is deterministic for an explicit seed", {
-  cfg <- make_hazard_cfg(n_sim = 20L)
+  cfg <- make_hazard_cfg(simulation_years = 20L)
   targets <- tibble::tibble(
     name = "Saba",
     lat = 17.63,
@@ -79,7 +79,7 @@ test_that("run_hazard_model is deterministic for an explicit seed", {
 })
 
 test_that("run_hazard_model console output is structured and user-facing", {
-  cfg <- make_hazard_cfg(n_sim = 3L)
+  cfg <- make_hazard_cfg(simulation_years = 3L)
   targets <- tibble::tibble(
     name = "Saba",
     lat = 17.63,

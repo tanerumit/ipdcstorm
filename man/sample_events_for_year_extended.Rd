@@ -22,8 +22,8 @@ Tibble with columns: severity, start_date, dur_days, V_peak,
 event_id, event_class, Pc_min_hPa, dP_max_hPa, RMW_mean_km.
 }
 \description{
-Extended event sampler that also carries
-atmospheric attributes (Pc, dP, RMW) and event metadata needed by
+Samples synthetic storm events for one calendar year from an event library
+and carries forward the atmospheric attributes and identifiers needed by
 \code{generate_daily_year_extended()}.
 
 For each sampled event, extracts from the event library row:

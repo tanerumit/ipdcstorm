@@ -185,15 +185,15 @@ print.validation_cfg <- function(x, ...) {
         call. = FALSE
       )
     }
-    n_sim <- out_config$n_sim %||% out_config$n_sim_years
+    n_sim <- out_config$n_sim
     if (is.null(n_sim)) {
       stop(
-        "Validation n_sim is NULL and model output config does not contain n_sim or n_sim_years.",
+        "Validation n_sim is NULL and model output config does not contain n_sim.",
         call. = FALSE
       )
     }
     n_sim <- as.integer(n_sim)
-    source <- if (!is.null(out_config$n_sim)) "model output config$n_sim" else "model output config$n_sim_years"
+    source <- "model output config$n_sim"
   }
   if (!is.finite(n_sim) || length(n_sim) != 1L || n_sim < 100L) {
     stop("Effective n_sim must be a single integer >= 100.", call. = FALSE)
@@ -2052,10 +2052,9 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #' @param storm_classes Character vector of storm classes to include
 #'   (default: `c("TS", "HUR")`). Must match IBTrACS classification codes.
 #'   Use `"HUR"` alone for hurricane-only analysis.
-#' @param severities Deprecated alias for `storm_classes`.
-#' @param sst_cfg Optional `sst_cfg` object from `make_sst_cfg()` for
-#'   SST-conditioned rate scaling (climate Level 1). When `NULL`, SST
-#'   conditioning is disabled.
+#' @param climate_cfg Optional climate configuration from `make_climate_cfg()`
+#'   for hazard-model climate conditioning. When `NULL`, climate conditioning
+#'   is disabled.
 #'
 #' @return A list with three elements:
 #'   \describe{
@@ -2084,7 +2083,7 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #' )
 #'
 #' result <- validate_hazard_model(
-#'   cfg     = make_hazard_cfg(n_sim = 2000),
+#'   cfg     = make_hazard_cfg(simulation_years = 2000),
 #'   targets = targets_df
 #' )
 #'
@@ -2095,7 +2094,7 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #'
 #' # --- Stricter validation with 95% CI ---
 #' result_95 <- validate_hazard_model(
-#'   cfg            = make_hazard_cfg(n_sim = 4000),
+#'   cfg            = make_hazard_cfg(simulation_years = 4000),
 #'   targets        = targets_df,
 #'   validation_cfg = make_validation_cfg(
 #'     conf_level     = 0.95,
@@ -2104,32 +2103,27 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #'   )
 #' )
 #'
-#' # --- With SST conditioning ---
-#' result_sst <- validate_hazard_model(
+#' # --- With climate conditioning ---
+#' result_climate <- validate_hazard_model(
 #'   cfg     = make_hazard_cfg(),
 #'   targets = targets_df,
-#'   sst_cfg = make_sst_cfg()
+#'   climate_cfg = make_climate_cfg()
 #' )
 validate_hazard_model <- function(cfg,
                                   targets,
                                   validation_cfg = make_validation_cfg(),
                                   storm_classes = c("TS", "HUR"),
-                                  severities = NULL,
-                                  sst_cfg = NULL) {
+                                  climate_cfg = NULL) {
   if (!inherits(validation_cfg, "validation_cfg")) {
     stop("validation_cfg must be created by make_validation_cfg().", call. = FALSE)
   }
-  storm_classes <- .normalize_storm_classes(
-    storm_classes = storm_classes,
-    severities = severities,
-    warn_legacy = !is.null(severities)
-  )
+  storm_classes <- .normalize_storm_classes(storm_classes = storm_classes)
 
   out <- run_hazard_model(
     cfg = cfg,
     targets = targets,
     storm_classes = storm_classes,
-    sst_cfg = sst_cfg
+    climate_cfg = climate_cfg
   )
 
   val <- run_validation_suite(out = out, cfg = validation_cfg)

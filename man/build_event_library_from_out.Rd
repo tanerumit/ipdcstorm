@@ -19,5 +19,7 @@ build_event_library_from_out(out, location, ..., seed = NULL)
 Event library as returned by \code{build_event_library()}.
 }
 \description{
-Convenience wrapper: build an event library from run_hazard_model() output
+Extracts one location's track-point and event tables from
+\code{run_hazard_model()} output and forwards them to
+\code{build_event_library()}.
 }

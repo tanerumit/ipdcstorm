@@ -47,9 +47,9 @@ Named list of tibbles (one per location), each with columns:
 \code{damage_intensity}, \code{damage_rate}, \code{cum_damage}.
 }
 \description{
-For one or more locations and simulated years, creates daily hazard and damage
-series with a fixed 15-column schema.  Always returns a \strong{named list} of
-tibbles, one element per location (e.g. \code{out$Saba}, \code{out$Miami}).
+Builds daily hazard and damage time series from \code{run_hazard_model()}
+output for one or more locations and simulation years. The function always
+returns a named list of tibbles, one element per location.
 }
 \examples{
 \dontrun{

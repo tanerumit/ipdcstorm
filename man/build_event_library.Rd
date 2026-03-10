@@ -7,7 +7,7 @@
 build_event_library(
   track_df,
   event_df,
-  sev_levels = c("TD", "TS", "HUR"),
+  storm_classes = c("TD", "TS", "HUR"),
   bins = list(wind = c(0, 34, 64, 83, 96, 113, Inf), Pc = c(850, 900, 940, 970, 1000,
     1050), RMW = c(0, 10, 20, 30, 40, 60, Inf)),
   seed = NULL,
@@ -24,7 +24,8 @@ build_event_library(
 Recommended: \code{peak_wind_kt}, \code{storm_intensity_kt}, \code{min_pressure_hpa},
 \code{rmw_mean_km}, \code{start_time}.}
 
-\item{sev_levels}{Character vector of class levels.}
+\item{storm_classes}{Character vector of storm classes to retain in the
+event library. Defaults to \code{c("TD", "TS", "HUR")}.}
 
 \item{bins}{List of break vectors for stratification (wind, Pc, RMW).}
 
@@ -43,6 +44,8 @@ Default "stratified" preserves existing behavior.}
 A list with DOY samples, stratification bins, the event table, and sampler functions.
 }
 \description{
-Constructs (1) empirical day-of-year (DOY) samples by class and
-(2) stratified bins of historical events for resampling.
+Builds a resampling library from historical storm events for one target
+location. The library stores empirical day-of-year samples by storm class,
+stratified historical event bins, and sampler closures used by the daily
+downscaling workflow.
 }

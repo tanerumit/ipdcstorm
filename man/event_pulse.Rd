@@ -17,6 +17,6 @@ event_pulse(dur_days, V_peak, shape = c("cosine", "triangle"))
 Numeric vector length dur_days of daily winds (kt).
 }
 \description{
-Creates a deterministic within-event daily wind profile with specified duration
-and peak wind. Used to convert discrete sampled events into a daily time series.
+Creates a deterministic within-event daily wind profile from an event
+duration and peak sustained wind.
 }

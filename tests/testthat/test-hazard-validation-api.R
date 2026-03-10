@@ -1,20 +1,49 @@
-test_that("hazard config normalizes n_sim with legacy compatibility", {
+test_that("hazard config maps canonical constructor names to runtime fields", {
   cfg_default <- make_hazard_cfg()
-  expect_identical(cfg_default$n_sim, cfg_default$n_sim_years)
+  expect_identical(cfg_default$start_year, 1970L)
+  expect_identical(cfg_default$n_sim, 1000L)
 
-  cfg_legacy <- make_hazard_cfg(n_sim_years = 250L)
-  expect_identical(cfg_legacy$n_sim, 250L)
-  expect_identical(cfg_legacy$n_sim_years, 250L)
-
-  cfg_both <- make_hazard_cfg(n_sim = 180L, n_sim_years = 250L)
-  expect_identical(cfg_both$n_sim, 180L)
-  expect_identical(cfg_both$n_sim_years, 180L)
+  cfg_custom <- make_hazard_cfg(
+    historical_start_year = 1985L,
+    simulation_years = 250L
+  )
+  expect_identical(cfg_custom$start_year, 1985L)
+  expect_identical(cfg_custom$n_sim, 250L)
+  expect_false("n_sim_years" %in% names(cfg_custom))
 })
 
-test_that("run_validation_suite inherits n_sim from model output config and honors override", {
+test_that("validation suite inherits n_sim only from model output config", {
   out_stub <- list(
     config = list(n_sim = 250L),
-    cfg = list(n_sim_years = 999L),
+    cfg = list(),
+    events = tibble::tibble(
+      location = character(0),
+      storm_class = character(0),
+      storm_id = character(0),
+      year = integer(0),
+      peak_wind_kt = numeric(0)
+    ),
+    rates = tibble::tibble(
+      location = character(0),
+      storm_class = character(0),
+      lambda = numeric(0),
+      n_years = integer(0)
+    ),
+    fit = tibble::tibble(),
+    trackpoints = list()
+  )
+
+  cfg_inherit <- make_validation_cfg(n_sim = NULL, save_plots = FALSE, save_tables = FALSE)
+  expect_message(
+    run_validation_suite(out_stub, cfg = cfg_inherit),
+    "Sim: 250 yr \\(model output config\\$n_sim\\)"
+  )
+})
+
+test_that("run_validation_suite honors explicit validation n_sim overrides", {
+  out_stub <- list(
+    config = list(n_sim = 250L),
+    cfg = list(),
     events = tibble::tibble(
       location = character(0),
       storm_class = character(0),
@@ -43,27 +72,10 @@ test_that("run_validation_suite inherits n_sim from model output config and hono
     run_validation_suite(out_stub, cfg = cfg_override),
     "Sim: 180 yr \\(validation_cfg\\$n_sim\\)"
   )
-
-  out_legacy <- out_stub
-  out_legacy$config <- list(n_sim_years = 220L)
-  expect_message(
-    run_validation_suite(out_legacy, cfg = cfg_inherit),
-    "Sim: 220 yr"
-  )
 })
 
-test_that("legacy severity alias still works and TS34plus is normalized away", {
-  events <- tibble::tibble(
-    year = c(2000L, 2000L, 2001L),
-    storm_class = c("TS", "HUR", "TS"),
-    storm_id = c("a", "b", "c")
-  )
-
-  expect_warning(
-    counts <- compute_annual_counts(events, severities = "TS34plus"),
-    "deprecated"
-  )
-  expect_true(all(counts$storm_class == "TS"))
+test_that("storm-class helpers no longer normalize legacy aliases", {
+  expect_identical(ipdcstorm:::.normalize_storm_classes("TS34plus"), "TS34plus")
 
   rate_tbl <- tibble::tibble(
     location = c("Saba", "Saba"),

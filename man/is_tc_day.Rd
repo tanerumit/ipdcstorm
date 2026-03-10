@@ -16,5 +16,6 @@ is_hur_day(daily)
 Logical vector.
 }
 \description{
-Flag tropical cyclone or hurricane days
+Flags days in a daily hazard table that are associated with any tropical
+storm or hurricane event.
 }

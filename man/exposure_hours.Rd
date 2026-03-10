@@ -17,5 +17,6 @@ exposure_hours(daily, threshold_kt, use_gust = FALSE)
 Numeric vector of hours (0 or 24 at daily resolution).
 }
 \description{
-Compute daily exposure hours above a wind threshold
+Converts a daily wind threshold exceedance test into daily exposure hours at
+package daily resolution.
 }

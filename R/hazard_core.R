@@ -926,42 +926,26 @@ make_storm_events <- function(track_df) {
 # =============================================================================
 
 #' @keywords internal
-.normalize_storm_classes <- function(storm_classes = NULL,
-                                     severities = NULL,
-                                     warn_legacy = FALSE) {
-  if (!is.null(severities)) {
-    if (warn_legacy) {
-      warning("`severities` is deprecated; use `storm_classes`.", call. = FALSE)
-    }
-    storm_classes <- severities
-  }
+.normalize_storm_classes <- function(storm_classes = NULL) {
   if (is.null(storm_classes)) {
     storm_classes <- c("TS", "HUR")
   }
-  storm_classes <- unique(as.character(storm_classes))
-  storm_classes[storm_classes == "TS34plus"] <- "TS"
-  storm_classes
+  unique(as.character(storm_classes))
 }
 
 #' Compute annual counts of unique storm events by storm class
 #'
 #' @param events Tibble with at least columns: year, storm_class, storm_id.
 #' @param storm_classes Character vector of classes to include.
-#' @param severities Deprecated alias for `storm_classes`.
 #'
 #' @return Tibble with columns year, storm_class, n_events, completed to include
 #'   all years and classes with zeros.
 #'
 #' @export
 compute_annual_counts <- function(events,
-                                  storm_classes = c("TS", "HUR"),
-                                  severities = NULL) {
+                                  storm_classes = c("TS", "HUR")) {
   if (!requireNamespace("tidyr", quietly = TRUE)) stop("Package `tidyr` is required.")
-  storm_classes <- .normalize_storm_classes(
-    storm_classes = storm_classes,
-    severities = severities,
-    warn_legacy = !is.null(severities)
-  )
+  storm_classes <- .normalize_storm_classes(storm_classes = storm_classes)
 
   events |>
     dplyr::filter(.data$storm_class %in% storm_classes) |>

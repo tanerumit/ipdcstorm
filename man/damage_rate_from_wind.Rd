@@ -30,6 +30,6 @@ damage_rate_from_wind(
 Numeric vector of damage rates (fractions per day).
 }
 \description{
-Converts wind speed to a daily damage fraction using a power law above a
-threshold, scaled such that damage equals d_ref at V_ref and capped at d_max.
+Converts sustained wind speed to a bounded daily damage fraction using a
+thresholded power-law response calibrated at \code{V_ref}.
 }
