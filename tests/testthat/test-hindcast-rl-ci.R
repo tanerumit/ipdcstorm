@@ -9,9 +9,9 @@ test_that("observed RL CI returns finite ordered bounds for moderate sample", {
     seed = 123
   )
 
-  expect_true(all(is.finite(ci$sim_lo_90)))
-  expect_true(all(is.finite(ci$sim_hi_90)))
-  expect_true(all(ci$sim_lo_90 <= ci$sim_hi_90))
+  expect_true(all(is.finite(ci$sim_ci_lo)))
+  expect_true(all(is.finite(ci$sim_ci_hi)))
+  expect_true(all(ci$sim_ci_lo <= ci$sim_ci_hi))
   expect_true(all(ci$ci_method %in% c("delta", "bootstrap")))
 })
 
@@ -26,9 +26,9 @@ test_that("small-to-moderate sample still yields CI via delta or bootstrap", {
     seed = 456
   )
 
-  expect_true(all(is.finite(ci$sim_lo_90)))
-  expect_true(all(is.finite(ci$sim_hi_90)))
-  expect_true(all(ci$sim_lo_90 <= ci$sim_hi_90))
+  expect_true(all(is.finite(ci$sim_ci_lo)))
+  expect_true(all(is.finite(ci$sim_ci_hi)))
+  expect_true(all(ci$sim_ci_lo <= ci$sim_ci_hi))
 })
 
 test_that("very small sample returns unavailable CI and NA classification", {
@@ -41,14 +41,14 @@ test_that("very small sample returns unavailable CI and NA classification", {
     seed = 789
   )
 
-  expect_true(all(is.na(ci$sim_lo_90)))
-  expect_true(all(is.na(ci$sim_hi_90)))
+  expect_true(all(is.na(ci$sim_ci_lo)))
+  expect_true(all(is.na(ci$sim_ci_hi)))
   expect_true(all(ci$ci_method == "unavailable"))
 
   sim_rl <- rep(50, length(ci$return_period))
   outside_flag <- ifelse(
-    is.finite(ci$sim_lo_90) & is.finite(ci$sim_hi_90),
-    sim_rl < ci$sim_lo_90 | sim_rl > ci$sim_hi_90,
+    is.finite(ci$sim_ci_lo) & is.finite(ci$sim_ci_hi),
+    sim_rl < ci$sim_ci_lo | sim_rl > ci$sim_ci_hi,
     NA
   )
   expect_true(all(is.na(outside_flag)))
@@ -76,8 +76,8 @@ test_that("bootstrap fallback is used deterministically when delta path is block
   )
 
   expect_true(all(ci1$ci_method == "bootstrap"))
-  expect_true(all(is.finite(ci1$sim_lo_90)))
-  expect_true(all(is.finite(ci1$sim_hi_90)))
-  expect_equal(ci1$sim_lo_90, ci2$sim_lo_90)
-  expect_equal(ci1$sim_hi_90, ci2$sim_hi_90)
+  expect_true(all(is.finite(ci1$sim_ci_lo)))
+  expect_true(all(is.finite(ci1$sim_ci_hi)))
+  expect_equal(ci1$sim_ci_lo, ci2$sim_ci_lo)
+  expect_equal(ci1$sim_ci_hi, ci2$sim_ci_hi)
 })

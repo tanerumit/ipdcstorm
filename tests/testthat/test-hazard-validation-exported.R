@@ -178,8 +178,8 @@ test_that("validation wrappers return structured outputs and normalize forwarded
   expect_true(all(c("hindcast", "rate_check", "wind_field", "summary", "artifacts") %in% names(val)))
 
   local_mocked_bindings(
-    run_hazard_model = function(cfg, targets, storm_classes, climate_cfg = NULL) {
-      list(cfg = cfg, targets = targets, storm_classes = storm_classes, climate_cfg = climate_cfg)
+    run_hazard_model = function(cfg, targets, storm_classes, climate = NULL) {
+      list(cfg = cfg, targets = targets, storm_classes = storm_classes, climate = climate)
     },
     run_validation_suite = function(out, cfg) {
       list(summary = tibble::tibble(location = "Saba"), artifacts = list(plots = list(), tables = list()), out = out, cfg = cfg)

@@ -749,132 +749,227 @@ sst_scenario_info <- function(source = c("all", "ipcc_ar6", "knmi23")) {
 }
 
 # =============================================================================
-# 5) SST SCENARIO GENERATION
+# 5) TIME-SLICE CLIMATE INPUTS
 # =============================================================================
 
-#' Generate SST anomaly scenarios for simulation
+.validate_baseline_years <- function(baseline_years, arg = "baseline_years") {
+  baseline_years <- as.integer(baseline_years)
+  if (length(baseline_years) < 10L || any(!is.finite(baseline_years))) {
+    stop(arg, " must be an integer vector of length >= 10.", call. = FALSE)
+  }
+  baseline_years
+}
+
+#' Build a stationary climate-shift object
 #'
 #' @description
-#' Generates a per-year SST anomaly (degC relative to baseline_years).
-#' For SSP scenarios, uses piecewise-linear warming to 2050 and 2100 targets
-#' and holds constant thereafter to avoid unrealistic multi-century extrapolation.
+#' Creates a scalar SST time-slice shift for the hazard model. `delta_sst`
+#' represents the mean SST difference between a future period and a baseline
+#' period, both referenced to the same climatology.
 #'
-#' @param n_years Integer; number of simulation years.
-#' @param mode Character; one of "stationary", "trend", "ssp245", "ssp585",
-#'   or "historical_resample".
-#' @param start_year Integer; first calendar year of the simulation (for labelling).
-#' @param delta_start Numeric; starting SST anomaly (degC) for "trend" mode.
-#' @param delta_end Numeric; ending SST anomaly (degC) for "trend" mode.
-#' @param sst_hist_df Optional tibble with historical SST anomalies (year, sst_anomaly)
-#'   for "historical_resample" mode. If NULL, uses built-in data.
-#' @param baseline_years Baseline period for anomaly computation (default 1991:2020).
+#' @param delta_sst Numeric scalar; SST shift in degC.
+#' @param baseline_years Integer vector of climatological reference years.
 #'
-#' @return Tibble with columns: sim_year, calendar_year, sst_anomaly, scenario.
-#'
+#' @return A list with class `c("climate_shift", "list")`.
 #' @examples
-#' generate_sst_scenario(n_years = 5, mode = "stationary")
-#' generate_sst_scenario(n_years = 5, mode = "trend", delta_start = 0, delta_end = 1)
+#' make_climate_shift(delta_sst = 0.8)
 #' @export
-generate_sst_scenario <- function(n_years,
-                                  mode = c("stationary", "trend",
-                                           "ssp126", "ssp245", "ssp585",
-                                           "knmi_Ld", "knmi_Ln", "knmi_Hd", "knmi_Hn",
-                                           "historical_resample"),
-                                  start_year = 2025L,
-                                  delta_start = 0,
-                                  delta_end = 1.0,
-                                  sst_hist_df = NULL,
-                                  baseline_years = 1991L:2020L) {
-
-  mode <- match.arg(mode)
-
-  n_years <- as.integer(n_years)
-  if (!is.finite(n_years) || n_years <= 0) stop("n_years must be a positive integer.")
-  start_year <- as.integer(start_year)
-
-  sim_year <- seq_len(n_years)
-  cal_year <- start_year + sim_year - 1L
-
-  # helper: robust linear interpolation (with clamping)
-  .lerp <- function(x, x0, x1, y0, y1) {
-    if (x1 == x0) return(rep(y1, length(x)))
-    t <- (x - x0) / (x1 - x0)
-    t <- pmin(1, pmax(0, t))
-    y0 + (y1 - y0) * t
+make_climate_shift <- function(delta_sst, baseline_years = 1991L:2020L) {
+  if (!is.numeric(delta_sst) || length(delta_sst) != 1L || !is.finite(delta_sst)) {
+    stop("delta_sst must be a single finite numeric value.", call. = FALSE)
   }
 
-  # determine a realistic starting anomaly from historical (builtin) if possible
-  .get_start_anom <- function(year0) {
-    sst_hist <- get_mdr_sst_builtin() |>
-      compute_sst_anomaly(baseline_years = baseline_years)
-    a <- sst_hist$sst_anomaly[match(year0, sst_hist$year)]
-    if (length(a) == 1 && is.finite(a)) return(as.numeric(a))
-    # fallback: use the last available anomaly (2024) if start_year beyond range
-    a2 <- sst_hist$sst_anomaly[match(max(sst_hist$year), sst_hist$year)]
-    if (length(a2) == 1 && is.finite(a2)) return(as.numeric(a2))
-    0
-  }
-
-
-# lookup scenario targets (degC relative to baseline_years) from scenario tables
-.get_targets <- function(scn) {
-  info <- sst_scenario_info("all")
-  row <- info[info$scenario == scn, , drop = FALSE]
-  if (nrow(row) == 0) {
-    stop("Unknown SST scenario: ", scn,
-         ". Available: ", paste(info$scenario, collapse = ", "),
-         call. = FALSE)
-  }
-  list(a_2050 = as.numeric(row$delta_sst_2050[1]),
-       a_2100 = as.numeric(row$delta_sst_2100[1]))
+  shift <- list(
+    delta_sst = as.numeric(delta_sst),
+    baseline_years = .validate_baseline_years(baseline_years)
+  )
+  class(shift) <- c("climate_shift", "list")
+  shift
 }
-  sst_anom <- switch(
-    mode,
 
-    stationary = rep(as.numeric(delta_start), n_years),
+#' @export
+print.climate_shift <- function(x, ...) {
+  cat("Climate shift\n")
+  cat(sprintf("  delta_sst      : %.3f\n", x$delta_sst))
+  cat(sprintf("  baseline_years : %d-%d\n", min(x$baseline_years), max(x$baseline_years)))
+  invisible(x)
+}
 
-    trend = {
-      seq(as.numeric(delta_start), as.numeric(delta_end), length.out = n_years)
-    },
+#' Build a stationary climate-response object
+#'
+#' @description
+#' Creates the scalar response parameters used by the time-slice climate-shift
+#' workflow. Level 3 storm perturbation is disabled when `perturb = NULL`.
+#'
+#' @param beta_sst Numeric scalar; log-linear rate sensitivity per degC.
+#' @param gamma Numeric scalar; fractional hurricane-fraction sensitivity per degC.
+#' @param perturb `NULL` or a named list with keys `v_scale`, `r_scale`,
+#'   `speed_scale`, and `precip_scale`, all interpreted per degC.
+#'
+#' @return A list with class `c("climate_response", "list")`.
+#' @examples
+#' make_climate_response(beta_sst = 0.4, gamma = 0.05)
+#' @export
+make_climate_response <- function(beta_sst = 0, gamma = 0, perturb = NULL) {
+  if (!is.numeric(beta_sst) || length(beta_sst) != 1L || !is.finite(beta_sst)) {
+    stop("beta_sst must be a single finite numeric value.", call. = FALSE)
+  }
+  if (!is.numeric(gamma) || length(gamma) != 1L || !is.finite(gamma)) {
+    stop("gamma must be a single finite numeric value.", call. = FALSE)
+  }
+  if (gamma < 0) {
+    stop("gamma must be >= 0.", call. = FALSE)
+  }
 
-    ssp126 = , ssp245 = , ssp585 = , knmi_Ld = , knmi_Ln = , knmi_Hd = , knmi_Hn = {
-  targets <- .get_targets(mode)
-  a0 <- .get_start_anom(start_year)
-  y0 <- start_year
-  y1 <- 2050L
-  y2 <- 2100L
-  a1 <- targets$a_2050
-  a2 <- targets$a_2100
-
-  a_t <- ifelse(
-    cal_year <= y1,
-    .lerp(cal_year, y0, y1, a0, a1),
-    ifelse(cal_year <= y2,
-           .lerp(cal_year, y1, y2, a1, a2),
-           a2)
-  )
-  as.numeric(a_t)
-    },
-historical_resample = {
-      if (is.null(sst_hist_df)) {
-        sst_hist_df <- get_mdr_sst_builtin() |>
-          compute_sst_anomaly(baseline_years = baseline_years)
-      }
-      if (!("sst_anomaly" %in% names(sst_hist_df))) {
-        stop("sst_hist_df must contain 'sst_anomaly'. Run compute_sst_anomaly() first.")
-      }
-      pool <- sst_hist_df$sst_anomaly[is.finite(sst_hist_df$sst_anomaly)]
-      if (length(pool) == 0) stop("No valid SST anomalies to resample.")
-      sample(pool, n_years, replace = TRUE)
+  perturb_out <- NULL
+  if (!is.null(perturb)) {
+    if (!is.list(perturb)) {
+      stop("perturb must be NULL or a named list.", call. = FALSE)
     }
-  )
+    defaults <- default_cc_params()
+    perturb_out <- defaults
+    for (nm in names(defaults)) {
+      if (!is.null(perturb[[nm]])) {
+        perturb_out[[nm]] <- perturb[[nm]]
+      }
+    }
+    for (nm in names(defaults)) {
+      val <- perturb_out[[nm]]
+      if (!is.numeric(val) || length(val) != 1L || !is.finite(val)) {
+        stop("perturb$", nm, " must be a single finite numeric value.", call. = FALSE)
+      }
+      perturb_out[[nm]] <- as.numeric(val)
+    }
+  }
 
-  tibble::tibble(
-    sim_year = sim_year,
-    calendar_year = as.integer(cal_year),
-    sst_anomaly = as.numeric(sst_anom),
-    scenario = mode
+  response <- list(
+    beta_sst = as.numeric(beta_sst),
+    gamma = as.numeric(gamma),
+    perturb = perturb_out
   )
+  class(response) <- c("climate_response", "list")
+  response
+}
+
+#' @export
+print.climate_response <- function(x, ...) {
+  cat("Climate response\n")
+  cat(sprintf("  beta_sst : %.3f\n", x$beta_sst))
+  cat(sprintf("  gamma    : %.3f\n", x$gamma))
+  cat(sprintf("  perturb  : %s\n", if (is.null(x$perturb)) "disabled" else "enabled"))
+  invisible(x)
+}
+
+.response_is_zero <- function(response) {
+  isTRUE(all.equal(response$beta_sst, 0)) &&
+    isTRUE(all.equal(response$gamma, 0)) &&
+    is.null(response$perturb)
+}
+
+#' Build a climate input for the hazard runner
+#'
+#' @description
+#' Combines a `climate_shift` and a `climate_response` into the stationary
+#' climate input consumed by `run_hazard_model()`.
+#'
+#' @param shift A `climate_shift` object from `make_climate_shift()`.
+#' @param response A `climate_response` object from `make_climate_response()`.
+#'
+#' @return A list with class `c("climate_input", "list")`.
+#' @examples
+#' shift <- make_climate_shift(delta_sst = 0.8)
+#' response <- make_climate_response(beta_sst = 0.4, gamma = 0.05)
+#' make_climate_input(shift, response)
+#' @export
+make_climate_input <- function(shift, response) {
+  if (!inherits(shift, "climate_shift")) {
+    stop("shift must be created by make_climate_shift().", call. = FALSE)
+  }
+  if (!inherits(response, "climate_response")) {
+    stop("response must be created by make_climate_response().", call. = FALSE)
+  }
+
+  if (!isTRUE(all.equal(shift$delta_sst, 0)) && .response_is_zero(response)) {
+    warning(
+      "delta_sst is nonzero but all response parameters are zero; the climate shift will have no effect.",
+      call. = FALSE
+    )
+  }
+
+  out <- list(
+    shift = shift,
+    response = response
+  )
+  class(out) <- c("climate_input", "list")
+  out
+}
+
+#' @export
+print.climate_input <- function(x, ...) {
+  cat("Climate input\n")
+  cat(sprintf("  delta_sst : %.3f\n", x$shift$delta_sst))
+  cat(sprintf("  beta_sst  : %.3f\n", x$response$beta_sst))
+  cat(sprintf("  gamma     : %.3f\n", x$response$gamma))
+  cat(sprintf("  perturb   : %s\n", if (is.null(x$response$perturb)) "disabled" else "enabled"))
+  invisible(x)
+}
+
+#' Look up a time-slice scenario SST shift
+#'
+#' @description
+#' Returns a scalar `delta_sst` for a future time slice by interpolating the
+#' scenario targets in `sst_scenario_info("all")` at the midpoint of
+#' `future_period`.
+#'
+#' @param scenario Character scalar naming a scenario in `sst_scenario_info("all")`.
+#' @param future_period Integer vector describing the future period of interest.
+#' @param baseline_years Integer vector of climatological reference years.
+#'
+#' @return Numeric scalar `delta_sst` in degC.
+#' @examples
+#' get_scenario_delta("ssp585", future_period = 2035:2065)
+#' @export
+get_scenario_delta <- function(scenario,
+                               future_period,
+                               baseline_years = 1991L:2020L) {
+  .validate_baseline_years(baseline_years)
+  if (!is.character(scenario) || length(scenario) != 1L || !nzchar(scenario)) {
+    stop("scenario must be a single non-empty character value.", call. = FALSE)
+  }
+
+  future_period <- as.integer(future_period)
+  if (length(future_period) == 0L || any(!is.finite(future_period))) {
+    stop("future_period must contain finite integer years.", call. = FALSE)
+  }
+
+  info <- sst_scenario_info("all")
+  row <- info[info$scenario == scenario, , drop = FALSE]
+  if (nrow(row) == 0L) {
+    stop(
+      "Unknown SST scenario: ", scenario,
+      ". Available: ", paste(info$scenario, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  midpoint <- mean(future_period)
+  y <- if (midpoint <= 2025) {
+    0
+  } else if (midpoint <= 2050) {
+    (midpoint - 2025) / (2050 - 2025) * as.numeric(row$delta_sst_2050[[1]])
+  } else if (midpoint <= 2100) {
+    frac <- (midpoint - 2050) / (2100 - 2050)
+    as.numeric(row$delta_sst_2050[[1]]) +
+      frac * (as.numeric(row$delta_sst_2100[[1]]) - as.numeric(row$delta_sst_2050[[1]]))
+  } else {
+    as.numeric(row$delta_sst_2100[[1]])
+  }
+
+  if (!is.finite(y)) {
+    stop("Scenario lookup returned a non-finite delta_sst.", call. = FALSE)
+  }
+
+  as.numeric(y)
 }
 
 
@@ -888,13 +983,13 @@ historical_resample = {
 #'
 #' @description
 #' Non-stationary extension of the Poisson-Gamma annual count model with
-#' a rate effect and an intensity effect:
+#' a rate effect and an intensity effect applied to a stationary time slice:
 #'
-#' **Rate effect:** Each year's activity factor is modulated by SST:
-#'   `A_t = activity_factor * exp(beta_SST * sst_anomaly_t)`
+#' **Rate effect:** Each year's activity factor is modulated by a scalar SST shift:
+#'   `A_t = activity_factor * exp(beta_SST * delta_sst)`
 #'
-#' **Intensity effect:** The storm-class split varies with SST:
-#'   `p_HUR(t) = clamp(p_HUR_base * (1 + gamma * sst_anomaly_t), 0.01, 0.99)`
+#' **Intensity effect:** The storm-class split varies with the same scalar SST shift:
+#'   `p_HUR(t) = clamp(p_HUR_base * (1 + gamma * delta_sst), 0.01, 0.99)`
 #'   `N_total_t ~ Poisson(lambda_total * A_t)`
 #'   `n_HUR_t ~ Binomial(N_total_t, p_HUR(t))`
 #'   `n_TS_t = N_total_t - n_HUR_t`
@@ -905,21 +1000,23 @@ historical_resample = {
 #' @param lambda_table Tibble from `compute_lambda_table()`.
 #' @param k_hat Numeric; Gamma shape parameter for overdispersion.
 #' @param n_years_sim Integer; number of years to simulate.
-#' @param sst_anomaly Optional numeric vector of SST anomalies (degC) per year.
+#' @param delta_sst Numeric scalar SST shift (degC) applied uniformly to all
+#'   simulation years.
 #' @param beta_sst Numeric; SST rate-effect coefficient.
 #' @param gamma_intensity Numeric; SST intensity-effect coefficient.
 #'   Represents fractional change in p_HUR per degC of SST warming.
 #' @param p_hur_base Optional numeric; baseline hurricane fraction. If NULL,
 #'   computed from lambda_table.
 #' @param .sst_abs_max Numeric guardrail for absolute SST anomaly magnitude.
-#' @param .sst_scale_max Numeric guardrail for \code{exp(beta_sst * sst_anomaly)}.
+#' @param .sst_scale_max Numeric guardrail for \code{exp(beta_sst * delta_sst)}.
 #' @param .mu_total_max Numeric guardrail for annual Poisson mean.
 #'
-#' @return Tibble with columns: sim_year, activity_factor, sst_anomaly,
-#'   climate_scale, activity_combined, p_hurricane, n_total, n_ts, n_hur.
+#' @return Tibble with columns: sim_year, activity_factor, climate_scale,
+#'   activity_combined, p_hurricane, n_total, n_ts, n_hur. The applied
+#'   `delta_sst` is recorded as an attribute on the returned tibble.
 #' @export
 simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
-                                     sst_anomaly = NULL,
+                                     delta_sst = 0,
                                      beta_sst = 0,
                                      gamma_intensity = 0,
                                      p_hur_base = NULL,
@@ -931,71 +1028,6 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
   stopifnot(is.numeric(k_hat), length(k_hat) == 1)
   n_years_sim <- as.integer(n_years_sim)
   if (!is.finite(n_years_sim) || n_years_sim <= 0) stop("n_years_sim must be a positive integer.", call. = FALSE)
-
-  # ---- helpers ----
-  .is_dateish <- function(x) inherits(x, c("Date", "POSIXct", "POSIXt"))
-
-  .coerce_sst_vec <- function(x, n) {
-    # Allow: NULL, numeric vector, Date/POSIX vector (but treated as corruption), or data.frame with sst_anomaly column.
-    if (is.null(x)) return(rep(0, n))
-
-    if (is.data.frame(x)) {
-      nm <- names(x)
-      if (!("sst_anomaly" %in% nm)) {
-        stop(
-          "sst_anomaly was passed as a data.frame/tibble but has no `sst_anomaly` column.\n",
-          "Fix caller: pass sst_scenario$sst_anomaly (numeric) OR a tibble with column `sst_anomaly`.",
-          call. = FALSE
-        )
-      }
-      x <- x[["sst_anomaly"]]
-    }
-
-    if (.is_dateish(x)) {
-      # Do not silently convert dates to numeric; that always means the wrong thing.
-      stop(
-        "sst_anomaly is Date/POSIX. You passed a time column, not anomalies.\n",
-        "Fix caller: pass numeric delta SST in degC (typically within about +/-3).",
-        call. = FALSE
-      )
-    }
-
-    x <- suppressWarnings(as.numeric(x))
-    if (length(x) != n) {
-      stop(sprintf("sst_anomaly length (%d) must equal n_years_sim (%d).", length(x), n), call. = FALSE)
-    }
-    x
-  }
-
-  .diagnose_corruption <- function(x) {
-    fin <- is.finite(x)
-    if (!any(fin)) return("sst_anomaly has no finite values.")
-    rng <- range(x[fin])
-    mx  <- max(abs(x[fin]))
-
-    msg <- sprintf("max |sst_anomaly| = %.2f; range = [%.2f, %.2f]", mx, rng[1], rng[2])
-
-    # Heuristics for the common wrong-columns
-    if (mx > 1500) {
-      return(paste0(
-        msg, "\n",
-        "This looks like a Date numeric (days since 1970) or other timestamp-derived number."
-      ))
-    }
-    if (mx > 500 && mx < 5000) {
-      return(paste0(
-        msg, "\n",
-        "This looks like a calendar year vector (e.g., 2025..3024) or similar."
-      ))
-    }
-    if (mx > 20 && mx < 300) {
-      return(paste0(
-        msg, "\n",
-        "This looks like a 'years since baseline' index (e.g., year-2005) or another trend index, not A?C anomalies."
-      ))
-    }
-    paste0(msg, "\nLikely wrong units/column (absolute SST, Kelvin, Fahrenheit, etc.).")
-  }
 
   .int_cap <- function(x, name) {
     # Avoid unsafe as.integer() on huge doubles; clip first.
@@ -1030,40 +1062,34 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
   lambda_hur <- pmax(0, lam$hur)
   lambda_total <- lambda_ts + lambda_hur
 
-  # ---- SST anomalies (validated) ----
-  sst_vec <- .coerce_sst_vec(sst_anomaly, n_years_sim)
-
-  fin <- is.finite(sst_vec)
-  if (!any(fin)) stop("sst_anomaly has no finite values.", call. = FALSE)
-
-  abs_max <- max(abs(sst_vec[fin]))
-  if (is.finite(abs_max) && abs_max > .sst_abs_max) {
-    stop(
-      "SST anomaly looks corrupt. Expected delta SST in degC (typically within +/-3; hard guard +/-10).\n",
-      .diagnose_corruption(sst_vec), "\n",
-      "Fix caller: pass `sst_scenario$sst_anomaly` (NOT calendar_year/sim_year/years_from_2005).",
-      call. = FALSE
-    )
+  if (!is.numeric(delta_sst) || length(delta_sst) != 1L || !is.finite(delta_sst)) {
+    stop("delta_sst must be a single finite numeric value.", call. = FALSE)
+  }
+  delta_sst <- as.numeric(delta_sst)
+  if (abs(delta_sst) > .sst_abs_max) {
+    stop("delta_sst must satisfy abs(delta_sst) <= .sst_abs_max.", call. = FALSE)
   }
 
   beta_sst <- as.numeric(beta_sst)
   if (!is.finite(beta_sst)) beta_sst <- 0
 
   # ---- Rate effect scaling with guard ----
-  lin <- beta_sst * sst_vec
-  sst_scale <- exp(lin)
+  sst_scale <- exp(beta_sst * delta_sst)
 
-  if (any(!is.finite(sst_scale))) {
-    stop("Non-finite SST scaling detected (exp(beta_sst * sst_anomaly)). Check inputs/units.", call. = FALSE)
+  if (!is.finite(sst_scale)) {
+    stop("Non-finite SST scaling detected (exp(beta_sst * delta_sst)). Check inputs/units.", call. = FALSE)
   }
-  if (max(sst_scale, na.rm = TRUE) > .sst_scale_max) {
-    stop(sprintf(
-      paste0(
-        "Unrealistic SST rate scaling detected (max exp(beta*anom)=%.3g > %.3g).\n",
-        "This implies either wrong units for sst_anomaly or an overly large beta_sst."
+  if (sst_scale > .sst_scale_max) {
+    stop(
+      sprintf(
+        paste0(
+          "Unrealistic SST rate scaling detected (exp(beta_sst * delta_sst)=%.3g > %.3g).\n",
+          "This implies either wrong units for delta_sst or an overly large beta_sst."
+        ),
+        sst_scale, .sst_scale_max
       ),
-      max(sst_scale, na.rm = TRUE), .sst_scale_max
-    ), call. = FALSE)
+      call. = FALSE
+    )
   }
 
   # ---- annual activity factor ----
@@ -1091,23 +1117,24 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
   gamma_intensity <- as.numeric(gamma_intensity)
   if (!is.finite(gamma_intensity)) gamma_intensity <- 0
 
-  p_hur <- p_hur_base * (1 + gamma_intensity * sst_vec)
+  p_hur <- p_hur_base * (1 + gamma_intensity * delta_sst)
   p_hur <- pmin(0.99, pmax(0.01, p_hur))
 
   n_hur <- stats::rbinom(n_years_sim, size = n_total, prob = p_hur)
   n_ts  <- n_total - n_hur
 
-  tibble::tibble(
+  out <- tibble::tibble(
     sim_year = seq_len(n_years_sim),
     activity_factor = A,
-    sst_anomaly = sst_vec,
-    climate_scale = sst_scale,
+    climate_scale = rep(sst_scale, n_years_sim),
     activity_combined = A * sst_scale,
-    p_hurricane = p_hur,
+    p_hurricane = rep(p_hur, n_years_sim),
     n_total = .int_cap(n_total, "n_total"),
     n_ts = .int_cap(n_ts, "n_ts"),
     n_hur = .int_cap(n_hur, "n_hur")
   )
+  attr(out, "delta_sst") <- delta_sst
+  out
 }
 
 
@@ -1400,79 +1427,6 @@ print.climate_cfg <- function(x, ...) {
   )
   cat(sprintf("  Storm perturbation: %s\n", perturb_status))
   invisible(x)
-}
-
-# Thin bridge kept for internal transition while call sites are updated.
-#' @keywords internal
-make_sst_cfg <- function(enabled = TRUE,
-                         sst_source = c("builtin", "csv", "ersst_nc"),
-                         sst_path = NULL,
-                         baseline_years = 1991L:2020L,
-                         scenario = "stationary",
-                         scenario_start_year = 2025L,
-                         advanced = NULL) {
-  defaults <- list(
-    beta_sst = NULL,
-    gamma = NULL,
-    perturb = NULL,
-    beta_prior = 0.6,
-    gamma_prior = 0.065
-  )
-
-  if (is.null(advanced)) {
-    advanced <- defaults
-  } else {
-    if (!is.list(advanced)) {
-      stop("advanced must be NULL or a named list.", call. = FALSE)
-    }
-    if (is.null(advanced$gamma) && !is.null(advanced$gamma_intensity)) {
-      advanced$gamma <- advanced$gamma_intensity
-    }
-    if (is.null(advanced$perturb) && !is.null(advanced$cc_params)) {
-      advanced$perturb <- advanced$cc_params
-    }
-    unknown <- setdiff(names(advanced), c(names(defaults), "gamma_intensity", "cc_params"))
-    if (length(unknown) > 0) {
-      stop("Unknown names in advanced: ", paste(unknown, collapse = ", "), call. = FALSE)
-    }
-    advanced <- utils::modifyList(defaults, advanced)
-  }
-  if (!is.null(advanced$gamma_intensity) &&
-      (!is.numeric(advanced$gamma_intensity) ||
-       length(advanced$gamma_intensity) != 1L ||
-       !is.finite(advanced$gamma_intensity) ||
-       advanced$gamma_intensity < 0)) {
-    stop("advanced$gamma_intensity must be >= 0", call. = FALSE)
-  }
-  if (!is.null(advanced$gamma) &&
-      (!is.numeric(advanced$gamma) ||
-       length(advanced$gamma) != 1L ||
-       !is.finite(advanced$gamma) ||
-       advanced$gamma < 0)) {
-    stop("gamma must be >= 0.", call. = FALSE)
-  }
-
-  cfg <- make_climate_cfg(
-    enabled = enabled,
-    scenario = scenario,
-    sst_source = sst_source,
-    sst_path = sst_path,
-    baseline_years = baseline_years,
-    start_year = scenario_start_year,
-    beta_sst = advanced$beta_sst,
-    gamma = advanced$gamma,
-    perturb = advanced$perturb
-  )
-  cfg$beta_prior <- advanced$beta_prior
-  cfg$gamma_prior <- advanced$gamma_prior
-  class(cfg) <- c("climate_cfg", "sst_cfg", "list")
-  cfg
-}
-
-# Thin bridge for legacy S3 registration while the public class name migrates.
-#' @keywords internal
-print.sst_cfg <- function(x, ...) {
-  print.climate_cfg(x, ...)
 }
 
 #' Load and prepare climate data based on configuration
@@ -1775,4 +1729,3 @@ knmi_cc_params <- function(scenario, base_params = NULL) {
   base_params$precip_scale <- row$precip_scale
   base_params
 }
-

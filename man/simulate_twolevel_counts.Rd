@@ -8,7 +8,7 @@ simulate_twolevel_counts(
   lambda_table,
   k_hat,
   n_years_sim,
-  sst_anomaly = NULL,
+  delta_sst = 0,
   beta_sst = 0,
   gamma_intensity = 0,
   p_hur_base = NULL,
@@ -24,7 +24,8 @@ simulate_twolevel_counts(
 
 \item{n_years_sim}{Integer; number of years to simulate.}
 
-\item{sst_anomaly}{Optional numeric vector of SST anomalies (degC) per year.}
+\item{delta_sst}{Numeric scalar SST shift (degC) applied uniformly to all
+simulation years.}
 
 \item{beta_sst}{Numeric; SST rate-effect coefficient.}
 
@@ -36,23 +37,24 @@ computed from lambda_table.}
 
 \item{.sst_abs_max}{Numeric guardrail for absolute SST anomaly magnitude.}
 
-\item{.sst_scale_max}{Numeric guardrail for \code{exp(beta_sst * sst_anomaly)}.}
+\item{.sst_scale_max}{Numeric guardrail for \code{exp(beta_sst * delta_sst)}.}
 
 \item{.mu_total_max}{Numeric guardrail for annual Poisson mean.}
 }
 \value{
-Tibble with columns: sim_year, activity_factor, sst_anomaly,
-climate_scale, activity_combined, p_hurricane, n_total, n_ts, n_hur.
+Tibble with columns: sim_year, activity_factor, climate_scale,
+activity_combined, p_hurricane, n_total, n_ts, n_hur. The applied
+\code{delta_sst} is recorded as an attribute on the returned tibble.
 }
 \description{
 Non-stationary extension of the Poisson-Gamma annual count model with
-a rate effect and an intensity effect:
+a rate effect and an intensity effect applied to a stationary time slice:
 
-\strong{Rate effect:} Each year's activity factor is modulated by SST:
-\code{A_t = activity_factor * exp(beta_SST * sst_anomaly_t)}
+\strong{Rate effect:} Each year's activity factor is modulated by a scalar SST shift:
+\code{A_t = activity_factor * exp(beta_SST * delta_sst)}
 
-\strong{Intensity effect:} The storm-class split varies with SST:
-\code{p_HUR(t) = clamp(p_HUR_base * (1 + gamma * sst_anomaly_t), 0.01, 0.99)}
+\strong{Intensity effect:} The storm-class split varies with the same scalar SST shift:
+\code{p_HUR(t) = clamp(p_HUR_base * (1 + gamma * delta_sst), 0.01, 0.99)}
 \code{N_total_t ~ Poisson(lambda_total * A_t)}
 \code{n_HUR_t ~ Binomial(N_total_t, p_HUR(t))}
 \code{n_TS_t = N_total_t - n_HUR_t}

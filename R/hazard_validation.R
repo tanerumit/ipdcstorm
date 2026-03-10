@@ -2052,7 +2052,7 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #' @param storm_classes Character vector of storm classes to include
 #'   (default: `c("TS", "HUR")`). Must match IBTrACS classification codes.
 #'   Use `"HUR"` alone for hurricane-only analysis.
-#' @param climate_cfg Optional climate configuration from `make_climate_cfg()`
+#' @param climate Optional climate input from `make_climate_input()`
 #'   for hazard-model climate conditioning. When `NULL`, climate conditioning
 #'   is disabled.
 #'
@@ -2107,13 +2107,16 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #' result_climate <- validate_hazard_model(
 #'   cfg     = make_hazard_cfg(),
 #'   targets = targets_df,
-#'   climate_cfg = make_climate_cfg()
+#'   climate = make_climate_input(
+#'     make_climate_shift(delta_sst = 0.8),
+#'     make_climate_response(beta_sst = 0.4)
+#'   )
 #' )
 validate_hazard_model <- function(cfg,
                                   targets,
                                   validation_cfg = make_validation_cfg(),
                                   storm_classes = c("TS", "HUR"),
-                                  climate_cfg = NULL) {
+                                  climate = NULL) {
   if (!inherits(validation_cfg, "validation_cfg")) {
     stop("validation_cfg must be created by make_validation_cfg().", call. = FALSE)
   }
@@ -2123,7 +2126,7 @@ validate_hazard_model <- function(cfg,
     cfg = cfg,
     targets = targets,
     storm_classes = storm_classes,
-    climate_cfg = climate_cfg
+    climate = climate
   )
 
   val <- run_validation_suite(out = out, cfg = validation_cfg)

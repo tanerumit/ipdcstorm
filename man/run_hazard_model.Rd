@@ -8,7 +8,7 @@ run_hazard_model(
   cfg,
   targets,
   storm_classes = c("TS", "HUR"),
-  climate_cfg = NULL,
+  climate = NULL,
   seed = NULL,
   verbose = TRUE
 )
@@ -20,13 +20,12 @@ run_hazard_model(
 
 \item{storm_classes}{Character vector of storm classes to model (default TS and HUR).}
 
-\item{climate_cfg}{Optional climate configuration from \code{make_climate_cfg()}.
-When provided and enabled, the annual count simulation uses the default
-climate workflow: rate effect plus intensity effect.}
+\item{climate}{Optional climate input from \code{make_climate_input()}. When
+\code{NULL}, the run is stationary baseline with \code{delta_sst = 0},
+\code{beta_sst = 0}, \code{gamma = 0}, and no Level 3 perturbation.}
 
-\item{seed}{Optional integer seed. When supplied, \code{run_hazard_model()}
-sets the RNG state at entry so stochastic components within the run path
-are reproducible.}
+\item{seed}{Optional integer seed. When \code{NULL}, \code{run_hazard_model()}
+generates one, sets it at entry, and records it in \code{run_metadata$seed}.}
 
 \item{verbose}{Logical; if TRUE (default), print progress to console.}
 }
@@ -42,7 +41,6 @@ End-to-end workflow:
 \item Gate track points within cfg$search_radius_km of each target
 \item Compute site winds and storm event summaries
 \item Classify storm classes and compute annual rates
-\item Optionally estimate climate rate and intensity effects from historical MDR SST
-\item Simulate annual counts with climate-adjusted activity and TS/HUR split
+\item Simulate annual counts with optional stationary climate-shift adjustments
 }
 }

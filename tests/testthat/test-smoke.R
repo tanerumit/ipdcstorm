@@ -1,21 +1,9 @@
 test_that("package loads and basic config constructors return lists", {
   cfg <- make_hazard_cfg()
   expect_true(is.list(cfg))
-
-  sst_cfg <- make_sst_cfg(enabled = FALSE)
-  expect_true(is.list(sst_cfg))
 })
 
-test_that("gamma intensity is constrained to non-negative values", {
-  expect_error(
-    make_sst_cfg(
-      enabled = TRUE,
-      scenario = "ssp245",
-      advanced = list(gamma_intensity = -0.1)
-    ),
-    "advanced\\$gamma_intensity must be >= 0"
-  )
-
+test_that("gamma intensity estimator is constrained to non-negative values", {
   years <- 1970:2030
   annual_counts <- dplyr::bind_rows(
     tibble::tibble(year = years, storm_class = "TS", n_events = rep(30L, length(years))),
@@ -74,7 +62,9 @@ test_that("run_hazard_model is deterministic for an explicit seed", {
   expect_identical(out1$sim, out2$sim)
   expect_identical(out1$run_metadata$seed, 77L)
   expect_false(identical(out1$sim, out3$sim))
-  expect_true(is.null(out_null$run_metadata$seed))
+  expect_true(is.integer(out_null$run_metadata$seed))
+  expect_true(length(out_null$run_metadata$seed) == 1L)
+  expect_true(is.finite(out_null$run_metadata$seed))
   expect_true(nrow(out_null$sim) > 0)
 })
 
@@ -103,6 +93,8 @@ test_that("run_hazard_model console output is structured and user-facing", {
   expect_match(msg, "Rate calibration")
   expect_match(msg, "location/class adjustments")
   expect_match(msg, "missing_ref")
+  expect_match(msg, "Climate")
+  expect_match(msg, "delta_sst")
   expect_match(msg, "Simulation")
   expect_match(msg, "Run metadata")
   expect_match(msg, "seed=99")
