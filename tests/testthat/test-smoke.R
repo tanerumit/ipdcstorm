@@ -57,3 +57,58 @@ test_that("run_hazard_model resolves packaged IBTrACS data and accepts location 
   expect_true(all(out$sim$location == "Saba"))
   expect_match(out$cfg$data_path, "ibtracs\\.NA\\.list\\.v04r01\\.csv$")
 })
+
+test_that("run_hazard_model is deterministic for an explicit seed", {
+  cfg <- make_hazard_cfg(n_sim = 20L)
+  targets <- tibble::tibble(
+    name = "Saba",
+    lat = 17.63,
+    lon = -63.23
+  )
+
+  out1 <- run_hazard_model(cfg, targets, seed = 77L, verbose = FALSE)
+  out2 <- run_hazard_model(cfg, targets, seed = 77L, verbose = FALSE)
+  out3 <- run_hazard_model(cfg, targets, seed = 78L, verbose = FALSE)
+  out_null <- run_hazard_model(cfg, targets, seed = NULL, verbose = FALSE)
+
+  expect_identical(out1$sim, out2$sim)
+  expect_identical(out1$run_metadata$seed, 77L)
+  expect_false(identical(out1$sim, out3$sim))
+  expect_true(is.null(out_null$run_metadata$seed))
+  expect_true(nrow(out_null$sim) > 0)
+})
+
+test_that("run_hazard_model console output is structured and user-facing", {
+  cfg <- make_hazard_cfg(n_sim = 3L)
+  targets <- tibble::tibble(
+    name = "Saba",
+    lat = 17.63,
+    lon = -63.23
+  )
+
+  msg <- paste(
+    capture.output(
+      out <- run_hazard_model(cfg, targets, seed = 99L, verbose = TRUE),
+      type = "message"
+    ),
+    collapse = "\n"
+  )
+
+  expect_match(msg, "Loading data")
+  expect_match(msg, "Input file\\s+:")
+  expect_match(msg, "Raw NA input\\s+:")
+  expect_match(msg, "Model start year\\s+:")
+  expect_match(msg, "Target/location filtering")
+  expect_match(msg, "Model sample\\s+:")
+  expect_match(msg, "Rate calibration")
+  expect_match(msg, "location/class adjustments")
+  expect_match(msg, "missing_ref")
+  expect_match(msg, "Simulation")
+  expect_match(msg, "Run metadata")
+  expect_match(msg, "seed=99")
+  expect_match(msg, "lambda_mode=")
+  expect_false(grepl("seed=NA", msg, fixed = TRUE))
+  expect_false(grepl("params=", msg, fixed = TRUE))
+  expect_false(grepl("data=", msg, fixed = TRUE))
+  expect_true(is.list(out$run_metadata))
+})

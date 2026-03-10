@@ -132,6 +132,7 @@ make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv
                             n_sim_years = NULL,
                             preset = "default",
                             advanced = NULL) {
+
   preset <- match.arg(preset, choices = c("default"))
 
   defaults <- list(
@@ -216,6 +217,9 @@ print.hazard_cfg <- function(x, ...) {
 #' @param climate_cfg Optional climate configuration from `make_climate_cfg()`.
 #'   When provided and enabled, the annual count simulation uses the default
 #'   climate workflow: rate effect plus intensity effect.
+#' @param seed Optional integer seed. When supplied, `run_hazard_model()`
+#'   sets the RNG state at entry so stochastic components within the run path
+#'   are reproducible.
 #' @param verbose Logical; if TRUE (default), print progress to console.
 #'
 #' @return A list with elements:
@@ -228,6 +232,7 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
                              severities = NULL,
                              climate_cfg = NULL,
                              sst_cfg = NULL,
+                             seed = NULL,
                              verbose = TRUE) {
   if (!inherits(cfg, "hazard_cfg")) {
     stop("cfg must be created by make_hazard_cfg().", call. = FALSE)
@@ -249,6 +254,13 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   hurricane_threshold_kt <- as.numeric(cfg$advanced$hurricane_threshold_kt)
   lambda_scaling_mode <- .normalize_lambda_scaling_mode(cfg$advanced$lambda_scaling_mode)
   data_path <- .resolve_ibtracs_path(cfg$data_path)
+  if (!is.null(seed)) {
+    if (!is.numeric(seed) || length(seed) != 1 || !is.finite(seed)) {
+      stop("seed must be NULL or a single finite numeric value.", call. = FALSE)
+    }
+    seed <- as.integer(seed)
+    set.seed(seed)
+  }
 
   # --- 1) Load IBTrACS (suppress sub-function messages) --------------------
   if (verbose) .cli_h("Loading data")
@@ -263,12 +275,16 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
 
   yr_range <- range(as.integer(ib_sub$SEASON), na.rm = TRUE)
   if (verbose) {
-    .cli_ok(sprintf("%s track points (%d\u2013%d)",
-                    .fmt_n(nrow(ib_sub)), yr_range[1], yr_range[2]))
+    .cli_info(sprintf("Input file       : %s", basename(data_path)))
+    .cli_info(sprintf(
+      "Raw NA input     : %s track points (%d\u2013%d)",
+      .fmt_n(nrow(ib_sub)), yr_range[1], yr_range[2]
+    ))
+    .cli_info(sprintf("Model start year : %d", cfg$start_year))
   }
 
   # --- 2) Filter storms per location --------------------------------------
-  if (verbose) .cli_h("Filtering storms by location")
+  if (verbose) .cli_h("Target/location filtering")
 
   trackpoints_list    <- setNames(vector("list", nrow(targets)), targets$name)
   events_list         <- setNames(vector("list", nrow(targets)), targets$name)
@@ -361,6 +377,17 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   annual_counts_all <- dplyr::bind_rows(Filter(Negate(is.null), annual_counts_list))
   rates_all         <- dplyr::bind_rows(Filter(Negate(is.null), rates_list))
   fit_all           <- dplyr::bind_rows(Filter(Negate(is.null), fit_list))
+  if (verbose && nrow(events_all) > 0) {
+    sample_years <- range(events_all$year, na.rm = TRUE)
+    .cli_info(sprintf(
+      "Model sample     : %s target-event records (%d\u2013%d) across %d locations",
+      .fmt_n(nrow(events_all)),
+      sample_years[1],
+      sample_years[2],
+      dplyr::n_distinct(events_all$location)
+    ))
+  }
+  if (verbose) .cli_h("Rate calibration")
   rate_check_seed <- .build_rate_check_table(
     list(rates = rates_all),
     lambda_scaling_mode = lambda_scaling_mode
@@ -373,14 +400,17 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
 
   if (verbose && nrow(lambda_scalers) > 0) {
     n_clamped <- sum(lambda_scalers$scale_clamped, na.rm = TRUE)
-    n_no_ref <- sum(lambda_scalers$scale_status == "no_ref", na.rm = TRUE)
+    n_missing_ref <- sum(lambda_scalers$scale_status == "no_ref", na.rm = TRUE)
     .cli_info(sprintf(
-      "Lambda scalers   : %d site/class pairs (mode=%s, id=%s, clamped=%d, no_ref=%d)",
-      nrow(lambda_scalers), lambda_scaling_mode, lambda_scaler_id, n_clamped, n_no_ref
+      "Adjustments      : %d location/class adjustments (mode=%s, clamped=%d, missing_ref=%d)",
+      nrow(lambda_scalers), lambda_scaling_mode, n_clamped, n_missing_ref
     ))
   }
   if (verbose && identical(lambda_scaling_mode, "target") && any(lambda_scalers$was_upscaled, na.rm = TRUE)) {
-    message("   [lambda] target mode upscaled one or more site/class rates; set advanced$lambda_scaling_mode='down_only' to disable upscaling.")
+    .cli_info(
+      "Some location/class rates were increased to match reference rates; ",
+      "set advanced$lambda_scaling_mode='down_only' to prevent upscaling."
+    )
   }
 
   # =========================================================================
@@ -468,7 +498,10 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   # =========================================================================
   # Simulate annual counts (with climate modifications)
   # =========================================================================
-  if (verbose) .cli_h(sprintf("Simulating %s years", .fmt_n(cfg$n_sim)))
+  if (verbose) {
+    .cli_h("Simulation")
+    .cli_info(sprintf("Synthetic years  : %s", .fmt_n(cfg$n_sim)))
+  }
 
   sim_list <- setNames(vector("list", nrow(targets)), targets$name)
 
@@ -545,7 +578,7 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
   )
   parameter_id <- .checksum_id_from_text(param_fields, prefix = "params")
   run_metadata <- list(
-    seed = NA_integer_,
+    seed = seed,
     ibtracs_file = data_file,
     ibtracs_rows = as.integer(data_rows),
     ibtracs_data_id = data_id,
@@ -553,13 +586,12 @@ run_hazard_model <- function(cfg, targets, per_target_cfg = list(),
     lambda_scaling_mode = lambda_scaling_mode
   )
   if (verbose) {
-    .cli_info(sprintf(
-      "Run metadata    : seed=%s data=%s params=%s lambda_mode=%s",
-      ifelse(is.na(run_metadata$seed), "NA", as.character(run_metadata$seed)),
-      run_metadata$ibtracs_data_id,
-      run_metadata$parameter_id,
-      run_metadata$lambda_scaling_mode
-    ))
+    meta_parts <- sprintf("lambda_mode=%s", run_metadata$lambda_scaling_mode)
+    if (!is.null(run_metadata$seed)) {
+      meta_parts <- c(sprintf("seed=%s", as.character(run_metadata$seed)), meta_parts)
+    }
+    .cli_h("Run metadata")
+    .cli_info(paste(meta_parts, collapse = " "))
   }
 
   list(

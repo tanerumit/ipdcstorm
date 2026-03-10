@@ -1283,14 +1283,14 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
   }
 
   perturb_info <- .normalize_climate_perturb(
-    perturb = cfg$perturb,
-    scenario = cfg$scenario
+    perturb = cfg[["perturb"]],
+    scenario = cfg[["scenario"]]
   )
-  cfg$perturb <- perturb_info$params
-  cfg$perturb_state <- perturb_info$state
-  cfg$cc_params <- perturb_info$params
-  cfg$scenario_start_year <- cfg$start_year
-  cfg$gamma_intensity <- cfg$gamma
+  cfg[["perturb"]] <- perturb_info$params
+  cfg[["perturb_state"]] <- perturb_info$state
+  cfg[["cc_params"]] <- perturb_info$params
+  cfg[["scenario_start_year"]] <- cfg[["start_year"]]
+  cfg[["gamma_intensity"]] <- cfg[["gamma"]]
   cfg
 }
 
@@ -1358,6 +1358,10 @@ make_climate_cfg <- function(enabled = TRUE,
     gamma = gamma,
     perturb = perturb
   )
+  cfg[["sst_path"]] <- sst_path
+  cfg[["beta_sst"]] <- beta_sst
+  cfg[["gamma"]] <- gamma
+  cfg[["perturb"]] <- perturb
   cfg <- .normalize_climate_cfg(cfg)
   class(cfg) <- c("climate_cfg", "list")
   cfg
@@ -1622,8 +1626,8 @@ prepare_climate <- function(climate_cfg,
                     100 * gamma))
   }
 
-  resolved_perturb <- climate_cfg$perturb
-  perturb_state <- climate_cfg$perturb_state
+  resolved_perturb <- climate_cfg[["perturb"]]
+  perturb_state <- climate_cfg[["perturb_state"]]
   if (!is.null(resolved_perturb) && length(resolved_perturb) == 0L) {
     resolved_perturb <- default_cc_params()
   }
@@ -1632,7 +1636,7 @@ prepare_climate <- function(climate_cfg,
     for (nm in names(defs)) {
       if (is.null(resolved_perturb[[nm]])) resolved_perturb[[nm]] <- defs[[nm]]
     }
-    perturb_state <- if (identical(climate_cfg$perturb_state, "disabled")) "default" else climate_cfg$perturb_state
+    perturb_state <- if (identical(climate_cfg[["perturb_state"]], "disabled")) "default" else climate_cfg[["perturb_state"]]
     if (verbose) {
       message(sprintf("[climate] Storm perturbation enabled: v_scale=%+.2f, r_scale=%+.2f, speed_scale=%+.2f, precip_scale=%+.2f per degC",
                       resolved_perturb$v_scale, resolved_perturb$r_scale,
@@ -1643,10 +1647,10 @@ prepare_climate <- function(climate_cfg,
     if (verbose) message("[climate] Storm perturbation disabled.")
   }
 
-  climate_cfg$perturb <- resolved_perturb
-  climate_cfg$perturb_state <- perturb_state
-  climate_cfg$cc_params <- resolved_perturb
-  climate_cfg$gamma_intensity <- gamma
+  climate_cfg[["perturb"]] <- resolved_perturb
+  climate_cfg[["perturb_state"]] <- perturb_state
+  climate_cfg[["cc_params"]] <- resolved_perturb
+  climate_cfg[["gamma_intensity"]] <- gamma
 
   list(
     sst_df = sst_df,

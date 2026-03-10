@@ -39,9 +39,9 @@ model_cfg <- make_hazard_cfg(
 
 # Run hazard model
 out <- run_hazard_model(
-  cfg        = model_cfg,
-  targets    = targets,
-  sst_cfg    = NULL
+  cfg = model_cfg,
+  targets = targets,
+  climate_cfg = NULL
 )
 
 # Validation

@@ -110,7 +110,6 @@ calculate_bearing <- function(lat, lon, t_lat, t_lon) {
 #'
 #' @return Numeric vector of selected radii.
 #' @keywords internal
-
 .get_directional_radius <- function(quadrant, r_ne, r_se, r_sw, r_nw) {
   r_ne <- suppressWarnings(as.numeric(r_ne))
   r_se <- suppressWarnings(as.numeric(r_se))
@@ -308,10 +307,6 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   RMW_km[!is.finite(Vmax_kt)] <- NA_real_
   .cap_inferred_rmw_km(RMW_km, Vmax_kt)
 }
-
-
-
-
 
 
 
@@ -698,10 +693,6 @@ compute_storm_heading <- function(df) {
 
 # =============================================================================
 # 3) Core per-location wind computation (trackpoints -> V_site_kt)
-# =============================================================================
-
-# =============================================================================
-# Patched compute_site_winds_full (uses v2 Holland + improved RMW)
 # =============================================================================
 
 #' Compute site-level winds for track points (patched version)

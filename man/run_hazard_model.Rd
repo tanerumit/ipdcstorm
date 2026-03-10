@@ -12,6 +12,7 @@ run_hazard_model(
   severities = NULL,
   climate_cfg = NULL,
   sst_cfg = NULL,
+  seed = NULL,
   verbose = TRUE
 )
 }
@@ -29,6 +30,10 @@ run_hazard_model(
 \item{climate_cfg}{Optional climate configuration from \code{make_climate_cfg()}.
 When provided and enabled, the annual count simulation uses the default
 climate workflow: rate effect plus intensity effect.}
+
+\item{seed}{Optional integer seed. When supplied, \code{run_hazard_model()}
+sets the RNG state at entry so stochastic components within the run path
+are reproducible.}
 
 \item{verbose}{Logical; if TRUE (default), print progress to console.}
 }

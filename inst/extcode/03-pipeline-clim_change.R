@@ -16,7 +16,7 @@
 rm(list = ls())
 
 # =============================================================================
-# 0) Packages
+# Packages
 # =============================================================================
 
 library(dplyr)
@@ -62,12 +62,13 @@ seed_compare <- 123
 # =============================================================================
 # Run the model without climate adjustments. This is the reference case.
 
-set.seed(seed_compare)
 out_baseline <- run_hazard_model(
   cfg = cfg,
   targets = targets,
   per_target_cfg = per_target_cfg,
+  seed = seed_compare,
   climate_cfg = NULL
+
 )
 
 # =============================================================================
@@ -130,6 +131,7 @@ out_245 <- run_hazard_model(
   cfg = cfg,
   targets = targets,
   per_target_cfg = per_target_cfg,
+  seed = seed_compare,
   climate_cfg = clim_245
 )
 
@@ -138,6 +140,7 @@ out_585 <- run_hazard_model(
   cfg = cfg,
   targets = targets,
   per_target_cfg = per_target_cfg,
+  seed = seed_compare,
   climate_cfg = clim_585
 )
 
@@ -251,7 +254,7 @@ daily_baseline <- generate_daily_hazard_impact(
   gust_factor = 1.25,
   damage_method = "powerlaw",
   scenario = "baseline",
-  seed = 42
+  seed = seed_compare
 )$Saba
 
 daily_585 <- generate_daily_hazard_impact(
@@ -262,7 +265,7 @@ daily_585 <- generate_daily_hazard_impact(
   gust_factor = 1.25,
   damage_method = "powerlaw",
   scenario = "ssp585",
-  seed = 42
+  seed = seed_compare
 )$Saba
 
 daily_compare <- bind_rows(daily_baseline, daily_585)
