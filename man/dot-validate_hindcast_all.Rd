@@ -11,7 +11,6 @@
   return_periods = c(5, 10, 25, 50),
   conf_level = 0.9,
   seed = 42,
-  sst_df = NULL,
   beta_sst = 0,
   gamma_intensity = 0,
   use_raw_rates = TRUE,

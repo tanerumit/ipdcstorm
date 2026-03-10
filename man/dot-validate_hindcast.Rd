@@ -13,7 +13,6 @@
   conf_level = 0.9,
   storm_classes = c("TS", "HUR"),
   seed = 42,
-  sst_df = NULL,
   beta_sst = 0,
   gamma_intensity = 0,
   use_raw_rates = TRUE,

@@ -805,7 +805,6 @@ bootstrap_return_level_ci <- function(annual_max,
                                conf_level = 0.90,
                                storm_classes = c("TS", "HUR"),
                                seed = 42,
-                               sst_df = NULL,
                                beta_sst = 0,
                                gamma_intensity = 0,
                                use_raw_rates = TRUE,
@@ -970,23 +969,9 @@ bootstrap_return_level_ci <- function(annual_max,
   fallback_V <- list(TS = 45, HUR = 85)
 
   # --- SIMULATE ANNUAL MAXIMA WITH KDE SAMPLING ---
-  sst_anomaly_sim <- NULL
-  if (!is.null(sst_df) && is.finite(beta_sst) && beta_sst != 0) {
-    sst_train <- sst_df |>
-      dplyr::filter(.data$year %in% train_years)
-    if (nrow(sst_train) > 0 && "sst_anomaly" %in% names(sst_train)) {
-      sst_pool <- sst_train$sst_anomaly[is.finite(sst_train$sst_anomaly)]
-      if (length(sst_pool) > 0) {
-        sst_anomaly_sim <- sample(sst_pool, n_sim, replace = TRUE)
-        message(sprintf("  SST conditioning: \u03b2=%.3f, %d training SST values, mean \u0394SST=%+.2f\u00b0C",
-                        beta_sst, length(sst_pool), mean(sst_pool)))
-      }
-    }
-  }
-
   sim_counts <- simulate_twolevel_counts(
     lt_train_for_sim, ki_train$k_hat, n_years_sim = n_sim,
-    sst_anomaly = sst_anomaly_sim,
+    delta_sst = 0,
     beta_sst = beta_sst,
     gamma_intensity = gamma_intensity
   )
@@ -1137,7 +1122,6 @@ bootstrap_return_level_ci <- function(annual_max,
                                    return_periods = c(5, 10, 25, 50),
                                    conf_level = 0.90,
                                    seed = 42,
-                                   sst_df = NULL,
                                    beta_sst = 0,
                                    gamma_intensity = 0,
                                    use_raw_rates = TRUE,
@@ -1165,7 +1149,6 @@ bootstrap_return_level_ci <- function(annual_max,
         return_periods = return_periods,
         conf_level = conf_level,
         seed = seed,
-        sst_df = sst_df,
         beta_sst = beta_sst,
         gamma_intensity = gamma_intensity,
         use_raw_rates = use_raw_rates,
@@ -1773,7 +1756,6 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
   .val_header_close()
 
   # --- Extract climate info ---
-  sst_df_val <- NULL
   beta_sst_val <- 0
   gamma_val <- 0
   if (!is.null(out$fit) && nrow(out$fit) > 0) {
@@ -1793,7 +1775,6 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
                                             return_periods = return_periods,
                                             conf_level = conf_level,
                                             seed = seed,
-                                            sst_df = sst_df_val,
                                             beta_sst = beta_sst_val,
                                             gamma_intensity = gamma_val,
                                             use_raw_rates = use_raw_rates,
