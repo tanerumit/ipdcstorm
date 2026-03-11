@@ -20,9 +20,11 @@ run_hazard_model(
 
 \item{storm_classes}{Character vector of storm classes to model (default TS and HUR).}
 
-\item{climate}{Optional climate input from \code{make_climate_input()}. When
-\code{NULL}, the run is stationary baseline with \code{delta_sst = 0},
-\code{beta_sst = 0}, \code{gamma = 0}, and no Level 3 perturbation.}
+\item{climate}{Optional climate workflow configuration from
+\code{make_climate_cfg()}. When \code{NULL}, the run is stationary with
+\code{delta_sst = 0}, \code{beta_sst = 0}, \code{gamma = 0}, and storm perturbation
+disabled. Legacy \code{make_climate_input()} objects are still accepted
+internally for transition safety.}
 
 \item{seed}{Optional integer seed. When \code{NULL}, \code{run_hazard_model()}
 generates one, sets it at entry, and records it in \code{run_metadata$seed}.}
@@ -41,6 +43,6 @@ End-to-end workflow:
 \item Gate track points within cfg$search_radius_km of each target
 \item Compute site winds and storm event summaries
 \item Classify storm classes and compute annual rates
-\item Simulate annual counts with optional stationary climate-shift adjustments
+\item Simulate annual counts with optional climate adjustments
 }
 }

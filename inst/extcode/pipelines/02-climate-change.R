@@ -22,11 +22,17 @@ library(dplyr)
 library(ggplot2)
 library(ipdcstorm)
 
+
+
+
 # =============================================================================
 # 1) Core model setup
 # =============================================================================
 
-ibtracs_path <- system.file("extdata", "ibtracs_demo.csv", package = "ipdcstorm")
+
+seed <- 123L
+
+ibtracs_path <- "/inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
 
 cfg <- make_hazard_cfg(
   data_path = ibtracs_path,
@@ -44,7 +50,26 @@ targets <- tibble::tribble(
   "Miami",       25.7617,  -80.1918
 )
 
-seed <- 123L
+
+
+# =============================================================================
+# 2) Stationary baseline
+# =============================================================================
+
+out_baseline <- run_hazard_model(
+  cfg = cfg,
+  targets = targets,
+  climate = NULL,
+  seed = seed,
+  verbose = FALSE
+)
+
+# =============================================================================
+# 3) Climate scenarios
+# =============================================================================
+
+get_scenario_delta("ssp585", future_period = 2035:2065)
+
 future_period <- 2035:2065
 
 make_time_slice_climate <- function(scenario,
@@ -71,48 +96,15 @@ make_time_slice_climate <- function(scenario,
     )
   )
 }
-
-# =============================================================================
-# 2) Stationary baseline
-# =============================================================================
-
-out_baseline <- run_hazard_model(
-  cfg = cfg,
-  targets = targets,
-  climate = NULL,
-  seed = seed,
-  verbose = FALSE
-)
-
-# =============================================================================
-# 3) Climate scenarios
-# =============================================================================
-
-climate_245 <- make_time_slice_climate(
-  scenario = "ssp245",
-  future_period = future_period
-)
-
 climate_585 <- make_time_slice_climate(
   scenario = "ssp585",
-  future_period = future_period
-)
+  future_period = future_period)
 
 scenario_table <- tibble::tibble(
-  scenario = c("ssp245", "ssp585"),
-  delta_sst = c(
-    climate_245$shift$delta_sst,
-    climate_585$shift$delta_sst
-  ),
-  beta_sst = c(
-    climate_245$response$beta_sst,
-    climate_585$response$beta_sst
-  ),
-  gamma = c(
-    climate_245$response$gamma,
-    climate_585$response$gamma
-  )
-)
+  scenario = "ssp585",
+  delta_sst = climate_585$shift$delta_sst,
+  beta_sst =  climate_585$response$beta_sst,
+  gamma = climate_585$response$gamma)
 
 cat("\n--- Time-slice climate assumptions ---\n")
 print(
@@ -121,16 +113,8 @@ print(
 )
 
 # =============================================================================
-# 4) Climate runs
+# 4) Climate scenario runs
 # =============================================================================
-
-out_245 <- run_hazard_model(
-  cfg = cfg,
-  targets = targets,
-  climate = climate_245,
-  seed = seed,
-  verbose = FALSE
-)
 
 out_585 <- run_hazard_model(
   cfg = cfg,
@@ -146,7 +130,6 @@ out_585 <- run_hazard_model(
 
 sim_compare <- bind_rows(
   out_baseline$sim |> mutate(scenario = "Baseline"),
-  out_245$sim |> mutate(scenario = "SSP2-4.5"),
   out_585$sim |> mutate(scenario = "SSP5-8.5")
 )
 

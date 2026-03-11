@@ -49,7 +49,7 @@ test_that("make_climate_input validates classes and warns on no-op shifts", {
   )
   txt <- paste(capture.output(print(climate)), collapse = "\n")
   expect_match(txt, "delta_sst")
-  expect_match(txt, "beta_sst")
+  expect_match(txt, "Rate effect")
 })
 
 test_that("get_scenario_delta interpolates and clamps by future-period midpoint", {

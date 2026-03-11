@@ -932,7 +932,9 @@ print.climate_input <- function(x, ...) {
 get_scenario_delta <- function(scenario,
                                future_period,
                                baseline_years = 1991L:2020L) {
+
   .validate_baseline_years(baseline_years)
+
   if (!is.character(scenario) || length(scenario) != 1L || !nzchar(scenario)) {
     stop("scenario must be a single non-empty character value.", call. = FALSE)
   }
@@ -943,6 +945,7 @@ get_scenario_delta <- function(scenario,
   }
 
   info <- sst_scenario_info("all")
+
   row <- info[info$scenario == scenario, , drop = FALSE]
   if (nrow(row) == 0L) {
     stop(
