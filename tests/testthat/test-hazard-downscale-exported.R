@@ -125,3 +125,133 @@ test_that("daily hazard generation and damage helpers return public output schem
   expect_equal(damage_aug$damage_intensity[c(1, 3)], c(0, 1))
   expect_true(all(powerlaw >= 0 & powerlaw <= 0.08, na.rm = TRUE))
 })
+
+test_that("daily hazard generation accepts damage defaults for both methods", {
+  out <- downscale_out_fixture()
+
+  intensity <- generate_daily_hazard_impact(
+    out = out,
+    location = "Saba",
+    sim_years = 1L,
+    year0 = 2001L,
+    damage = list(method = "intensity"),
+    seed = 20
+  )$Saba
+  powerlaw <- generate_daily_hazard_impact(
+    out = out,
+    location = "Saba",
+    sim_years = 1L,
+    year0 = 2001L,
+    damage = list(method = "powerlaw"),
+    seed = 20
+  )$Saba
+
+  expect_equal(
+    intensity$damage_rate,
+    add_damage_forcing(tibble::tibble(wind_kt = intensity$wind_kt))$damage_rate
+  )
+  expect_equal(
+    powerlaw$damage_rate,
+    damage_rate_from_wind(powerlaw$wind_kt)
+  )
+  expect_equal(
+    powerlaw$damage_intensity,
+    add_damage_forcing(
+      tibble::tibble(wind_kt = powerlaw$wind_kt),
+      p = 3
+    )$damage_intensity
+  )
+})
+
+test_that("daily hazard generation honors damage overrides numerically", {
+  out <- downscale_out_fixture()
+
+  intensity <- generate_daily_hazard_impact(
+    out = out,
+    location = "Saba",
+    sim_years = 1L,
+    year0 = 2001L,
+    damage = list(method = "intensity", V0 = 40, V1 = 100, p = 2, dmax = 0.05),
+    seed = 20
+  )$Saba
+  powerlaw <- generate_daily_hazard_impact(
+    out = out,
+    location = "Saba",
+    sim_years = 1L,
+    year0 = 2001L,
+    damage = list(method = "powerlaw", thr = 30, V_ref = 70, d_ref = 0.02, p = 2, d_max = 0.08),
+    seed = 20
+  )$Saba
+
+  expected_intensity <- add_damage_forcing(
+    tibble::tibble(wind_kt = intensity$wind_kt),
+    V0 = 40,
+    V1 = 100,
+    p = 2,
+    dmax = 0.05
+  )
+  expect_equal(intensity$damage_intensity, expected_intensity$damage_intensity)
+  expect_equal(intensity$damage_rate, expected_intensity$damage_rate)
+  expect_equal(
+    powerlaw$damage_rate,
+    damage_rate_from_wind(
+      powerlaw$wind_kt,
+      thr = 30,
+      V_ref = 70,
+      d_ref = 0.02,
+      p = 2,
+      d_max = 0.08
+    )
+  )
+  expect_equal(
+    powerlaw$damage_intensity,
+    add_damage_forcing(
+      tibble::tibble(wind_kt = powerlaw$wind_kt),
+      V0 = 34,
+      V1 = 120,
+      p = 2
+    )$damage_intensity
+  )
+})
+
+test_that("daily hazard generation rejects invalid damage specifications", {
+  out <- downscale_out_fixture()
+  base_args <- list(
+    out = out,
+    location = "Saba",
+    sim_years = 1L,
+    year0 = 2001L,
+    seed = 20
+  )
+
+  expect_error(
+    do.call(generate_daily_hazard_impact, c(base_args, list(damage = "intensity"))),
+    "`damage` must be a named list.",
+    fixed = TRUE
+  )
+  expect_error(
+    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list()))),
+    "`damage$method` must be a single non-empty character string.",
+    fixed = TRUE
+  )
+  expect_error(
+    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list(method = "bad")))),
+    "`damage$method` must be one of: intensity, powerlaw.",
+    fixed = TRUE
+  )
+  expect_error(
+    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list(method = "intensity", thr = 34)))),
+    "unsupported field(s) for method 'intensity': thr",
+    fixed = TRUE
+  )
+  expect_error(
+    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list(method = "powerlaw", V0 = 34)))),
+    "unsupported field(s) for method 'powerlaw': V0",
+    fixed = TRUE
+  )
+  expect_error(
+    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list(method = "intensity", p = c(2, 3))))),
+    "`damage$p` must be a single finite numeric value.",
+    fixed = TRUE
+  )
+})

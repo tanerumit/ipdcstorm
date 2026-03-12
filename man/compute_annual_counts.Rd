@@ -2,19 +2,29 @@
 % Please edit documentation in R/hazard_core.R
 \name{compute_annual_counts}
 \alias{compute_annual_counts}
-\title{Compute annual counts of unique storm events by storm class}
+\title{Compute annual storm-event counts.}
 \usage{
 compute_annual_counts(events, storm_classes = c("TS", "HUR"))
 }
 \arguments{
-\item{events}{Tibble with at least columns: year, storm_class, storm_id.}
+\item{events}{Tibble with at least \code{year}, \code{storm_class}, and \code{storm_id} columns.}
 
-\item{storm_classes}{Character vector of classes to include.}
+\item{storm_classes}{Character vector of storm classes to include.}
 }
 \value{
-Tibble with columns year, storm_class, n_events, completed to include
-all years and classes with zeros.
+Tibble with columns \code{year}, \code{storm_class}, and \code{n_events}, completed over all represented years and classes.
 }
 \description{
-Compute annual counts of unique storm events by storm class
+Counts unique storm events per year and storm class, then completes the series so missing year-class combinations are filled with zeros.
+}
+\examples{
+events <- data.frame(
+  year = c(2000, 2000, 2001),
+  storm_class = c("TS", "TS", "HUR"),
+  storm_id = c("A", "B", "C")
+)
+compute_annual_counts(events)
+}
+\seealso{
+\code{\link{compute_lambda_table}}, \code{\link{get_annual_counts}}
 }

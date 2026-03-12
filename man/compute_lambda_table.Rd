@@ -2,16 +2,27 @@
 % Please edit documentation in R/hazard_core.R
 \name{compute_lambda_table}
 \alias{compute_lambda_table}
-\title{Compute Poisson rate table by storm class from annual counts}
+\title{Compute Poisson rate table by storm class.}
 \usage{
 compute_lambda_table(annual_counts)
 }
 \arguments{
-\item{annual_counts}{Output from \code{compute_annual_counts()}.}
+\item{annual_counts}{Tibble returned by \code{\link{compute_annual_counts}}.}
 }
 \value{
-Tibble with lambda, n_years, prob_annual, prob_none by storm_class.
+Tibble with \code{storm_class}, \code{lambda}, \code{n_years}, \code{prob_annual}, and \code{prob_none} columns.
 }
 \description{
-Compute Poisson rate table by storm class from annual counts
+Summarises annual event counts into storm-class-specific Poisson rates and annual exceedance probabilities.
+}
+\examples{
+annual_counts <- data.frame(
+  year = c(2000, 2001, 2000, 2001),
+  storm_class = c("TS", "TS", "HUR", "HUR"),
+  n_events = c(1, 0, 0, 1)
+)
+compute_lambda_table(annual_counts)
+}
+\seealso{
+\code{\link{compute_annual_counts}}, \code{\link{estimate_k_hat}}
 }

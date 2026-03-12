@@ -13,21 +13,34 @@ disruption_flags(
 )
 }
 \arguments{
-\item{daily}{Tibble from \code{generate_daily_hazard_impact()}.}
+\item{daily}{Tibble/data.frame returned by
+\code{generate_daily_hazard_impact()}.}
 
-\item{thr_port}{Wind threshold (kt) for port disruption.}
+\item{thr_port}{Numeric scalar wind threshold (kt) for port disruption.}
 
-\item{thr_infra}{Wind threshold (kt) for infrastructure disruption.}
+\item{thr_infra}{Numeric scalar wind threshold (kt) for infrastructure
+disruption.}
 
-\item{thr_surge}{Surge threshold (m) for surge disruption.}
+\item{thr_surge}{Numeric scalar surge threshold (m) for surge disruption.}
 
-\item{use_gust}{Logical; if TRUE, use \code{wind_gust_kt} for port/infra thresholds.}
+\item{use_gust}{Logical scalar; if \code{TRUE}, use \code{wind_gust_kt}
+instead of \code{wind_kt}.}
 }
 \value{
-Input tibble with additional logical columns:
-\code{port_disrupt}, \code{infra_disrupt}, \code{surge_disrupt}.
+Input tibble with added logical disruption columns.
 }
 \description{
 Adds logical disruption indicators to a daily hazard table by comparing daily
 wind or surge values with user-supplied thresholds.
+}
+\examples{
+daily <- tibble::tibble(
+  wind_kt = c(20, 45),
+  wind_gust_kt = c(24, 54),
+  surge_m = c(0.1, 0.8)
+)
+disruption_flags(daily, thr_port = 34, thr_infra = 50, thr_surge = 0.5)
+}
+\seealso{
+\code{\link{generate_daily_hazard_impact}}
 }

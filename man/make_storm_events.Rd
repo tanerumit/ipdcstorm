@@ -2,16 +2,28 @@
 % Please edit documentation in R/hazard_core.R
 \name{make_storm_events}
 \alias{make_storm_events}
-\title{Aggregate track points into storm-level events}
+\title{Aggregate track points into storm events.}
 \usage{
 make_storm_events(track_df)
 }
 \arguments{
-\item{track_df}{Track-point tibble/data.frame with at least SID, iso_time.}
+\item{track_df}{Track-point tibble or data frame with at least \code{SID} and \code{iso_time}, plus optional wind and pressure fields.}
 }
 \value{
-Tibble with one row per storm and key event attributes.
+Tibble with one row per storm and event-level summary attributes.
 }
 \description{
-Aggregate track points into storm-level events
+Summarises track-point data to one row per storm with peak site wind, storm intensity, pressure, timing, and radius-of-maximum-wind diagnostics.
+}
+\examples{
+track_df <- data.frame(
+  SID = c("AL012000", "AL012000"),
+  iso_time = as.POSIXct(c("2000-08-01 00:00:00", "2000-08-01 06:00:00"), tz = "UTC"),
+  V_site_kt = c(40, 55),
+  wind_kt = c(60, 65)
+)
+make_storm_events(track_df)
+}
+\seealso{
+\code{\link{classify_severity}}, \code{\link{compute_annual_counts}}
 }

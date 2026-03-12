@@ -2,18 +2,28 @@
 % Please edit documentation in R/hazard_core.R
 \name{get_annual_counts}
 \alias{get_annual_counts}
-\title{Derive annual counts from model output events}
+\title{Derive annual counts from model output.}
 \usage{
 get_annual_counts(out)
 }
 \arguments{
-\item{out}{List returned by \code{run_hazard_model()}.}
+\item{out}{List returned by \code{run_hazard_model()} containing an \code{events} component.}
 }
 \value{
-Tibble with columns \code{location}, \code{year}, \code{storm_class},
-\code{n_events}.
+Tibble with columns \code{location}, \code{year}, \code{storm_class}, and \code{n_events}.
 }
 \description{
-Builds annual storm counts from \code{out$events}, zero-filled for all
-year Ã— storm_class combinations by location.
+Builds location-specific annual storm counts from \code{out$events} and zero-fills missing year-class combinations within each location.
+}
+\examples{
+out <- list(events = data.frame(
+  location = c("Saba", "Saba"),
+  year = c(2000, 2001),
+  storm_class = c("TS", "HUR"),
+  storm_id = c("A", "B")
+))
+get_annual_counts(out)
+}
+\seealso{
+\code{\link{compute_annual_counts}}, \code{\link{compute_lambda_table}}
 }

@@ -2,20 +2,28 @@
 % Please edit documentation in R/hazard_core.R
 \name{dist_to_target}
 \alias{dist_to_target}
-\title{Distance from storm center to target (km), robust}
+\title{Compute great-circle distance from storm center to target.}
 \usage{
 dist_to_target(lat, lon, t_lat, t_lon)
 }
 \arguments{
-\item{lat, lon}{Numeric vectors of storm lat/lon in degrees.}
+\item{lat}{Numeric vector of storm latitudes in decimal degrees.}
 
-\item{t_lat, t_lon}{Numeric scalars; target lat/lon in degrees.}
+\item{lon}{Numeric vector of storm longitudes in decimal degrees.}
+
+\item{t_lat}{Numeric scalar target latitude in decimal degrees.}
+
+\item{t_lon}{Numeric scalar target longitude in decimal degrees.}
 }
 \value{
-Numeric vector of distances in km (same length as lat/lon).
+Numeric vector of distances in kilometres with the same length as \code{lat} and \code{lon}.
 }
 \description{
-Computes Haversine distance (km) from each storm track point to a fixed
-target coordinate. Missing coordinates produce NA, and empty inputs return
-numeric(0).
+Computes Haversine distance in kilometres from each storm track point to a fixed target coordinate.
+}
+\examples{
+dist_to_target(lat = c(18, 18.1), lon = c(-63, -63.1), t_lat = 18.05, t_lon = -63.05)
+}
+\seealso{
+\code{\link{calculate_bearing}}
 }

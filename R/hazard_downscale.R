@@ -1,20 +1,14 @@
 # =============================================================================
-# Script overview: temporal downscaling and impact forcing
-# - .assign_severity_simple(): simple TD/TS/HUR class from peak wind.
-# - .classify_downscaled_event_peak(): classify realized downscaled event peaks.
-# - build_event_library(): empirical seasonality + stratified event resampling.
-# - build_event_library_from_out(): convenience wrapper using run_hazard_model() output.
-# - event_pulse(): deterministic within-event daily wind profile.
-# - sample_events_for_year_extended(): sample events with additional attributes.
-# - generate_daily_year_extended(): daily wind + dominant event attributes.
-# - generate_daily_hazard_impact(): daily wind + event + damage forcing series
-#     (with optional storm perturbation via perturb_event()).
-# - add_damage_forcing(): intensity + damage rate from daily wind.
-# - damage_rate_from_wind(): bounded power-law damage rate function.
+# Temporal downscaling and impact forcing
+# - Event classification helpers.
+# - Event-library construction and resampling.
+# - Daily event-to-time-series conversion.
+# - Daily hazard-impact generation.
+# - Damage forcing helpers.
 # =============================================================================
 
 # =============================================================================
-# 9) Temporal downscaling: event library + sampling + daily series
+# 1) Event classification helpers
 # =============================================================================
 
 #' Assign simple severity class from peak wind
@@ -67,7 +61,11 @@
 }
 
 
-#' Build an empirical event library for resampling (seasonality + stratified events)
+# =============================================================================
+# 2) Event library construction
+# =============================================================================
+
+#' Build an empirical event library for resampling
 #'
 #' @description
 #' Builds a resampling library from historical storm events for one target
@@ -75,21 +73,45 @@
 #' stratified historical event bins, and sampler closures used by the daily
 #' downscaling workflow.
 #'
-#' @param track_df Track-point tibble for a single location, with columns `SID` and `iso_time`.
-#' @param event_df Storm-event tibble (one row per SID) with at least `SID`.
-#'   Recommended: `peak_wind_kt`, `storm_intensity_kt`, `min_pressure_hpa`,
-#'   `rmw_mean_km`, `start_time`.
-#' @param storm_classes Character vector of storm classes to retain in the
-#'   event library. Defaults to \code{c("TD", "TS", "HUR")}.
-#' @param bins List of break vectors for stratification (wind, Pc, RMW).
-#' @param seed Optional integer seed.
-#' @param resampling_method Character; one of \code{"stratified"} or \code{"copula_nn"}.
-#'   Default "stratified" preserves existing behavior.
-#' @param copula_min_n Integer; minimum complete-case sample size per class needed to fit copula.
-#' @param copula_k Integer; number of nearest neighbours to sample from after copula proposal (>=1).
-#' @param copula_robust_scale Logical; if TRUE use median/MAD scaling for NN distance, else mean/SD.
+#' @param track_df Tibble/data.frame of track points for one location; must
+#'   contain columns \code{SID} and \code{iso_time}.
+#' @param event_df Tibble/data.frame of storm events with one row per storm; must
+#'   contain \code{SID} or \code{storm_id}.
+#' @param storm_classes Character vector of storm classes retained in the
+#'   library.
+#' @param bins Named list of numeric break vectors for wind, pressure, and RMW
+#'   stratification.
+#' @param seed Optional integer seed for deterministic library construction.
+#' @param resampling_method Character scalar; one of \code{"stratified"} or
+#'   \code{"copula_nn"}.
+#' @param copula_min_n Integer scalar; minimum complete-case sample size needed
+#'   to fit a class-specific copula sampler.
+#' @param copula_k Integer scalar; number of nearest neighbours sampled from a
+#'   copula proposal.
+#' @param copula_robust_scale Logical scalar; if \code{TRUE}, use median/MAD
+#'   scaling in nearest-neighbour distance calculations.
 #'
-#' @return A list with DOY samples, stratification bins, the event table, and sampler functions.
+#' @return List with empirical day-of-year samples, stratification bins, the
+#'   processed event table, and sampler functions.
+#' @examples
+#' track_df <- tibble::tibble(
+#'   SID = c("A", "A", "B", "B"),
+#'   iso_time = as.POSIXct(c(
+#'     "2000-08-01 00:00:00", "2000-08-01 06:00:00",
+#'     "2000-09-10 00:00:00", "2000-09-10 06:00:00"
+#'   ), tz = "UTC")
+#' )
+#' event_df <- tibble::tibble(
+#'   SID = c("A", "B"),
+#'   peak_wind_kt = c(45, 80),
+#'   storm_intensity_kt = c(45, 80),
+#'   min_pressure_hpa = c(995, 970),
+#'   rmw_mean_km = c(40, 25),
+#'   start_time = as.POSIXct(c("2000-08-01 00:00:00", "2000-09-10 00:00:00"), tz = "UTC")
+#' )
+#' lib <- build_event_library(track_df, event_df, storm_classes = c("TS", "HUR"))
+#' names(lib)
+#' @seealso \code{\link{build_event_library_from_out}}
 #' @export
 build_event_library <- function(track_df, event_df,
                                 storm_classes = c("TD", "TS", "HUR"),
@@ -397,20 +419,34 @@ build_event_library <- function(track_df, event_df,
   )
 }
 
+# =============================================================================
+# 3) Daily summary and disruption helpers
+# =============================================================================
+
 #' Compute disruption flags from daily hazard output
 #'
 #' @description
 #' Adds logical disruption indicators to a daily hazard table by comparing daily
 #' wind or surge values with user-supplied thresholds.
 #'
-#' @param daily Tibble from \code{generate_daily_hazard_impact()}.
-#' @param thr_port Wind threshold (kt) for port disruption.
-#' @param thr_infra Wind threshold (kt) for infrastructure disruption.
-#' @param thr_surge Surge threshold (m) for surge disruption.
-#' @param use_gust Logical; if TRUE, use \code{wind_gust_kt} for port/infra thresholds.
+#' @param daily Tibble/data.frame returned by
+#'   \code{generate_daily_hazard_impact()}.
+#' @param thr_port Numeric scalar wind threshold (kt) for port disruption.
+#' @param thr_infra Numeric scalar wind threshold (kt) for infrastructure
+#'   disruption.
+#' @param thr_surge Numeric scalar surge threshold (m) for surge disruption.
+#' @param use_gust Logical scalar; if \code{TRUE}, use \code{wind_gust_kt}
+#'   instead of \code{wind_kt}.
 #'
-#' @return Input tibble with additional logical columns:
-#'   \code{port_disrupt}, \code{infra_disrupt}, \code{surge_disrupt}.
+#' @return Input tibble with added logical disruption columns.
+#' @examples
+#' daily <- tibble::tibble(
+#'   wind_kt = c(20, 45),
+#'   wind_gust_kt = c(24, 54),
+#'   surge_m = c(0.1, 0.8)
+#' )
+#' disruption_flags(daily, thr_port = 34, thr_infra = 50, thr_surge = 0.5)
+#' @seealso \code{\link{generate_daily_hazard_impact}}
 #' @export
 disruption_flags <- function(daily,
                              thr_port = NA_real_,
@@ -431,9 +467,15 @@ disruption_flags <- function(daily,
 #' Flags days in a daily hazard table that are associated with any tropical
 #' storm or hurricane event.
 #'
-#' @param daily Tibble from \code{generate_daily_hazard_impact()}.
+#' @param daily Tibble/data.frame returned by
+#'   \code{generate_daily_hazard_impact()}.
 #'
-#' @return Logical vector.
+#' @return Logical vector identifying tropical-storm or hurricane days.
+#' @examples
+#' daily <- tibble::tibble(event_class = c(NA, "TS", "HUR"))
+#' is_tc_day(daily)
+#' is_hur_day(daily)
+#' @seealso \code{\link{generate_daily_hazard_impact}}
 #' @export
 is_tc_day <- function(daily) {
   daily$event_class %in% c("TS", "HUR")
@@ -451,11 +493,15 @@ is_hur_day <- function(daily) {
 #' Converts a daily wind threshold exceedance test into daily exposure hours at
 #' package daily resolution.
 #'
-#' @param daily Tibble from \code{generate_daily_hazard_impact()}.
-#' @param threshold_kt Wind speed threshold (kt).
-#' @param use_gust Logical; if TRUE, use \code{wind_gust_kt}.
+#' @param daily Tibble/data.frame returned by
+#'   \code{generate_daily_hazard_impact()}.
+#' @param threshold_kt Numeric scalar wind threshold (kt).
+#' @param use_gust Logical scalar; if \code{TRUE}, use \code{wind_gust_kt}.
 #'
-#' @return Numeric vector of hours (0 or 24 at daily resolution).
+#' @return Numeric vector of daily exposure hours at package daily resolution.
+#' @examples
+#' daily <- tibble::tibble(wind_kt = c(20, 40), wind_gust_kt = c(24, 48))
+#' exposure_hours(daily, threshold_kt = 34)
 #' @export
 exposure_hours <- function(daily, threshold_kt, use_gust = FALSE) {
   wind_col <- if (use_gust) "wind_gust_kt" else "wind_kt"
@@ -468,9 +514,19 @@ exposure_hours <- function(daily, threshold_kt, use_gust = FALSE) {
 #' Aggregates a daily hazard table to annual peak sustained wind by location,
 #' simulation year, and scenario.
 #'
-#' @param daily Tibble from \code{generate_daily_hazard_impact()}.
+#' @param daily Tibble/data.frame returned by
+#'   \code{generate_daily_hazard_impact()}.
 #'
-#' @return Tibble with \code{location}, \code{sim_year}, \code{scenario}, \code{peak_wind_kt}.
+#' @return Tibble with one row per location and simulation year and a
+#'   \code{peak_wind_kt} column.
+#' @examples
+#' daily <- tibble::tibble(
+#'   location = c("Saba", "Saba"),
+#'   sim_year = c(1, 1),
+#'   scenario = c("baseline", "baseline"),
+#'   wind_kt = c(20, 55)
+#' )
+#' peak_wind_by_year(daily)
 #' @export
 peak_wind_by_year <- function(daily) {
   daily |>
@@ -488,12 +544,17 @@ peak_wind_by_year <- function(daily) {
 #' \code{build_event_library()}.
 #'
 #' @param out List returned by \code{run_hazard_model()}.
-#' @param location Character; target location name (must exist in out lists).
-#' @param ... Passed to \code{build_event_library()}.
-#' @param seed Optional integer seed.
+#' @param location Character scalar target location name.
+#' @param ... Additional arguments passed to \code{build_event_library()}.
+#' @param seed Optional integer seed for deterministic library construction.
 #'
-#' @return Event library as returned by \code{build_event_library()}.
-#'
+#' @return List in the format returned by \code{build_event_library()}.
+#' @examples
+#' \dontrun{
+#' lib <- build_event_library_from_out(out, location = "Saba")
+#' lib$events
+#' }
+#' @seealso \code{\link{build_event_library}}
 #' @export
 build_event_library_from_out <- function(out, location, ..., seed = NULL) {
 
@@ -517,6 +578,10 @@ build_event_library_from_out <- function(out, location, ..., seed = NULL) {
 }
 
 
+# =============================================================================
+# 4) Event sampling and daily pulse generation
+# =============================================================================
+
 #' Sample synthetic storm events for a year with extended attributes
 #'
 #' @description
@@ -533,14 +598,30 @@ build_event_library_from_out <- function(out, location, ..., seed = NULL) {
 #'   \item \code{RMW_mean_km}: mean radius of maximum wind.
 #' }
 #'
-#' @param lib Event library produced by \code{build_event_library()}.
-#' @param year Integer calendar year.
-#' @param n_ts Integer number of tropical storms to sample.
-#' @param n_hur Integer number of hurricanes to sample.
-#' @param seed Optional integer seed.
+#' @param lib List event library produced by \code{build_event_library()}.
+#' @param year Integer scalar calendar year.
+#' @param n_ts Integer scalar number of tropical storms to sample.
+#' @param n_hur Integer scalar number of hurricanes to sample.
+#' @param seed Optional integer seed for deterministic sampling.
 #'
-#' @return Tibble with columns: severity, start_date, dur_days, V_peak,
-#'   event_id, event_class, Pc_min_hPa, dP_max_hPa, RMW_mean_km.
+#' @return Tibble with one row per sampled event and event-level attributes used
+#'   by the daily downscaling workflow.
+#' @examples
+#' sample_lib <- list(
+#'   sample_doy = function(sev) if (sev == "TS") 220L else 250L,
+#'   sample_event = function(sev) {
+#'     tibble::tibble(
+#'       SID = paste0(sev, "_1"),
+#'       dur_days = if (sev == "TS") 3L else 4L,
+#'       V_site_max_kt = if (sev == "TS") 45 else 80,
+#'       Pc_min_hPa = if (sev == "TS") 995 else 970,
+#'       dP_max_hPa = if (sev == "TS") 18 else 40,
+#'       RMW_mean_km = if (sev == "TS") 40 else 25
+#'     )
+#'   }
+#' )
+#' sample_events_for_year_extended(sample_lib, year = 2000, n_ts = 1, n_hur = 1)
+#' @seealso \code{\link{generate_daily_year_extended}}
 #' @export
 sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL) {
 
@@ -644,11 +725,15 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
 #' Creates a deterministic within-event daily wind profile from an event
 #' duration and peak sustained wind.
 #'
-#' @param dur_days Integer; event duration (days).
-#' @param V_peak Numeric; peak wind (kt).
-#' @param shape Pulse shape: "cosine" (smooth) or "triangle" (linear).
+#' @param dur_days Integer scalar event duration in days.
+#' @param V_peak Numeric scalar peak sustained wind in kt.
+#' @param shape Character scalar pulse shape; one of \code{"cosine"} or
+#'   \code{"triangle"}.
 #'
-#' @return Numeric vector length dur_days of daily winds (kt).
+#' @return Numeric vector of daily sustained wind values in kt.
+#' @examples
+#' event_pulse(dur_days = 5, V_peak = 60)
+#' @seealso \code{\link{generate_daily_year_extended}}
 #' @export
 event_pulse <- function(dur_days, V_peak, shape = c("cosine", "triangle")) {
   shape <- match.arg(shape)
@@ -666,9 +751,6 @@ event_pulse <- function(dur_days, V_peak, shape = c("cosine", "triangle")) {
 }
 
 
-
-
-
 #' Generate a daily wind + dominant-event attribute series for a single calendar year
 #'
 #' @description
@@ -676,12 +758,25 @@ event_pulse <- function(dur_days, V_peak, shape = c("cosine", "triangle")) {
 #' wind series while tracking the dominant event and key event attributes for
 #' each day.
 #'
-#' @param year Integer calendar year.
+#' @param year Integer scalar calendar year.
 #' @param sampled_events Tibble from \code{sample_events_for_year_extended()}.
-#' @param pulse_shape Pulse shape passed to \code{event_pulse()}.
+#' @param pulse_shape Character scalar pulse shape passed to
+#'   \code{event_pulse()}.
 #'
-#' @return Tibble with columns: date, wind_kt, event_id, event_class, pressure_hpa,
-#'   pressure_deficit_hpa, rmw_km.
+#' @return Tibble with one row per calendar day and daily hazard attributes.
+#' @examples
+#' sampled_events <- tibble::tibble(
+#'   start_date = as.Date("2000-08-01"),
+#'   dur_days = 3L,
+#'   V_peak = 60,
+#'   event_id = "evt_1",
+#'   event_class = "TS",
+#'   Pc_min_hPa = 995,
+#'   dP_max_hPa = 18,
+#'   RMW_mean_km = 40
+#' )
+#' generate_daily_year_extended(2000, sampled_events)
+#' @seealso \code{\link{sample_events_for_year_extended}}, \code{\link{event_pulse}}
 #' @export
 generate_daily_year_extended <- function(year, sampled_events,
                                          pulse_shape = "cosine") {
@@ -780,41 +875,256 @@ generate_daily_year_extended <- function(year, sampled_events,
 }
 
 
+# =============================================================================
+# 5) Daily hazard-impact generation
+# =============================================================================
 
-
-#' Generate daily synthetic hazard + impact series from hazard model output
+#' Generate daily synthetic hazard and impact time series from hazard-model output
 #'
 #' @description
-#' Builds daily hazard and damage time series from \code{run_hazard_model()}
-#' output for one or more locations and simulation years. The function always
-#' returns a named list of tibbles, one element per location.
+#' Converts stochastic annual hazard-model output from \code{run_hazard_model()}
+#' into daily synthetic hazard and impact series for one or more target
+#' locations and selected simulation years.
 #'
-#' @param out List returned by \code{run_hazard_model()}.
-#' @param location Character vector of one or more target location names.
+#' For each requested location, the function:
+#' \enumerate{
+#'   \item builds an empirical event library from the location-specific
+#'   historical track-point and event information stored in \code{out};
+#'   \item reads the simulated annual storm counts from \code{out$sim}
+#'   (currently tropical storms and hurricanes via \code{n_ts} and
+#'   \code{n_hur});
+#'   \item resamples synthetic events year by year from the empirical library;
+#'   \item optionally applies event-level climate perturbations when such
+#'   metadata are attached to \code{out$fit};
+#'   \item downscales each sampled event to a daily sustained-wind pulse;
+#'   \item combines overlapping events into a daily series, retaining the
+#'   dominant event identifier and associated pressure / RMW attributes for each
+#'   day; and
+#'   \item derives gust wind, a simple pressure-based surge proxy, daily damage
+#'   forcing, and cumulative damage.
+#' }
+#'
+#' The function is intended as a temporal downscaling bridge between the annual
+#' synthetic hazard model and downstream impact models that operate at daily
+#' time step. It does not re-simulate storm occurrence from first principles;
+#' instead, it reuses the synthetic annual counts already generated by
+#' \code{run_hazard_model()} and combines them with empirical event structure
+#' extracted from the historical event library. The return value is always a
+#' named list of tibbles, one element per requested location.
+#'
+#' @details
+#' The daily series is generated through the following helper workflow:
+#'
+#' \enumerate{
+#'   \item \code{\link{build_event_library_from_out}()} extracts the
+#'   location-specific historical event library from \code{out$trackpoints} and
+#'   \code{out$events}. Depending on configuration stored in \code{out$cfg}, the
+#'   underlying sampler can use either stratified historical resampling or the
+#'   \code{"copula_nn"} nearest-neighbour copula workflow. :contentReference[oaicite:3]{index=3}
+#'   \item \code{sample_events_for_year_extended()} samples the required number
+#'   of tropical storms and hurricanes for each simulation year using the
+#'   annual counts in \code{out$sim}. Sampled events carry start date, duration,
+#'   peak wind, central pressure, pressure deficit, and mean radius of maximum
+#'   wind. :contentReference[oaicite:4]{index=4}
+#'   \item If climate perturbation metadata are attached to \code{out$fit}, the
+#'   sampled event set is modified with \code{perturb_event()} before daily
+#'   downscaling. This is only applied when perturbation settings are present
+#'   and a finite scalar \code{delta_sst} is available. :contentReference[oaicite:5]{index=5}
+#'   \item \code{\link{generate_daily_year_extended}()} converts each sampled
+#'   event into a daily time series by applying \code{\link{event_pulse}()} to
+#'   the event duration and peak wind, then merges overlapping events by taking
+#'   the daily maximum wind contribution. The dominant event for each day
+#'   carries the \code{event_id}, \code{event_class}, \code{pressure_hpa},
+#'   \code{pressure_deficit_hpa}, and \code{rmw_km} fields into the final daily
+#'   table. :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7}
+#'   \item Damage forcing is then added using either
+#'   \code{\link{add_damage_forcing}()} or
+#'   \code{\link{damage_rate_from_wind}()}, depending on
+#'   \code{damage$method}. \code{cum_damage} is computed as the cumulative sum
+#'   of daily \code{damage_rate} within the generated series. :contentReference[oaicite:8]{index=8}
+#'   \item Finally, \code{wind_gust_kt} is derived as
+#'   \code{wind_kt * gust_factor}, and \code{surge_m} is derived from central
+#'   pressure using the simple pressure-deficit proxy
+#'   \code{0.14 * (1013 - pressure_hpa)} where pressure is available. :contentReference[oaicite:9]{index=9}
+#' }
+#'
+#' Scientific parameterization:
+#'
+#' \itemize{
+#'   \item \strong{Gust factor.}
+#'   \code{gust_factor} is a simple multiplicative conversion from daily
+#'   sustained wind speed to daily gust wind speed:
+#'   \deqn{wind\_gust\_kt = wind\_kt \times gust\_factor}
+#'   No additional boundary-layer or exposure correction is applied inside this
+#'   function. A value of 1 leaves gust equal to sustained wind; values above 1
+#'   represent stronger short-duration peak gusts. :contentReference[oaicite:10]{index=10}
+#'
+#'   \item \strong{Pulse shape.}
+#'   \code{pulse_shape} controls the within-event temporal evolution of daily
+#'   sustained wind through \code{\link{event_pulse}()}. Supported values are
+#'   currently \code{"cosine"} and \code{"triangle"}. The cosine option uses
+#'   \code{sin(pi * (t - 0.5) / d)} over event day \code{t = 1, ..., d}, giving
+#'   a smooth rise and fall with zero at the event edges. The triangle option
+#'   uses a piecewise-linear ramp up and down around the event midpoint. In both
+#'   cases the profile is scaled to the sampled event peak wind \code{V_peak}
+#'   and truncated at zero. :contentReference[oaicite:11]{index=11}
+#'
+#'   \item \strong{Damage intensity index.}
+#'   Regardless of \code{damage$method}, the function first computes a bounded
+#'   hazard-intensity index from sustained daily wind:
+#'   \deqn{I = \mathrm{clip}_{[0,1]}\left(\frac{wind\_kt - V0}{V1 - V0}\right)^p}
+#'   where \code{V0} is the lower damage threshold, \code{V1} is the wind speed
+#'   at which the normalized intensity saturates at 1, and \code{p} controls
+#'   convexity. This index is stored in \code{damage_intensity}. For
+#'   \code{damage$method = "intensity"}, these values come from the intensity
+#'   damage specification; for \code{damage$method = "powerlaw"}, the generic
+#'   index uses \code{V0 = 34} kt and \code{V1 = 120} kt with the shared
+#'   exponent \code{p}. :contentReference[oaicite:12]{index=12}
+#'
+#'   \item \strong{Damage method = "intensity".}
+#'   This route calls \code{\link{add_damage_forcing}()}, which maps the bounded
+#'   intensity index to daily damage rate as
+#'   \deqn{damage\_rate = dmax \times I}
+#'   where \code{dmax} is the maximum daily damage fraction. Defaults are
+#'   \code{V0 = 34} kt, \code{V1 = 120} kt, \code{p = 3}, and
+#'   \code{dmax = 0.02}. This is a capped intensity-index model rather than a
+#'   direct engineering vulnerability curve. :contentReference[oaicite:13]{index=13}
+#'
+#'   \item \strong{Damage method = "powerlaw".}
+#'   This route calls \code{\link{damage_rate_from_wind}()}, which applies a
+#'   thresholded power law calibrated at a reference wind:
+#'   \deqn{x = \max\left(0, \frac{wind\_kt - thr}{V\_ref - thr}\right)}
+#'   \deqn{damage\_rate = \min(d\_max,\; d\_ref \times x^p)}
+#'   Here \code{thr} is the wind threshold below which damage is zero,
+#'   \code{V_ref} is a calibration wind at which damage equals \code{d_ref},
+#'   \code{p} is the exponent, and \code{d_max} is the daily cap. Defaults are
+#'   \code{thr = 34} kt, \code{V_ref = 80} kt, \code{d_ref = 0.03},
+#'   \code{p = 3}, and \code{d_max = 0.10}. This method exposes the reference
+#'   point explicitly and is easier to align with an external damage assumption
+#'   at a chosen hazard level. :contentReference[oaicite:14]{index=14}
+#'
+#'   \item \strong{Cumulative damage.}
+#'   \code{cum_damage} is computed as the running cumulative sum of
+#'   \code{damage_rate} over the generated daily sequence for each location.
+#'   It is therefore a synthetic cumulative forcing index, not necessarily a
+#'   literal stock-loss fraction unless the user calibrates the daily damage
+#'   formulation accordingly. :contentReference[oaicite:15]{index=15}
+#' }
+#'
+#' @param out List returned by \code{run_hazard_model()}. Must contain
+#'   location-specific simulation output in \code{out$sim} and the historical
+#'   event / track-point information needed to build the empirical event library.
+#'
+#' @param location Character vector of one or more target location names for
+#'   which daily series should be generated. Each requested location must be
+#'   present in the hazard-model output.
+#'
 #' @param sim_years Integer vector of simulation-year indices to generate.
-#' @param year0 Integer base calendar year corresponding to sim_year == 1.
-#' @param gust_factor Numeric scalar to derive gust wind from sustained wind.
-#' @param damage_method One of: "intensity" (uses add_damage_forcing) or "powerlaw".
-#' @param damage_params List of parameters for the chosen method.
-#' @param pulse_shape Passed to \code{event_pulse()}.
-#' @param scenario Optional character scenario label carried to output.
-#' @param seed Integer seed.
+#'   These refer to the synthetic years in \code{out$sim}, not historical
+#'   calendar years.
 #'
-#' @return Named list of tibbles (one per location), each with columns:
-#'   \code{location}, \code{sim_year}, \code{scenario}, \code{date},
-#'   \code{wind_kt}, \code{wind_gust_kt}, \code{surge_m},
-#'   \code{event_id}, \code{event_class}, \code{pressure_hpa},
-#'   \code{pressure_deficit_hpa}, \code{rmw_km},
-#'   \code{damage_intensity}, \code{damage_rate}, \code{cum_damage}.
+#' @param year0 Integer scalar base calendar year used to map synthetic year
+#'   indices to dates. The function interprets \code{sim_year == 1} as
+#'   \code{year0}, \code{sim_year == 2} as \code{year0 + 1}, and so on.
+#'
+#' @param gust_factor Numeric scalar multiplier used to convert daily sustained
+#'   wind \code{wind_kt} to daily gust wind \code{wind_gust_kt}. No internal
+#'   validation against observed gust-duration conventions is performed.
+#'
+#' @param damage Named list defining the daily damage model. Must include a
+#'   scalar character element \code{method} equal to \code{"intensity"} or
+#'   \code{"powerlaw"}. Recognized method-specific fields are:
+#'   \describe{
+#'     \item{\code{method = "intensity"}}{\code{V0}, \code{V1}, \code{p},
+#'       \code{dmax}. Defaults are \code{V0 = 34} kt, \code{V1 = 120} kt,
+#'       \code{p = 3}, and \code{dmax = 0.02}.}
+#'     \item{\code{method = "powerlaw"}}{\code{thr}, \code{V_ref},
+#'       \code{d_ref}, \code{p}, \code{d_max}. Defaults are \code{thr = 34} kt,
+#'       \code{V_ref = 80} kt, \code{d_ref = 0.03}, \code{p = 3}, and
+#'       \code{d_max = 0.10}.}
+#'   }
+#'   Unknown fields for the selected method are rejected. The output still
+#'   includes \code{damage_intensity}; for \code{method = "powerlaw"}, it is a
+#'   generic bounded wind-intensity index and does not change the power-law
+#'   damage-rate formula.
+#'
+#' @param pulse_shape Character scalar pulse shape passed to
+#'   \code{\link{event_pulse}()}. Currently supported values are
+#'   \code{"cosine"} and \code{"triangle"}.
+#'
+#' @param scenario Optional character scalar scenario label copied into the
+#'   output rows without modification.
+#'
+#' @param seed Integer scalar random seed. The wrapper offsets this seed by
+#'   location index so repeated calls are deterministic but distinct across
+#'   requested locations. :contentReference[oaicite:16]{index=16}
+#'
+#' @return
+#' A named list of tibbles, one element per requested location. Each tibble
+#' contains a daily synthetic hazard-impact series with columns:
+#' \describe{
+#'   \item{\code{location}}{Target location name.}
+#'   \item{\code{sim_year}}{Synthetic simulation-year index from \code{out$sim}.}
+#'   \item{\code{scenario}}{Scenario label passed through from the function call.}
+#'   \item{\code{date}}{Daily calendar date derived from \code{year0}.}
+#'   \item{\code{wind_kt}}{Daily sustained wind speed (kt).}
+#'   \item{\code{wind_gust_kt}}{Daily gust wind speed (kt), computed using
+#'     \code{gust_factor}.}
+#'   \item{\code{surge_m}}{Simple pressure-based surge proxy (m).}
+#'   \item{\code{event_id}}{Identifier of the dominant event contributing the
+#'     highest wind on that day, or \code{NA} outside events.}
+#'   \item{\code{event_class}}{Dominant daily event class, currently \code{"TS"}
+#'     or \code{"HUR"}, based on realized downscaled peak.}
+#'   \item{\code{pressure_hpa}}{Minimum central pressure associated with the
+#'     dominant event on that day, when available.}
+#'   \item{\code{pressure_deficit_hpa}}{Pressure deficit associated with the
+#'     dominant event on that day, when available.}
+#'   \item{\code{rmw_km}}{Mean radius of maximum wind for the dominant event,
+#'     when available.}
+#'   \item{\code{damage_intensity}}{Bounded normalized hazard-intensity index.}
+#'   \item{\code{damage_rate}}{Daily damage forcing fraction from the selected
+#'     damage model.}
+#'   \item{\code{cum_damage}}{Cumulative sum of \code{damage_rate}.}
+#' }
+#' Each location tibble also carries a \code{"gust_factor"} attribute. :contentReference[oaicite:17]{index=17}
+#'
+#' @seealso
+#' \code{\link{build_event_library_from_out}},
+#' \code{\link{generate_daily_year_extended}},
+#' \code{\link{event_pulse}},
+#' \code{\link{add_damage_forcing}},
+#' \code{\link{damage_rate_from_wind}}
 #'
 #' @examples
 #' \dontrun{
-#' # Single location — returns list of length 1
-#' res <- generate_daily_hazard_impact(out, location = "Saba")
+#' # Single location — returns a named list of length 1
+#' res <- generate_daily_hazard_impact(
+#'   out = out,
+#'   location = "Saba",
+#'   sim_years = 1:10,
+#'   year0 = 2000,
+#'   gust_factor = 1.3,
+#'   damage = list(method = "intensity", V0 = 34, V1 = 120, p = 3, dmax = 0.02),
+#'   pulse_shape = "cosine",
+#'   scenario = "baseline",
+#'   seed = 1
+#' )
 #' res$Saba
 #'
-#' # Multiple locations
-#' res <- generate_daily_hazard_impact(out, location = c("Saba", "St. Eustatius"))
+#' # Multiple locations with the power-law damage option
+#' res <- generate_daily_hazard_impact(
+#'   out = out,
+#'   location = c("Saba", "St. Eustatius"),
+#'   sim_years = 1:5,
+#'   damage = list(
+#'     method = "powerlaw",
+#'     thr = 34,
+#'     V_ref = 80,
+#'     d_ref = 0.03,
+#'     p = 3,
+#'     d_max = 0.10
+#'   )
+#' )
 #' res$Saba
 #' res$`St. Eustatius`
 #' }
@@ -825,14 +1135,12 @@ generate_daily_hazard_impact <- function(
     sim_years = 1:1000,
     year0 = 2000,
     gust_factor = 1,
-    damage_method = c("intensity", "powerlaw"),
-    damage_params = list(),
+    damage = list(method = "intensity"),
     pulse_shape = "cosine",
     scenario = NA_character_,
     seed = 1) {
   stopifnot(is.character(location), length(location) >= 1L)
-
-  damage_method <- match.arg(damage_method)
+  damage <- .validate_damage_spec(damage)
 
   # --- Run each location via the internal worker ---
   results <- stats::setNames(
@@ -850,8 +1158,7 @@ generate_daily_hazard_impact <- function(
       sim_years = sim_years,
       year0 = year0,
       gust_factor = gust_factor,
-      damage_method = damage_method,
-      damage_params = damage_params,
+      damage = damage,
       pulse_shape = pulse_shape,
       scenario = scenario,
       seed = loc_seed
@@ -861,23 +1168,73 @@ generate_daily_hazard_impact <- function(
   results
 }
 
+#' Validate and fill damage specification defaults
+#'
+#' @param damage Named list supplied to \code{generate_daily_hazard_impact()}.
+#' @return Named list with validated method-specific defaults filled in.
+#' @keywords internal
+.validate_damage_spec <- function(damage) {
+  defaults <- list(
+    intensity = list(V0 = 34, V1 = 120, p = 3, dmax = 0.02),
+    powerlaw = list(thr = 34, V_ref = 80, d_ref = 0.03, p = 3, d_max = 0.10)
+  )
+
+  if (!is.list(damage) || is.data.frame(damage)) {
+    stop("`damage` must be a named list.", call. = FALSE)
+  }
+  if (length(damage) == 0L) {
+    stop("`damage$method` must be a single non-empty character string.", call. = FALSE)
+  }
+  if (is.null(names(damage)) || any(names(damage) == "") || anyDuplicated(names(damage))) {
+    stop("`damage` must be a named list with unique names.", call. = FALSE)
+  }
+
+  method <- damage[["method"]]
+  if (!is.character(method) || length(method) != 1L || is.na(method) || !nzchar(method)) {
+    stop("`damage$method` must be a single non-empty character string.", call. = FALSE)
+  }
+  if (!(method %in% names(defaults))) {
+    stop("`damage$method` must be one of: intensity, powerlaw.", call. = FALSE)
+  }
+
+  allowed <- c("method", names(defaults[[method]]))
+  unknown <- setdiff(names(damage), allowed)
+  if (length(unknown) > 0L) {
+    stop(
+      "`damage` contains unsupported field(s) for method '", method, "': ",
+      paste(unknown, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+
+  for (nm in setdiff(names(damage), "method")) {
+    value <- damage[[nm]]
+    if (!is.numeric(value) || length(value) != 1L || is.na(value) || !is.finite(value)) {
+      stop("`damage$", nm, "` must be a single finite numeric value.", call. = FALSE)
+    }
+  }
+
+  utils::modifyList(list(method = method), defaults[[method]]) |>
+    utils::modifyList(damage)
+}
+
 #' Generate daily hazard and damage for one location
 #'
 #' @description
 #' Internal worker that builds one location's event library, samples annual
 #' events from the stochastic hazard output, and assembles the final daily
-#' hazard and damage table.
+#' hazard-impact table.
 #'
 #' @param out List returned by \code{run_hazard_model()}.
 #' @param location Character scalar location name.
 #' @param sim_years Integer vector of simulation-year indices to generate.
-#' @param year0 Integer base calendar year corresponding to \code{sim_year == 1}.
-#' @param gust_factor Numeric gust multiplier.
-#' @param damage_method Character damage-forcing method name.
-#' @param damage_params Named list of damage parameters.
-#' @param pulse_shape Character pulse-shape identifier.
-#' @param scenario Optional scenario label carried into output.
-#' @param seed Integer seed for deterministic per-location generation.
+#' @param year0 Integer scalar base calendar year corresponding to
+#'   \code{sim_year == 1}.
+#' @param gust_factor Numeric scalar gust multiplier.
+#' @param damage Named list of validated damage parameters.
+#' @param pulse_shape Character scalar pulse-shape identifier.
+#' @param scenario Optional character scalar scenario label carried into output.
+#' @param seed Integer scalar seed for deterministic per-location generation.
 #' @return Tibble with the daily hazard-impact schema used by
 #'   \code{generate_daily_hazard_impact()}.
 #' @keywords internal
@@ -887,8 +1244,7 @@ generate_daily_hazard_impact <- function(
     sim_years,
     year0,
     gust_factor,
-    damage_method,
-    damage_params,
+    damage,
     pulse_shape,
     scenario,
     seed) {
@@ -970,30 +1326,33 @@ generate_daily_hazard_impact <- function(
         scenario = !!scenario
       )
 
-    V0 <- if (!is.null(damage_params$V0)) damage_params$V0 else 34
-    V1 <- if (!is.null(damage_params$V1)) damage_params$V1 else 120
-    p_exp <- if (!is.null(damage_params$p)) damage_params$p else 3
+    intensity_pars <- if (identical(damage$method, "intensity")) {
+      damage[c("V0", "V1", "p")]
+    } else {
+      list(V0 = 34, V1 = 120, p = damage$p)
+    }
     daily0 <- daily0 |>
       dplyr::mutate(
-        damage_intensity = pmax(0, pmin(1, (.data$wind_kt - V0) / (V1 - V0)))^p_exp
+        damage_intensity = pmax(
+          0,
+          pmin(1, (.data$wind_kt - intensity_pars$V0) / (intensity_pars$V1 - intensity_pars$V0))
+        )^intensity_pars$p
       )
 
-    if (damage_method == "intensity") {
-      pars <- modifyList(
-        list(V0 = 34, V1 = 120, p = 3, dmax = 0.02),
-        damage_params
+    if (damage$method == "intensity") {
+      daily1 <- do.call(
+        add_damage_forcing,
+        c(list(daily = daily0), damage[c("V0", "V1", "p", "dmax")])
       )
-      daily1 <- do.call(add_damage_forcing, c(list(daily = daily0), pars))
       daily1 <- daily1 |>
         dplyr::mutate(cum_damage = cumsum(dplyr::coalesce(.data$damage_rate, 0)))
     } else {
-      pars <- modifyList(
-        list(thr = 34, V_ref = 80, d_ref = 0.03, p = 3, d_max = 0.10),
-        damage_params
-      )
       daily1 <- daily0 |>
         dplyr::mutate(
-          damage_rate = do.call(damage_rate_from_wind, c(list(wind_kt = .data$wind_kt), pars)),
+          damage_rate = do.call(
+            damage_rate_from_wind,
+            c(list(wind_kt = .data$wind_kt), damage[c("thr", "V_ref", "d_ref", "p", "d_max")])
+          ),
           cum_damage = cumsum(dplyr::coalesce(.data$damage_rate, 0))
         )
     }
@@ -1017,10 +1376,8 @@ generate_daily_hazard_impact <- function(
 }
 
 
-
-
 # =============================================================================
-# 10) Damage forcing
+# 6) Damage forcing
 # =============================================================================
 
 #' Add hazard intensity and damage forcing from daily wind
@@ -1029,15 +1386,19 @@ generate_daily_hazard_impact <- function(
 #' Maps daily sustained wind speed to a bounded hazard intensity index and a
 #' bounded daily damage rate for downstream impact calculations.
 #'
-#' @param daily Tibble/data.frame with at least `wind_kt`.
-#' @param V0 Numeric; threshold wind (kt) below which intensity is zero.
-#' @param V1 Numeric; wind (kt) at which intensity saturates at 1.
-#' @param p Numeric; nonlinearity exponent.
-#' @param dmax Numeric; maximum daily damage fraction.
+#' @param daily Tibble/data.frame with at least a \code{wind_kt} column.
+#' @param V0 Numeric scalar threshold wind in kt below which intensity is zero.
+#' @param V1 Numeric scalar wind in kt at which intensity saturates at one.
+#' @param p Numeric scalar nonlinearity exponent.
+#' @param dmax Numeric scalar maximum daily damage fraction.
 #'
-#' @return Tibble with added columns:
-#'   damage_intensity, damage_rate.
+#' @return Tibble with added \code{damage_intensity} and \code{damage_rate}
+#'   columns.
 #'
+#' @examples
+#' daily <- tibble::tibble(wind_kt = c(20, 40, 80))
+#' add_damage_forcing(daily)
+#' @seealso \code{\link{damage_rate_from_wind}}
 #' @export
 add_damage_forcing <- function(daily,
                                V0 = 34, V1 = 120,
@@ -1062,23 +1423,24 @@ add_damage_forcing <- function(daily,
 }
 
 
-
-
-
 #' Bounded power-law damage rate from wind speed
 #'
 #' @description
 #' Converts sustained wind speed to a bounded daily damage fraction using a
 #' thresholded power-law response calibrated at \code{V_ref}.
 #'
-#' @param wind_kt Numeric vector of wind speeds (kt).
-#' @param thr Numeric threshold wind (kt) below which damage is zero.
-#' @param V_ref Numeric reference wind (kt) where damage equals d_ref.
-#' @param d_ref Numeric damage fraction at V_ref.
-#' @param p Numeric exponent controlling nonlinearity.
-#' @param d_max Numeric cap on daily damage fraction.
+#' @param wind_kt Numeric vector of sustained wind speeds in kt.
+#' @param thr Numeric scalar threshold wind in kt below which damage is zero.
+#' @param V_ref Numeric scalar reference wind in kt where damage equals
+#'   \code{d_ref}.
+#' @param d_ref Numeric scalar damage fraction at \code{V_ref}.
+#' @param p Numeric scalar exponent controlling nonlinearity.
+#' @param d_max Numeric scalar upper cap on daily damage fraction.
 #'
-#' @return Numeric vector of damage rates (fractions per day).
+#' @return Numeric vector of daily damage rates.
+#' @examples
+#' damage_rate_from_wind(c(20, 40, 80))
+#' @seealso \code{\link{add_damage_forcing}}
 #' @export
 damage_rate_from_wind <- function(wind_kt,
                                   thr = 34,

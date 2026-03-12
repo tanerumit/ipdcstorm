@@ -2,17 +2,21 @@
 % Please edit documentation in R/hazard_core.R
 \name{.enforce_monotone_radii}
 \alias{.enforce_monotone_radii}
-\title{Enforce monotonicity of wind radii (R64 <= R50 <= R34)}
+\title{Enforce monotone wind radii.}
 \usage{
 .enforce_monotone_radii(R34_km, R50_km, R64_km)
 }
 \arguments{
-\item{R34_km, R50_km, R64_km}{Numeric vectors of radii in km.}
+\item{R34_km}{Numeric vector of 34-kt radii in kilometres.}
+
+\item{R50_km}{Numeric vector of 50-kt radii in kilometres.}
+
+\item{R64_km}{Numeric vector of 64-kt radii in kilometres.}
 }
 \value{
-List with corrected R34_km, R50_km, R64_km.
+List with elements \code{R34_km}, \code{R50_km}, and \code{R64_km} after monotonicity enforcement.
 }
 \description{
-Enforce monotonicity of wind radii (R64 <= R50 <= R34)
+Adjusts directional radii so that \verb{R64_km <= R50_km <= R34_km} wherever paired values are finite.
 }
 \keyword{internal}

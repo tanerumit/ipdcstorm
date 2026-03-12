@@ -2,19 +2,25 @@
 % Please edit documentation in R/hazard_core.R
 \name{.get_directional_radius}
 \alias{.get_directional_radius}
-\title{Select directional wind radius based on quadrant}
+\title{Select directional wind radius.}
 \usage{
 .get_directional_radius(quadrant, r_ne, r_se, r_sw, r_nw)
 }
 \arguments{
-\item{quadrant}{Character vector: NE/SE/SW/NW.}
+\item{quadrant}{Character vector of quadrant labels such as \code{"NE"}, \code{"SE"}, \code{"SW"}, or \code{"NW"}.}
 
-\item{r_ne, r_se, r_sw, r_nw}{Numeric vectors/scalars of radii for each quadrant (nm or km).}
+\item{r_ne}{Numeric vector or scalar radius for the northeast quadrant.}
+
+\item{r_se}{Numeric vector or scalar radius for the southeast quadrant.}
+
+\item{r_sw}{Numeric vector or scalar radius for the southwest quadrant.}
+
+\item{r_nw}{Numeric vector or scalar radius for the northwest quadrant.}
 }
 \value{
 Numeric vector of selected radii.
 }
 \description{
-Select directional wind radius based on quadrant
+Returns the quadrant-specific wind radius matching the bearing-derived quadrant.
 }
 \keyword{internal}

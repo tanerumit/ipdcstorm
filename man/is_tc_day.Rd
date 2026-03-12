@@ -10,12 +10,21 @@ is_tc_day(daily)
 is_hur_day(daily)
 }
 \arguments{
-\item{daily}{Tibble from \code{generate_daily_hazard_impact()}.}
+\item{daily}{Tibble/data.frame returned by
+\code{generate_daily_hazard_impact()}.}
 }
 \value{
-Logical vector.
+Logical vector identifying tropical-storm or hurricane days.
 }
 \description{
 Flags days in a daily hazard table that are associated with any tropical
 storm or hurricane event.
+}
+\examples{
+daily <- tibble::tibble(event_class = c(NA, "TS", "HUR"))
+is_tc_day(daily)
+is_hur_day(daily)
+}
+\seealso{
+\code{\link{generate_daily_hazard_impact}}
 }

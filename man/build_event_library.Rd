@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_downscale.R
 \name{build_event_library}
 \alias{build_event_library}
-\title{Build an empirical event library for resampling (seasonality + stratified events)}
+\title{Build an empirical event library for resampling}
 \usage{
 build_event_library(
   track_df,
@@ -18,34 +18,61 @@ build_event_library(
 )
 }
 \arguments{
-\item{track_df}{Track-point tibble for a single location, with columns \code{SID} and \code{iso_time}.}
+\item{track_df}{Tibble/data.frame of track points for one location; must
+contain columns \code{SID} and \code{iso_time}.}
 
-\item{event_df}{Storm-event tibble (one row per SID) with at least \code{SID}.
-Recommended: \code{peak_wind_kt}, \code{storm_intensity_kt}, \code{min_pressure_hpa},
-\code{rmw_mean_km}, \code{start_time}.}
+\item{event_df}{Tibble/data.frame of storm events with one row per storm; must
+contain \code{SID} or \code{storm_id}.}
 
-\item{storm_classes}{Character vector of storm classes to retain in the
-event library. Defaults to \code{c("TD", "TS", "HUR")}.}
+\item{storm_classes}{Character vector of storm classes retained in the
+library.}
 
-\item{bins}{List of break vectors for stratification (wind, Pc, RMW).}
+\item{bins}{Named list of numeric break vectors for wind, pressure, and RMW
+stratification.}
 
-\item{seed}{Optional integer seed.}
+\item{seed}{Optional integer seed for deterministic library construction.}
 
-\item{resampling_method}{Character; one of \code{"stratified"} or \code{"copula_nn"}.
-Default "stratified" preserves existing behavior.}
+\item{resampling_method}{Character scalar; one of \code{"stratified"} or
+\code{"copula_nn"}.}
 
-\item{copula_min_n}{Integer; minimum complete-case sample size per class needed to fit copula.}
+\item{copula_min_n}{Integer scalar; minimum complete-case sample size needed
+to fit a class-specific copula sampler.}
 
-\item{copula_k}{Integer; number of nearest neighbours to sample from after copula proposal (>=1).}
+\item{copula_k}{Integer scalar; number of nearest neighbours sampled from a
+copula proposal.}
 
-\item{copula_robust_scale}{Logical; if TRUE use median/MAD scaling for NN distance, else mean/SD.}
+\item{copula_robust_scale}{Logical scalar; if \code{TRUE}, use median/MAD
+scaling in nearest-neighbour distance calculations.}
 }
 \value{
-A list with DOY samples, stratification bins, the event table, and sampler functions.
+List with empirical day-of-year samples, stratification bins, the
+processed event table, and sampler functions.
 }
 \description{
 Builds a resampling library from historical storm events for one target
 location. The library stores empirical day-of-year samples by storm class,
 stratified historical event bins, and sampler closures used by the daily
 downscaling workflow.
+}
+\examples{
+track_df <- tibble::tibble(
+  SID = c("A", "A", "B", "B"),
+  iso_time = as.POSIXct(c(
+    "2000-08-01 00:00:00", "2000-08-01 06:00:00",
+    "2000-09-10 00:00:00", "2000-09-10 06:00:00"
+  ), tz = "UTC")
+)
+event_df <- tibble::tibble(
+  SID = c("A", "B"),
+  peak_wind_kt = c(45, 80),
+  storm_intensity_kt = c(45, 80),
+  min_pressure_hpa = c(995, 970),
+  rmw_mean_km = c(40, 25),
+  start_time = as.POSIXct(c("2000-08-01 00:00:00", "2000-09-10 00:00:00"), tz = "UTC")
+)
+lib <- build_event_library(track_df, event_df, storm_classes = c("TS", "HUR"))
+names(lib)
+}
+\seealso{
+\code{\link{build_event_library_from_out}}
 }

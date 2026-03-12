@@ -4,7 +4,7 @@
 \alias{fit_gev_lmom}
 \title{Fit GEV distribution using L-moments (Hosking 1990)}
 \usage{
-fit_gev_lmom(x, xi_bounds = c(-0.5, 0.5))
+fit_gev_lmom(x, xi_bounds = c(-0.4, 0.5))
 }
 \arguments{
 \item{x}{Numeric vector of block maxima (e.g., annual maxima).}

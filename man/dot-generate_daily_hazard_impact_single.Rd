@@ -10,8 +10,7 @@
   sim_years,
   year0,
   gust_factor,
-  damage_method,
-  damage_params,
+  damage,
   pulse_shape,
   scenario,
   seed
@@ -24,19 +23,18 @@
 
 \item{sim_years}{Integer vector of simulation-year indices to generate.}
 
-\item{year0}{Integer base calendar year corresponding to \code{sim_year == 1}.}
+\item{year0}{Integer scalar base calendar year corresponding to
+\code{sim_year == 1}.}
 
-\item{gust_factor}{Numeric gust multiplier.}
+\item{gust_factor}{Numeric scalar gust multiplier.}
 
-\item{damage_method}{Character damage-forcing method name.}
+\item{damage}{Named list of validated damage parameters.}
 
-\item{damage_params}{Named list of damage parameters.}
+\item{pulse_shape}{Character scalar pulse-shape identifier.}
 
-\item{pulse_shape}{Character pulse-shape identifier.}
+\item{scenario}{Optional character scalar scenario label carried into output.}
 
-\item{scenario}{Optional scenario label carried into output.}
-
-\item{seed}{Integer seed for deterministic per-location generation.}
+\item{seed}{Integer scalar seed for deterministic per-location generation.}
 }
 \value{
 Tibble with the daily hazard-impact schema used by
@@ -45,6 +43,6 @@ Tibble with the daily hazard-impact schema used by
 \description{
 Internal worker that builds one location's event library, samples annual
 events from the stochastic hazard output, and assembles the final daily
-hazard and damage table.
+hazard-impact table.
 }
 \keyword{internal}

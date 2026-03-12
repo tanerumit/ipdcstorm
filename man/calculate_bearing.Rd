@@ -2,20 +2,28 @@
 % Please edit documentation in R/hazard_core.R
 \name{calculate_bearing}
 \alias{calculate_bearing}
-\title{Bearing from storm center to target (degrees), robust}
+\title{Compute bearing from storm center to target.}
 \usage{
 calculate_bearing(lat, lon, t_lat, t_lon)
 }
 \arguments{
-\item{lat, lon}{Numeric vectors of storm lat/lon in degrees.}
+\item{lat}{Numeric vector of storm latitudes in decimal degrees.}
 
-\item{t_lat, t_lon}{Numeric scalars; target lat/lon in degrees.}
+\item{lon}{Numeric vector of storm longitudes in decimal degrees.}
+
+\item{t_lat}{Numeric scalar target latitude in decimal degrees.}
+
+\item{t_lon}{Numeric scalar target longitude in decimal degrees.}
 }
 \value{
-Numeric vector of bearings in degrees (same length as lat/lon).
+Numeric vector of bearings in degrees with the same length as \code{lat} and \code{lon}.
 }
 \description{
-Computes great-circle initial bearing (degrees) from storm points to a fixed
-target coordinate. Missing coordinates produce NA, and empty inputs return
-numeric(0).
+Computes great-circle initial bearing in degrees from each storm track point to a fixed target coordinate.
+}
+\examples{
+calculate_bearing(lat = c(18, 18.1), lon = c(-63, -63.1), t_lat = 18.05, t_lon = -63.05)
+}
+\seealso{
+\code{\link{dist_to_target}}
 }

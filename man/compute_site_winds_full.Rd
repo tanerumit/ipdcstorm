@@ -2,19 +2,42 @@
 % Please edit documentation in R/hazard_core.R
 \name{compute_site_winds_full}
 \alias{compute_site_winds_full}
-\title{Compute site-level winds for track points (patched version)}
+\title{Compute site winds for storm track points.}
 \usage{
 compute_site_winds_full(df, target_lat, target_lon)
 }
 \arguments{
-\item{df}{Track-point data frame from \code{read_ibtracs_clean()}.}
+\item{df}{Track-point data frame containing the fields required for wind-field reconstruction.}
 
-\item{target_lat, target_lon}{Numeric scalars for the site location (degrees).}
+\item{target_lat}{Numeric scalar target latitude in decimal degrees.}
+
+\item{target_lon}{Numeric scalar target longitude in decimal degrees.}
 }
 \value{
-The input data frame with added site-wind columns.
+Data frame with the original track-point fields plus derived wind-field and site-wind columns.
 }
 \description{
-Drop-in replacement for \code{compute_site_winds_full()} that uses the patched
-Holland profile, improved RMW estimation, and climatological R34 infill.
+Computes distance, bearing, storm-motion diagnostics, resolved wind radii, and site wind estimates for each track point relative to a fixed target location.
+}
+\note{
+Input data must already contain the expected IBTrACS-derived fields used in the internal wind solver.
+}
+\examples{
+df <- data.frame(
+  SID = c("AL012000", "AL012000"),
+  iso_time = as.POSIXct(c("2000-08-01 00:00:00", "2000-08-01 06:00:00"), tz = "UTC"),
+  lat = c(18, 18.2),
+  lon = c(-63, -63.2),
+  dist_km = c(NA_real_, NA_real_),
+  wind_kt = c(60, 65),
+  rmw_km = c(25, 25),
+  r34_ne_nm = c(60, 60), r34_se_nm = c(55, 55), r34_sw_nm = c(50, 50), r34_nw_nm = c(55, 55),
+  r50_ne_nm = c(30, 30), r50_se_nm = c(25, 25), r50_sw_nm = c(20, 20), r50_nw_nm = c(25, 25),
+  r64_ne_nm = c(15, 15), r64_se_nm = c(10, 10), r64_sw_nm = c(10, 10), r64_nw_nm = c(10, 10),
+  storm_speed_kt = c(12, 12)
+)
+compute_site_winds_full(df, target_lat = 18.05, target_lon = -63.05)
+}
+\seealso{
+\code{\link{compute_storm_heading}}, \code{\link{estimate_R34_climo}}, \code{\link{estimate_RMW_knaff}}
 }

@@ -1,4 +1,7 @@
 test_that("observed R34 uses a 1.5x Holland outer cutoff", {
+  old_opt <- options(ipdcstorm.wind_field_mode = NULL)
+  on.exit(options(old_opt), add = TRUE)
+
   R34_km <- c(80, 120)
   R_outer_km <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_km,
@@ -6,6 +9,21 @@ test_that("observed R34 uses a 1.5x Holland outer cutoff", {
   )
 
   expect_equal(R_outer_km / R34_km, c(1.5, 1.5))
+})
+
+test_that("default ordinary runs stay on the validated legacy wind path", {
+  old_opt <- options(
+    ipdcstorm.wind_field_mode = NULL,
+    ipdcstorm.hindcast_sampler_mode = NULL
+  )
+  on.exit(options(old_opt), add = TRUE)
+
+  expect_equal(getOption("ipdcstorm.wind_field_mode", "legacy"), "legacy")
+  expect_equal(ipdcstorm:::.hindcast_sampler_mode(), "legacy")
+  expect_equal(
+    ipdcstorm:::.holland_outer_cutoff_multipliers(),
+    list(observed = 1.5, partial = 1.5, climo = 1.5)
+  )
 })
 
 test_that("partial and climatology R34 default to the legacy 1.5x Holland outer cutoff", {

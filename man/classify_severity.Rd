@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_core.R
 \name{classify_severity}
 \alias{classify_severity}
-\title{Classify storm class from peak site wind}
+\title{Classify storm class from peak site wind.}
 \usage{
 classify_severity(
   V_site_max_kt,
@@ -11,15 +11,21 @@ classify_severity(
 )
 }
 \arguments{
-\item{V_site_max_kt}{Numeric vector of peak site winds (kt).}
+\item{V_site_max_kt}{Numeric vector of peak site wind speeds in knots.}
 
-\item{ts_threshold_kt}{Threshold (kt) for Tropical Storm.}
+\item{ts_threshold_kt}{Numeric scalar tropical-storm threshold in knots.}
 
-\item{hurricane_threshold_kt}{Threshold (kt) for Hurricane.}
+\item{hurricane_threshold_kt}{Numeric scalar hurricane threshold in knots.}
 }
 \value{
-Character vector with values \code{c("TD", "TS", "HUR", "unknown")}.
+Character vector containing \code{"TD"}, \code{"TS"}, \code{"HUR"}, or \code{"unknown"}.
 }
 \description{
-Classify storm class from peak site wind
+Classifies peak site wind into tropical depression, tropical storm, hurricane, or unknown.
+}
+\examples{
+classify_severity(c(20, 40, 80, NA_real_))
+}
+\seealso{
+\code{\link{make_storm_events}}, \code{\link{compute_annual_counts}}
 }

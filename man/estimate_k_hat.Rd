@@ -2,17 +2,27 @@
 % Please edit documentation in R/hazard_core.R
 \name{estimate_k_hat}
 \alias{estimate_k_hat}
-\title{Estimate overdispersion (k-hat) for a Poisson-Gamma annual activity factor}
+\title{Estimate annual-count overdispersion.}
 \usage{
 estimate_k_hat(annual_counts)
 }
 \arguments{
-\item{annual_counts}{Output from \code{compute_annual_counts()}.}
+\item{annual_counts}{Tibble returned by \code{\link{compute_annual_counts}}.}
 }
 \value{
-List with k_hat, annual_total (year,N), mu, var.
+List with elements \code{k_hat}, \code{annual_total}, \code{mu}, and \code{var}.
 }
 \description{
-Uses total annual counts N = sum_severity n_events and the NegBin identity
-Var(N) = mu + mu^2/k to estimate k. If Var <= mu, returns a large k (ÃƒÂ¢Ã¢â‚¬Â°Ã‹â€ Poisson).
+Estimates the negative-binomial overdispersion parameter from total annual storm counts using the identity \code{Var(N) = mu + mu^2 / k}.
+}
+\examples{
+annual_counts <- data.frame(
+  year = c(2000, 2000, 2001, 2001),
+  storm_class = c("TS", "HUR", "TS", "HUR"),
+  n_events = c(1, 0, 2, 1)
+)
+estimate_k_hat(annual_counts)
+}
+\seealso{
+\code{\link{compute_annual_counts}}, \code{\link{compute_lambda_table}}
 }

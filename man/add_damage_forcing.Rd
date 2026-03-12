@@ -7,21 +7,28 @@
 add_damage_forcing(daily, V0 = 34, V1 = 120, p = 3, dmax = 0.02)
 }
 \arguments{
-\item{daily}{Tibble/data.frame with at least \code{wind_kt}.}
+\item{daily}{Tibble/data.frame with at least a \code{wind_kt} column.}
 
-\item{V0}{Numeric; threshold wind (kt) below which intensity is zero.}
+\item{V0}{Numeric scalar threshold wind in kt below which intensity is zero.}
 
-\item{V1}{Numeric; wind (kt) at which intensity saturates at 1.}
+\item{V1}{Numeric scalar wind in kt at which intensity saturates at one.}
 
-\item{p}{Numeric; nonlinearity exponent.}
+\item{p}{Numeric scalar nonlinearity exponent.}
 
-\item{dmax}{Numeric; maximum daily damage fraction.}
+\item{dmax}{Numeric scalar maximum daily damage fraction.}
 }
 \value{
-Tibble with added columns:
-damage_intensity, damage_rate.
+Tibble with added \code{damage_intensity} and \code{damage_rate}
+columns.
 }
 \description{
 Maps daily sustained wind speed to a bounded hazard intensity index and a
 bounded daily damage rate for downstream impact calculations.
+}
+\examples{
+daily <- tibble::tibble(wind_kt = c(20, 40, 80))
+add_damage_forcing(daily)
+}
+\seealso{
+\code{\link{damage_rate_from_wind}}
 }

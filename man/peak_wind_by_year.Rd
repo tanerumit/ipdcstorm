@@ -7,12 +7,23 @@
 peak_wind_by_year(daily)
 }
 \arguments{
-\item{daily}{Tibble from \code{generate_daily_hazard_impact()}.}
+\item{daily}{Tibble/data.frame returned by
+\code{generate_daily_hazard_impact()}.}
 }
 \value{
-Tibble with \code{location}, \code{sim_year}, \code{scenario}, \code{peak_wind_kt}.
+Tibble with one row per location and simulation year and a
+\code{peak_wind_kt} column.
 }
 \description{
 Aggregates a daily hazard table to annual peak sustained wind by location,
 simulation year, and scenario.
+}
+\examples{
+daily <- tibble::tibble(
+  location = c("Saba", "Saba"),
+  sim_year = c(1, 1),
+  scenario = c("baseline", "baseline"),
+  wind_kt = c(20, 55)
+)
+peak_wind_by_year(daily)
 }

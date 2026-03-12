@@ -7,19 +7,19 @@
 sample_events_for_year_extended(lib, year, n_ts, n_hur, seed = NULL)
 }
 \arguments{
-\item{lib}{Event library produced by \code{build_event_library()}.}
+\item{lib}{List event library produced by \code{build_event_library()}.}
 
-\item{year}{Integer calendar year.}
+\item{year}{Integer scalar calendar year.}
 
-\item{n_ts}{Integer number of tropical storms to sample.}
+\item{n_ts}{Integer scalar number of tropical storms to sample.}
 
-\item{n_hur}{Integer number of hurricanes to sample.}
+\item{n_hur}{Integer scalar number of hurricanes to sample.}
 
-\item{seed}{Optional integer seed.}
+\item{seed}{Optional integer seed for deterministic sampling.}
 }
 \value{
-Tibble with columns: severity, start_date, dur_days, V_peak,
-event_id, event_class, Pc_min_hPa, dP_max_hPa, RMW_mean_km.
+Tibble with one row per sampled event and event-level attributes used
+by the daily downscaling workflow.
 }
 \description{
 Samples synthetic storm events for one calendar year from an event library
@@ -34,4 +34,23 @@ For each sampled event, extracts from the event library row:
 \item \code{dP_max_hPa}: maximum pressure deficit.
 \item \code{RMW_mean_km}: mean radius of maximum wind.
 }
+}
+\examples{
+sample_lib <- list(
+  sample_doy = function(sev) if (sev == "TS") 220L else 250L,
+  sample_event = function(sev) {
+    tibble::tibble(
+      SID = paste0(sev, "_1"),
+      dur_days = if (sev == "TS") 3L else 4L,
+      V_site_max_kt = if (sev == "TS") 45 else 80,
+      Pc_min_hPa = if (sev == "TS") 995 else 970,
+      dP_max_hPa = if (sev == "TS") 18 else 40,
+      RMW_mean_km = if (sev == "TS") 40 else 25
+    )
+  }
+)
+sample_events_for_year_extended(sample_lib, year = 2000, n_ts = 1, n_hur = 1)
+}
+\seealso{
+\code{\link{generate_daily_year_extended}}
 }

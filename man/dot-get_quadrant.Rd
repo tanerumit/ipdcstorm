@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_core.R
 \name{.get_quadrant}
 \alias{.get_quadrant}
-\title{Convert bearing to meteorological quadrant}
+\title{Convert bearing to quadrant.}
 \usage{
 .get_quadrant(bearing)
 }
@@ -10,9 +10,9 @@
 \item{bearing}{Numeric vector of bearings in degrees.}
 }
 \value{
-Character vector in \code{c("NE", "SE", "SW", "NW")} (or \code{NA}).
+Character vector containing \code{"NE"}, \code{"SE"}, \code{"SW"}, \code{"NW"}, or \code{NA}.
 }
 \description{
-Convert bearing to meteorological quadrant
+Maps a bearing in degrees to the corresponding meteorological quadrant.
 }
 \keyword{internal}

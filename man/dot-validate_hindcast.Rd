@@ -7,6 +7,7 @@
 .validate_hindcast(
   events_island,
   location,
+  trackpoints_island = NULL,
   holdout_years = 10,
   n_sim = 5000,
   return_periods = c(5, 10, 25, 50),
@@ -17,7 +18,8 @@
   gamma_intensity = 0,
   use_raw_rates = TRUE,
   xi_bounds = c(-0.3, 0.4),
-  n_boot = 500
+  n_boot = 500,
+  metadata = NULL
 )
 }
 \description{

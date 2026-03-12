@@ -52,8 +52,16 @@ shape parameter (default: \code{c(-0.3, 0.4)}).}
 \item{\code{base_size}}{Numeric; base font size for ggplot themes
 (default: 11).}
 \item{\code{hindcast_use_raw_rates}}{Logical; whether Tier 1A hindcast uses
-raw fitted rates instead of adjusted rates (default: \code{TRUE}).}
-}}
+raw fitted rates instead of adjusted rates (default: \code{TRUE}). This is
+the validated package default because adjusted lambda worsened
+hindcast bias at Saba and Statia.}
+}
+
+The default validation path is the current best validated overall tradeoff:
+Tier 1A hindcast uses raw lambda, the package runs the legacy wind-field
+path unless an internal option overrides it, and the hindcast sampler
+defaults to \code{legacy}. Experimental wind-field comparison modes remain
+internal and are never activated by \code{make_validation_cfg()} defaults.}
 }
 \value{
 A list with class \code{c("validation_cfg", "list")}.

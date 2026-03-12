@@ -20,18 +20,16 @@
 # 1) Geometry helpers (distance, bearing, quadrants, directional radii)
 # =============================================================================
 
-#' Distance from storm center to target (km), robust
-#'
-#' @description
-#' Computes Haversine distance (km) from each storm track point to a fixed
-#' target coordinate. Missing coordinates produce NA, and empty inputs return
-#' numeric(0).
-#'
-#' @param lat,lon Numeric vectors of storm lat/lon in degrees.
-#' @param t_lat,t_lon Numeric scalars; target lat/lon in degrees.
-#'
-#' @return Numeric vector of distances in km (same length as lat/lon).
-#'
+#' @title Compute great-circle distance from storm center to target.
+#' @description Computes Haversine distance in kilometres from each storm track point to a fixed target coordinate.
+#' @param lat Numeric vector of storm latitudes in decimal degrees.
+#' @param lon Numeric vector of storm longitudes in decimal degrees.
+#' @param t_lat Numeric scalar target latitude in decimal degrees.
+#' @param t_lon Numeric scalar target longitude in decimal degrees.
+#' @return Numeric vector of distances in kilometres with the same length as `lat` and `lon`.
+#' @examples
+#' dist_to_target(lat = c(18, 18.1), lon = c(-63, -63.1), t_lat = 18.05, t_lon = -63.05)
+#' @seealso \code{\link{calculate_bearing}}
 #' @importFrom geosphere distHaversine
 #' @export
 dist_to_target <- function(lat, lon, t_lat, t_lon) {
@@ -53,18 +51,16 @@ dist_to_target <- function(lat, lon, t_lat, t_lon) {
   out
 }
 
-#' Bearing from storm center to target (degrees), robust
-#'
-#' @description
-#' Computes great-circle initial bearing (degrees) from storm points to a fixed
-#' target coordinate. Missing coordinates produce NA, and empty inputs return
-#' numeric(0).
-#'
-#' @param lat,lon Numeric vectors of storm lat/lon in degrees.
-#' @param t_lat,t_lon Numeric scalars; target lat/lon in degrees.
-#'
-#' @return Numeric vector of bearings in degrees (same length as lat/lon).
-#'
+#' @title Compute bearing from storm center to target.
+#' @description Computes great-circle initial bearing in degrees from each storm track point to a fixed target coordinate.
+#' @param lat Numeric vector of storm latitudes in decimal degrees.
+#' @param lon Numeric vector of storm longitudes in decimal degrees.
+#' @param t_lat Numeric scalar target latitude in decimal degrees.
+#' @param t_lon Numeric scalar target longitude in decimal degrees.
+#' @return Numeric vector of bearings in degrees with the same length as `lat` and `lon`.
+#' @examples
+#' calculate_bearing(lat = c(18, 18.1), lon = c(-63, -63.1), t_lat = 18.05, t_lon = -63.05)
+#' @seealso \code{\link{dist_to_target}}
 #' @importFrom geosphere bearing
 #' @export
 
@@ -87,10 +83,10 @@ calculate_bearing <- function(lat, lon, t_lat, t_lon) {
   out
 }
 
-#' Convert bearing to meteorological quadrant
-#'
+#' @title Convert bearing to quadrant.
+#' @description Maps a bearing in degrees to the corresponding meteorological quadrant.
 #' @param bearing Numeric vector of bearings in degrees.
-#' @return Character vector in \code{c("NE", "SE", "SW", "NW")} (or \code{NA}).
+#' @return Character vector containing `"NE"`, `"SE"`, `"SW"`, `"NW"`, or `NA`.
 #' @keywords internal
 .get_quadrant <- function(bearing) {
   b <- (bearing + 360) %% 360
@@ -103,11 +99,13 @@ calculate_bearing <- function(lat, lon, t_lat, t_lon) {
   )
 }
 
-#' Select directional wind radius based on quadrant
-#'
-#' @param quadrant Character vector: NE/SE/SW/NW.
-#' @param r_ne,r_se,r_sw,r_nw Numeric vectors/scalars of radii for each quadrant (nm or km).
-#'
+#' @title Select directional wind radius.
+#' @description Returns the quadrant-specific wind radius matching the bearing-derived quadrant.
+#' @param quadrant Character vector of quadrant labels such as `"NE"`, `"SE"`, `"SW"`, or `"NW"`.
+#' @param r_ne Numeric vector or scalar radius for the northeast quadrant.
+#' @param r_se Numeric vector or scalar radius for the southeast quadrant.
+#' @param r_sw Numeric vector or scalar radius for the southwest quadrant.
+#' @param r_nw Numeric vector or scalar radius for the northwest quadrant.
 #' @return Numeric vector of selected radii.
 #' @keywords internal
 .get_directional_radius <- function(quadrant, r_ne, r_se, r_sw, r_nw) {
@@ -125,10 +123,12 @@ calculate_bearing <- function(lat, lon, t_lat, t_lon) {
   )
 }
 
-#' Enforce monotonicity of wind radii (R64 <= R50 <= R34)
-#'
-#' @param R34_km,R50_km,R64_km Numeric vectors of radii in km.
-#' @return List with corrected R34_km, R50_km, R64_km.
+#' @title Enforce monotone wind radii.
+#' @description Adjusts directional radii so that `R64_km <= R50_km <= R34_km` wherever paired values are finite.
+#' @param R34_km Numeric vector of 34-kt radii in kilometres.
+#' @param R50_km Numeric vector of 50-kt radii in kilometres.
+#' @param R64_km Numeric vector of 64-kt radii in kilometres.
+#' @return List with elements `R34_km`, `R50_km`, and `R64_km` after monotonicity enforcement.
 #' @keywords internal
 .enforce_monotone_radii <- function(R34_km, R50_km, R64_km) {
   R64_km <- dplyr::if_else(is.finite(R64_km) & is.finite(R50_km), pmin(R64_km, R50_km), R64_km)
@@ -144,20 +144,15 @@ calculate_bearing <- function(lat, lon, t_lat, t_lon) {
 # 2a) Climatological R34 infill
 # =============================================================================
 
-#' Estimate climatological R34 (km) from maximum wind using Knaff et al. (2015)
-#'
-#' @description
-#' Provides an empirical estimate of the 34-kt wind radius for storms without
-#' observed radii data (primarily pre-2004). Based on the Knaff, Sampson & Chirokova
-#' (2015) statistical relationships for the North Atlantic.
-#'
-#' The relationship captures the well-known expansion of the wind field with
-#' intensity up to ~80 kt, then contraction for the most intense compact storms.
-#'
-#' @param Vmax_kt Numeric vector; maximum sustained wind (kt).
-#' @param lat Numeric vector; storm latitude (degrees N). Used for size correction.
-#'
-#' @return Numeric vector of estimated R34 in km. NA where Vmax < 34 kt.
+#' @title Estimate climatological R34.
+#' @description Provides an empirical estimate of the 34-kt wind radius for storms without observed radii data using a North Atlantic climatological relationship.
+#' @param Vmax_kt Numeric vector of maximum sustained wind speeds in knots.
+#' @param lat Numeric vector of storm latitudes in decimal degrees north.
+#' @return Numeric vector of estimated 34-kt wind radii in kilometres, with `NA` where `Vmax_kt < 34` or inputs are non-finite.
+#' @examples
+#' estimate_R34_climo(Vmax_kt = c(30, 50, 100), lat = c(18, 18, 20))
+#' @seealso \code{\link{estimate_RMW_knaff}}, \code{\link{compute_site_winds_full}}
+#' @note This is used as a fallback when directional 34-kt radii are unavailable.
 #' @export
 estimate_R34_climo <- function(Vmax_kt, lat = 18) {
   # Knaff et al. (2015) approximate fit for Atlantic basin:
@@ -181,44 +176,33 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
   R34_nm * 1.852  # convert to km
 }
 
-# Resolve the Holland-profile outer cutoff radius (km).
-# A finite, positive `R34_km` supplied by the caller is treated as an observed
-# track-point radius. When `.estimate_site_wind_holland()` has to infill a
-# missing/non-positive R34 via `estimate_R34_climo()`, it marks that row as a
-# fallback radius and uses the climo-specific multiplier.
+#' @title Return Holland outer-cutoff multipliers.
+#' @description Returns the deterministic multipliers used to convert `R34_km` into the outer cutoff radius for the Holland profile.
+#' @return Named list with `observed` and `climo` multipliers.
+#' @keywords internal
 .holland_outer_cutoff_multipliers <- function() {
-  wind_field_mode <- getOption("ipdcstorm.wind_field_mode", "legacy")
-  if (identical(wind_field_mode, "diagnostic_new")) {
-    return(list(
-      observed = 1.5,
-      partial = 1.25,
-      climo = 1.1
-    ))
-  }
   list(
     observed = 1.5,
-    partial = 1.5,
     climo = 1.5
   )
 }
 
-.resolve_holland_outer_cutoff_km <- function(R34_km,
-                                             R34_is_fallback = FALSE,
-                                             R34_source = NULL) {
+#' @title Resolve Holland outer cutoff radius.
+#' @description Computes the outer cutoff radius in kilometres used to taper winds beyond the resolved 34-kt radius.
+#' @param R34_km Numeric vector of 34-kt wind radii in kilometres.
+#' @param R34_is_fallback Logical vector indicating whether each `R34_km` value comes from climatological fallback rather than observations.
+#' @return Numeric vector of outer cutoff radii in kilometres.
+#' @keywords internal
+.resolve_holland_outer_cutoff_km <- function(R34_km, R34_is_fallback = FALSE) {
   mult_cfg <- .holland_outer_cutoff_multipliers()
   n <- length(R34_km)
   R_outer_km <- rep(300, n)
-  if (is.null(R34_source)) {
-    R34_source <- ifelse(rep_len(R34_is_fallback, n), "climo", "observed")
-  } else {
-    R34_source <- rep_len(as.character(R34_source), n)
-  }
+  R34_is_fallback <- rep_len(R34_is_fallback, n)
   has_R34 <- is.finite(R34_km) & (R34_km > 0)
 
   if (any(has_R34)) {
     mult <- rep(mult_cfg$observed, sum(has_R34))
-    mult[R34_source[has_R34] == "partial"] <- mult_cfg$partial
-    mult[R34_source[has_R34] == "climo"] <- mult_cfg$climo
+    mult[R34_is_fallback[has_R34]] <- mult_cfg$climo
     R_outer_km[has_R34] <- mult * R34_km[has_R34]
   }
 
@@ -234,10 +218,21 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
 # 2b) Knaff & Zehr RMW estimation (with latitude)
 # =============================================================================
 
+#' @title Validate observed radius of maximum wind.
+#' @description Flags observed radius-of-maximum-wind values that fall inside the accepted physical range.
+#' @param rmw_km Numeric vector of observed radius of maximum wind values in kilometres.
+#' @return Logical vector indicating whether each value is finite and within the accepted bounds.
+#' @keywords internal
 .is_valid_observed_rmw_km <- function(rmw_km) {
   is.finite(rmw_km) & rmw_km > 5 & rmw_km < 150
 }
 
+#' @title Cap inferred radius of maximum wind.
+#' @description Applies intensity-dependent lower and upper bounds to inferred radius-of-maximum-wind values.
+#' @param rmw_km Numeric vector of inferred radius of maximum wind values in kilometres.
+#' @param Vmax_kt Numeric vector of maximum sustained wind speeds in knots.
+#' @return Numeric vector of bounded radius of maximum wind values in kilometres.
+#' @keywords internal
 .cap_inferred_rmw_km <- function(rmw_km, Vmax_kt) {
   out <- rmw_km
   ok <- is.finite(out)
@@ -255,6 +250,13 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
   out
 }
 
+#' @title Estimate radius of maximum wind from mean wind radii.
+#' @description Infers the radius of maximum wind from storm-wide mean 64-, 50-, or 34-kt radii using fixed regression coefficients.
+#' @param R64_mean_km Numeric vector of mean 64-kt radii in kilometres.
+#' @param R50_mean_km Numeric vector of mean 50-kt radii in kilometres.
+#' @param R34_mean_km Numeric vector of mean 34-kt radii in kilometres.
+#' @return Numeric vector of inferred radius of maximum wind values in kilometres.
+#' @keywords internal
 .estimate_rmw_from_mean_radii <- function(R64_mean_km, R50_mean_km, R34_mean_km) {
   n <- max(length(R64_mean_km), length(R50_mean_km), length(R34_mean_km))
   out <- rep(NA_real_, n)
@@ -279,6 +281,16 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
   out
 }
 
+#' @title Resolve track-point radius of maximum wind.
+#' @description Resolves the radius of maximum wind at each track point by prioritising valid observations, then radii-based estimates, then climatological estimates.
+#' @param rmw_obs_km Numeric vector of observed radius of maximum wind values in kilometres.
+#' @param R64_mean_km Numeric vector of mean 64-kt radii in kilometres.
+#' @param R50_mean_km Numeric vector of mean 50-kt radii in kilometres.
+#' @param R34_mean_km Numeric vector of mean 34-kt radii in kilometres.
+#' @param Vmax_kt Numeric vector of maximum sustained wind speeds in knots.
+#' @param lat Numeric vector of storm latitudes in decimal degrees north.
+#' @return Numeric vector of resolved radius of maximum wind values in kilometres.
+#' @keywords internal
 .resolve_trackpoint_rmw_km <- function(rmw_obs_km,
                                        R64_mean_km,
                                        R50_mean_km,
@@ -299,17 +311,14 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
   out
 }
 
-#' Estimate radius of maximum wind using Knaff & Zehr (2007) climatology
-#'
-#' @description
-#' Latitude-dependent RMW estimation based on Knaff & Zehr (2007), which captures
-#' the key relationship: intense low-latitude storms (like Irma at 17Ãƒâ€šÃ‚Â°N) have
-#' smaller RMW than the same intensity at higher latitudes.
-#'
-#' @param Vmax_kt Numeric vector; maximum sustained wind (kt).
-#' @param lat Numeric vector; storm latitude (degrees N).
-#'
-#' @return Numeric vector of estimated RMW in km.
+#' @title Estimate climatological radius of maximum wind.
+#' @description Estimates radius of maximum wind from storm intensity and latitude using a Knaff and Zehr climatological relationship.
+#' @param Vmax_kt Numeric vector of maximum sustained wind speeds in knots.
+#' @param lat Numeric vector of storm latitudes in decimal degrees north.
+#' @return Numeric vector of estimated radius of maximum wind values in kilometres.
+#' @examples
+#' estimate_RMW_knaff(Vmax_kt = c(40, 80, 120), lat = c(15, 18, 22))
+#' @seealso \code{\link{estimate_R34_climo}}, \code{\link{compute_site_winds_full}}
 #' @export
 estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   # Knaff & Zehr (2007) Eq. 1 (simplified, Atlantic):
@@ -326,33 +335,23 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
 
 
 
-#' Estimate site wind using a Holland-type radial wind profile (patched)
-#'
-#' @description
-#' Computes a gradient-wind-like radial profile. This version fixes:
-#' - Holland B: uses Vickery & Wadhera (2008)-style parameterization that
-#'   increases B for compact intense storms (was inverted above 120 kt).
-#' - R34 calibration: widens the acceptable V_at_R34 window from \[25,50\] to
-#'   \[5,60\] so weak tropical storms get calibrated.
-#' - Adds climatological R34 infill when observed R34 is missing.
-#'
-#' @param Vmax_kt Numeric; storm maximum wind (kt).
-#' @param r_km Numeric; distance from storm center to site (km).
-#' @param R34_km Numeric; 34-kt wind radius (km). If NA and Vmax >= 34 kt,
-#'   a climatological estimate is used.
-#' @param R50_km,R64_km Numeric; 50/64-kt wind radii (km), optional.
-#' @param RMW_km Numeric; radius of maximum wind (km). Required.
-#' @param Pn Numeric; ambient pressure (hPa), default 1013.
-#' @param Pc Numeric; central pressure (hPa), optional.
-#' @param lat Numeric; storm latitude (degrees N), used for climatological infill.
-#'
-#' @return Numeric scalar; estimated sustained wind at site (kt).
+#' @title Estimate site wind with Holland profile.
+#' @description Computes site wind speed from storm intensity, storm size, and site distance using a Holland-type radial wind profile with internal fallback logic for missing radii.
+#' @param Vmax_kt Numeric vector of maximum sustained wind speeds in knots.
+#' @param r_km Numeric vector of distances from storm centre to site in kilometres.
+#' @param R34_km Numeric vector of 34-kt radii in kilometres.
+#' @param R50_km Numeric vector of 50-kt radii in kilometres.
+#' @param R64_km Numeric vector of 64-kt radii in kilometres.
+#' @param RMW_km Numeric vector of radius of maximum wind values in kilometres.
+#' @param Pn Numeric vector of ambient pressures in hPa.
+#' @param Pc Numeric vector of central pressures in hPa.
+#' @param lat Numeric vector of storm latitudes in decimal degrees north.
+#' @return Numeric vector of estimated sustained site winds in knots.
 #' @keywords internal
 .estimate_site_wind_holland <- function(
     Vmax_kt,
     r_km,
     R34_km,
-    R34_source = NULL,
     R50_km = NA,
     R64_km = NA,
     RMW_km,
@@ -364,8 +363,6 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   # recycle scalars safely (base R recycling rules assumed by caller)
   out <- rep(NA_real_, n)
   disable_r34_calibration <- isTRUE(getOption("ipdcstorm.disable_r34_calibration", FALSE))
-  wind_field_mode <- getOption("ipdcstorm.wind_field_mode", "legacy")
-  use_diagnostic_new <- identical(wind_field_mode, "diagnostic_new")
 
   ok <- is.finite(Vmax_kt) & Vmax_kt > 0 &
     is.finite(r_km) & r_km >= 0 &
@@ -376,11 +373,6 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   Vmax_kt0 <- Vmax_kt
   r_km0 <- r_km
   RMW_km0 <- pmax(5, pmin(200, RMW_km))
-  if (is.null(R34_source)) {
-    R34_source <- rep("observed", n)
-  } else {
-    R34_source <- rep_len(as.character(R34_source), n)
-  }
 
   # --- FIX 1: Holland B parameterization ---
   B <- rep(NA_real_, n)
@@ -410,7 +402,7 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
 
   # --- FIX 3: Climatological R34 infill ---
   R34_eff <- R34_km
-  R34_source_used <- R34_source
+  R34_is_climo <- rep(FALSE, n)
 
   ##################################
   lat0 <- lat
@@ -419,16 +411,11 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   need_R34 <- ok & (!is.finite(R34_eff) | R34_eff <= 0) & (Vmax_kt0 >= 34)
   if (any(need_R34)) {
     R34_eff[need_R34] <- estimate_R34_climo(Vmax_kt0[need_R34], lat = lat0[need_R34])
-    R34_source_used[need_R34] <- "climo"
+    R34_is_climo[need_R34] <- TRUE
   }
-  R34_is_climo <- R34_source_used == "climo"
-  R34_is_partial <- R34_source_used == "partial"
 
   rmw_over_r34_cap <- 4.0
   clamp_rmw <- ok & R34_is_climo & is.finite(R34_eff) & (R34_eff > 0)
-  if (use_diagnostic_new) {
-    clamp_rmw <- ok & (R34_is_climo | R34_is_partial) & is.finite(R34_eff) & (R34_eff > 0)
-  }
   if (any(clamp_rmw)) {
     RMW_km0[clamp_rmw] <- pmax(5, pmin(RMW_km0[clamp_rmw], R34_eff[clamp_rmw] / rmw_over_r34_cap))
   }
@@ -511,9 +498,6 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
     is.finite(R34_eff[use]) &
     (R34_eff[use] > 0) &
     (r_km0[use] > RMW_km0[use] * 1.2)
-  if (use_diagnostic_new) {
-    can_cal <- can_cal & (R34_source_used[use] == "observed")
-  }
   if (any(can_cal)) {
     R34u <- R34_eff[use][can_cal]
     Bu <- B[use][can_cal]
@@ -532,43 +516,40 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
       cal_factor[good] <- 34 / V_at_R34_model[good]
 
       # (b) Cap calibration factor to prevent extreme inflation
-      cal_factor <- pmin(cal_factor, if (use_diagnostic_new) 1.2 else 1.4)
+      cal_factor <- pmin(cal_factor, 1.4)
 
       # (a) Quadratic taper: effect concentrates near R34, minimal at intermediate r
       r_site <- r_km0[use][can_cal]
       R34u_safe <- pmax(R34u, RMWu * 1.5)
       taper_linear <- pmin(1.0, pmax(0.0, (r_site - RMWu * 1.2) / (R34u_safe - RMWu * 1.2)))
-      taper <- if (use_diagnostic_new) taper_linear^3 else taper_linear^2
+      taper <- taper_linear^2  # quadratic: 0.55 linear â†’ 0.30 quadratic
       cal_factor[good] <- 1 + taper[good] * (cal_factor[good] - 1)
 
       # (c) Intensity-dependent damping: reduce calibration for strong hurricanes
       # For Vmax > 96 kt (Cat 3+), the inner core dominates and R34 calibration
       # should not inflate intermediate-distance winds
-      intensity_damp <- if (use_diagnostic_new) {
-        pmin(1.0, pmax(0.2, 1.0 - (Vmaxu - 64) / 90))
-      } else {
-        pmin(1.0, pmax(0.3, 1.0 - (Vmaxu - 64) / 120))
-      }
+      intensity_damp <- pmin(1.0, pmax(0.3, 1.0 - (Vmaxu - 64) / 120))
       cal_factor[good] <- 1 + intensity_damp[good] * (cal_factor[good] - 1)
-      if (!use_diagnostic_new) {
-        is_climo_u <- R34_is_climo[use][can_cal]
-        blend <- is_climo_u & good
-        if (any(blend)) {
-          cal_factor[blend] <- 1 + 0.3 * (cal_factor[blend] - 1)
-        }
+
+      # Blend if climatological R34: reduce calibration weight since
+      # climo R34 tends to overestimate (represents mean, not storm-specific
+      # structure). Reduced from 0.5 to 0.3 for tighter tail geometry.
+      is_climo_u <- R34_is_climo[use][can_cal]
+      blend <- is_climo_u & good
+      if (any(blend)) {
+        cal_factor[blend] <- 1 + 0.3 * (cal_factor[blend] - 1)
       }
+
       idx <- which(can_cal)
       V_site_kt[idx] <- V_site_kt[idx] * cal_factor
     }
   }
 
   # Outer cutoff is deterministic and pathway-specific.
-  # Partial or climatology-filled R34 values are tightened to avoid broad
-  # near-miss inflation when outer-wind structure is weakly constrained.
+  # Both observed and fallback/climatological pathways currently use 1.5x.
   R_outer <- .resolve_holland_outer_cutoff_km(
     R34_km = R34_eff[use],
-    R34_is_fallback = R34_is_climo[use],
-    R34_source = R34_source_used[use]
+    R34_is_fallback = R34_is_climo[use]
   )
 
   beyond <- r_km0[use] > R_outer
@@ -582,15 +563,19 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
 }
 
 
-#' Compute storm heading (track motion bearing) per track point
-#'
-#' @description
-#' Adds `heading_deg` in [0, 360) where 0=N, 90=E, 180=S, 270=W.
-#' Heading is computed from point i to i+1 (forward bearing). The last point
-#' uses the previous segment if available.
-#'
-#' @param df Data frame with columns: SID, iso_time (POSIXct), lat, lon.
-#' @return Same data frame with `heading_deg` (numeric).
+#' @title Compute storm heading by track point.
+#' @description Adds a `heading_deg` column based on great-circle motion between successive track points within each storm.
+#' @param df Data frame with columns `SID`, `iso_time`, `lat`, and `lon`.
+#' @return Data frame with the original columns plus numeric `heading_deg` in degrees clockwise from north.
+#' @examples
+#' df <- data.frame(
+#'   SID = c("AL012000", "AL012000"),
+#'   iso_time = as.POSIXct(c("2000-08-01 00:00:00", "2000-08-01 06:00:00"), tz = "UTC"),
+#'   lat = c(18, 18.2),
+#'   lon = c(-63, -63.2)
+#' )
+#' compute_storm_heading(df)
+#' @seealso \code{\link{compute_site_winds_full}}
 #' @export
 compute_storm_heading <- function(df) {
   stopifnot(all(c("SID", "iso_time", "lat", "lon") %in% names(df)))
@@ -644,21 +629,15 @@ compute_storm_heading <- function(df) {
     dplyr::select(-dplyr::any_of(c("lat_next","lon_next","lat_prev","lon_prev","heading_fwd","heading_bwd")))
 }
 
-#' Add forward-motion asymmetry to a symmetric site-wind estimate
-#'
-#' @description
-#' Applies a direction-dependent additive term proportional to storm translation
-#' speed and cos(angle) between storm heading and bearing-to-target.
-#'
-#' @param V_site_base_kt Numeric; symmetric site wind (kt).
-#' @param storm_speed_kt Numeric; storm translation speed (kt).
-#' @param r_km Numeric; distance from storm center to site (km).
-#' @param bearing_to_target Numeric; bearing from storm center to site (deg).
-#' @param storm_heading Numeric; storm motion heading (deg).
-#' @param RMW_km Numeric; radius of maximum wind (km), used to taper asymmetry with radius.
-#'
-#' @return Numeric scalar; adjusted site wind (kt).
-#'
+#' @title Add forward-motion asymmetry.
+#' @description Applies a translation-speed asymmetry adjustment to a symmetric site wind estimate using the angle between storm heading and site bearing.
+#' @param V_site_base_kt Numeric vector of symmetric site wind estimates in knots.
+#' @param storm_speed_kt Numeric vector of storm translation speeds in knots.
+#' @param r_km Numeric vector of distances from storm centre to site in kilometres.
+#' @param bearing_to_target Numeric vector of bearings from storm centre to site in degrees.
+#' @param storm_heading Numeric vector of storm motion headings in degrees.
+#' @param RMW_km Numeric vector of radius of maximum wind values in kilometres.
+#' @return Numeric vector of asymmetry-adjusted site winds in knots.
 #' @keywords internal
 .add_forward_motion_asymmetry <- function(
     V_site_base_kt,
@@ -730,35 +709,37 @@ compute_storm_heading <- function(df) {
 # 3) Core per-location wind computation (trackpoints -> V_site_kt)
 # =============================================================================
 
-#' Compute site-level winds for track points (patched version)
-#'
-#' @description
-#' Drop-in replacement for \code{compute_site_winds_full()} that uses the patched
-#' Holland profile, improved RMW estimation, and climatological R34 infill.
-#'
-#' @param df Track-point data frame from \code{read_ibtracs_clean()}.
-#' @param target_lat,target_lon Numeric scalars for the site location (degrees).
-#'
-#' @return The input data frame with added site-wind columns.
+#' @title Compute site winds for storm track points.
+#' @description Computes distance, bearing, storm-motion diagnostics, resolved wind radii, and site wind estimates for each track point relative to a fixed target location.
+#' @param df Track-point data frame containing the fields required for wind-field reconstruction.
+#' @param target_lat Numeric scalar target latitude in decimal degrees.
+#' @param target_lon Numeric scalar target longitude in decimal degrees.
+#' @return Data frame with the original track-point fields plus derived wind-field and site-wind columns.
+#' @examples
+#' df <- data.frame(
+#'   SID = c("AL012000", "AL012000"),
+#'   iso_time = as.POSIXct(c("2000-08-01 00:00:00", "2000-08-01 06:00:00"), tz = "UTC"),
+#'   lat = c(18, 18.2),
+#'   lon = c(-63, -63.2),
+#'   dist_km = c(NA_real_, NA_real_),
+#'   wind_kt = c(60, 65),
+#'   rmw_km = c(25, 25),
+#'   r34_ne_nm = c(60, 60), r34_se_nm = c(55, 55), r34_sw_nm = c(50, 50), r34_nw_nm = c(55, 55),
+#'   r50_ne_nm = c(30, 30), r50_se_nm = c(25, 25), r50_sw_nm = c(20, 20), r50_nw_nm = c(25, 25),
+#'   r64_ne_nm = c(15, 15), r64_se_nm = c(10, 10), r64_sw_nm = c(10, 10), r64_nw_nm = c(10, 10),
+#'   storm_speed_kt = c(12, 12)
+#' )
+#' compute_site_winds_full(df, target_lat = 18.05, target_lon = -63.05)
+#' @seealso \code{\link{compute_storm_heading}}, \code{\link{estimate_R34_climo}}, \code{\link{estimate_RMW_knaff}}
+#' @note Input data must already contain the expected IBTrACS-derived fields used in the internal wind solver.
 #' @export
 compute_site_winds_full <- function(df, target_lat, target_lon) {
-  wind_field_mode <- getOption("ipdcstorm.wind_field_mode", "legacy")
-  use_diagnostic_new <- identical(wind_field_mode, "diagnostic_new")
   mean_radius_nm <- function(r_ne, r_se, r_sw, r_nw) {
     m <- cbind(r_ne, r_se, r_sw, r_nw)
     m[!is.finite(m)] <- NA_real_
     out <- rowMeans(m, na.rm = TRUE)
     out[rowSums(is.finite(m)) == 0] <- NA_real_
     out
-  }
-  min_radius_nm <- function(r_ne, r_se, r_sw, r_nw) {
-    m <- cbind(r_ne, r_se, r_sw, r_nw)
-    m[!is.finite(m)] <- NA_real_
-    out <- apply(m, 1, function(x) {
-      x <- x[is.finite(x)]
-      if (length(x) == 0) NA_real_ else min(x)
-    })
-    as.numeric(out)
   }
 
   if (!("rmw_km" %in% names(df))) df$rmw_km <- NA_real_
@@ -774,23 +755,13 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
       quadrant = .get_quadrant(.data$bearing_to_target),
 
       # R34 radii quality gate:
-      # Keep the legacy mean-radius fallback as the default execution path.
-      # Diagnostic mode can replay the tighter partial-radius behavior for
-      # attribution without changing package defaults.
+      # If fewer than 3 quadrants are present, directional radii are often unreliable.
+      # Fall back to mean radius when >=2 quadrants exist; otherwise leave missing
+      # and allow climo infill downstream.
       nq34 = rowSums(is.finite(cbind(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm))),
       R34_nm_dir = .get_directional_radius(.data$quadrant, .data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
       R34_nm_mean = mean_radius_nm(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
-      R34_nm_min = min_radius_nm(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
-      R34_source = dplyr::case_when(
-        use_diagnostic_new & is.finite(.data$R34_nm_dir) ~ "observed",
-        use_diagnostic_new & .data$nq34 >= 2 & is.finite(.data$R34_nm_min) ~ "partial",
-        .data$nq34 >= 3 & is.finite(.data$R34_nm_dir) ~ "observed",
-        .data$nq34 >= 2 & is.finite(.data$R34_nm_mean) ~ "partial",
-        TRUE ~ "none"
-      ),
       R34_nm = dplyr::case_when(
-        use_diagnostic_new & is.finite(.data$R34_nm_dir) ~ .data$R34_nm_dir,
-        use_diagnostic_new & .data$nq34 >= 2 & is.finite(.data$R34_nm_min) ~ .data$R34_nm_min,
         .data$nq34 >= 3 ~ .data$R34_nm_dir,
         .data$nq34 >= 2 ~ .data$R34_nm_mean,
         TRUE ~ NA_real_
@@ -824,10 +795,6 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
   df <- df |>
     dplyr::mutate(
       R34_missing = !is.finite(.data$R34_km) | .data$R34_km <= 0,
-      R34_source = dplyr::case_when(
-        .data$R34_source == "none" & is.finite(.data$Vmax_kt) & (.data$Vmax_kt >= 34) ~ "climo",
-        TRUE ~ .data$R34_source
-      ),
       RMW_km = .resolve_trackpoint_rmw_km(
         rmw_obs_km = .data$rmw_km,
         R64_mean_km = .data$R64_mean_km,
@@ -850,7 +817,7 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
   df <- df |>
     dplyr::mutate(
       lat0 = dplyr::if_else(is.finite(.data$lat), .data$lat, 18),
-      R34_is_climo = .data$R34_source == "climo",
+      R34_is_climo = .data$R34_missing & is.finite(.data$Vmax_kt) & (.data$Vmax_kt >= 34),
       R34_eff_km = dplyr::if_else(.data$R34_is_climo, estimate_R34_climo(.data$Vmax_kt, lat = .data$lat0), .data$R34_km),
       RMW_used_km = pmax(5, pmin(200, .data$RMW_km)),
       RMW_used_km = dplyr::if_else(
@@ -859,7 +826,6 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
         .data$RMW_used_km
       )
     )
-  stopifnot(all(df$R34_source %in% c("observed", "partial", "climo", "none")))
 
   stopifnot(nrow(df) == length(df$storm_speed_kt), nrow(df) == length(df$heading_deg))
 
@@ -870,7 +836,6 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
         Vmax_kt = .data$Vmax_kt,
         r_km    = .data$dist_km,
         R34_km  = .data$R34_km,
-        R34_source = .data$R34_source,
         R50_km  = .data$R50_km,
         R64_km  = .data$R64_km,
         RMW_km  = .data$RMW_used_km,
@@ -900,13 +865,15 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
 # 4) Event classification and summarization
 # =============================================================================
 
-#' Classify storm class from peak site wind
-#'
-#' @param V_site_max_kt Numeric vector of peak site winds (kt).
-#' @param ts_threshold_kt Threshold (kt) for Tropical Storm.
-#' @param hurricane_threshold_kt Threshold (kt) for Hurricane.
-#'
-#' @return Character vector with values \code{c("TD", "TS", "HUR", "unknown")}.
+#' @title Classify storm class from peak site wind.
+#' @description Classifies peak site wind into tropical depression, tropical storm, hurricane, or unknown.
+#' @param V_site_max_kt Numeric vector of peak site wind speeds in knots.
+#' @param ts_threshold_kt Numeric scalar tropical-storm threshold in knots.
+#' @param hurricane_threshold_kt Numeric scalar hurricane threshold in knots.
+#' @return Character vector containing `"TD"`, `"TS"`, `"HUR"`, or `"unknown"`.
+#' @examples
+#' classify_severity(c(20, 40, 80, NA_real_))
+#' @seealso \code{\link{make_storm_events}}, \code{\link{compute_annual_counts}}
 #' @export
 classify_severity <- function(V_site_max_kt,
                               ts_threshold_kt = 34,
@@ -923,11 +890,19 @@ classify_severity <- function(V_site_max_kt,
 
 
 
-#' Aggregate track points into storm-level events
-#'
-#' @param track_df Track-point tibble/data.frame with at least SID, iso_time.
-#'
-#' @return Tibble with one row per storm and key event attributes.
+#' @title Aggregate track points into storm events.
+#' @description Summarises track-point data to one row per storm with peak site wind, storm intensity, pressure, timing, and radius-of-maximum-wind diagnostics.
+#' @param track_df Track-point tibble or data frame with at least `SID` and `iso_time`, plus optional wind and pressure fields.
+#' @return Tibble with one row per storm and event-level summary attributes.
+#' @examples
+#' track_df <- data.frame(
+#'   SID = c("AL012000", "AL012000"),
+#'   iso_time = as.POSIXct(c("2000-08-01 00:00:00", "2000-08-01 06:00:00"), tz = "UTC"),
+#'   V_site_kt = c(40, 55),
+#'   wind_kt = c(60, 65)
+#' )
+#' make_storm_events(track_df)
+#' @seealso \code{\link{classify_severity}}, \code{\link{compute_annual_counts}}
 #' @export
 make_storm_events <- function(track_df) {
   if (!requireNamespace('lubridate', quietly = TRUE)) stop('Package `lubridate` is required.')
@@ -987,6 +962,10 @@ make_storm_events <- function(track_df) {
 # 5) Rate model helpers (per-severity annual counts)
 # =============================================================================
 
+#' @title Normalise storm-class selection.
+#' @description Resolves a user-supplied storm-class vector to a unique character vector with defaults when missing.
+#' @param storm_classes Character vector of storm classes to retain.
+#' @return Character vector of unique storm classes.
 #' @keywords internal
 .normalize_storm_classes <- function(storm_classes = NULL) {
   if (is.null(storm_classes)) {
@@ -995,14 +974,19 @@ make_storm_events <- function(track_df) {
   unique(as.character(storm_classes))
 }
 
-#' Compute annual counts of unique storm events by storm class
-#'
-#' @param events Tibble with at least columns: year, storm_class, storm_id.
-#' @param storm_classes Character vector of classes to include.
-#'
-#' @return Tibble with columns year, storm_class, n_events, completed to include
-#'   all years and classes with zeros.
-#'
+#' @title Compute annual storm-event counts.
+#' @description Counts unique storm events per year and storm class, then completes the series so missing year-class combinations are filled with zeros.
+#' @param events Tibble with at least `year`, `storm_class`, and `storm_id` columns.
+#' @param storm_classes Character vector of storm classes to include.
+#' @return Tibble with columns `year`, `storm_class`, and `n_events`, completed over all represented years and classes.
+#' @examples
+#' events <- data.frame(
+#'   year = c(2000, 2000, 2001),
+#'   storm_class = c("TS", "TS", "HUR"),
+#'   storm_id = c("A", "B", "C")
+#' )
+#' compute_annual_counts(events)
+#' @seealso \code{\link{compute_lambda_table}}, \code{\link{get_annual_counts}}
 #' @export
 compute_annual_counts <- function(events,
                                   storm_classes = c("TS", "HUR")) {
@@ -1020,10 +1004,18 @@ compute_annual_counts <- function(events,
     )
 }
 
-#' Compute Poisson rate table by storm class from annual counts
-#'
-#' @param annual_counts Output from \code{compute_annual_counts()}.
-#' @return Tibble with lambda, n_years, prob_annual, prob_none by storm_class.
+#' @title Compute Poisson rate table by storm class.
+#' @description Summarises annual event counts into storm-class-specific Poisson rates and annual exceedance probabilities.
+#' @param annual_counts Tibble returned by \code{\link{compute_annual_counts}}.
+#' @return Tibble with `storm_class`, `lambda`, `n_years`, `prob_annual`, and `prob_none` columns.
+#' @examples
+#' annual_counts <- data.frame(
+#'   year = c(2000, 2001, 2000, 2001),
+#'   storm_class = c("TS", "TS", "HUR", "HUR"),
+#'   n_events = c(1, 0, 0, 1)
+#' )
+#' compute_lambda_table(annual_counts)
+#' @seealso \code{\link{compute_annual_counts}}, \code{\link{estimate_k_hat}}
 #' @export
 compute_lambda_table <- function(annual_counts) {
 
@@ -1038,16 +1030,19 @@ compute_lambda_table <- function(annual_counts) {
     )
 }
 
-#' Derive annual counts from model output events
-#'
-#' @description
-#' Builds annual storm counts from \code{out$events}, zero-filled for all
-#' year Ã— storm_class combinations by location.
-#'
-#' @param out List returned by \code{run_hazard_model()}.
-#'
-#' @return Tibble with columns \code{location}, \code{year}, \code{storm_class},
-#'   \code{n_events}.
+#' @title Derive annual counts from model output.
+#' @description Builds location-specific annual storm counts from `out$events` and zero-fills missing year-class combinations within each location.
+#' @param out List returned by `run_hazard_model()` containing an `events` component.
+#' @return Tibble with columns `location`, `year`, `storm_class`, and `n_events`.
+#' @examples
+#' out <- list(events = data.frame(
+#'   location = c("Saba", "Saba"),
+#'   year = c(2000, 2001),
+#'   storm_class = c("TS", "HUR"),
+#'   storm_id = c("A", "B")
+#' ))
+#' get_annual_counts(out)
+#' @seealso \code{\link{compute_annual_counts}}, \code{\link{compute_lambda_table}}
 #' @export
 get_annual_counts <- function(out) {
   if (is.null(out$events)) stop("out$events is required.", call. = FALSE)
@@ -1069,14 +1064,18 @@ get_annual_counts <- function(out) {
     dplyr::arrange(.data$location, .data$year, .data$storm_class)
 }
 
-#' Estimate overdispersion (k-hat) for a Poisson-Gamma annual activity factor
-#'
-#' @description
-#' Uses total annual counts N = sum_severity n_events and the NegBin identity
-#' Var(N) = mu + mu^2/k to estimate k. If Var <= mu, returns a large k (ÃƒÂ¢Ã¢â‚¬Â°Ã‹â€ Poisson).
-#'
-#' @param annual_counts Output from \code{compute_annual_counts()}.
-#' @return List with k_hat, annual_total (year,N), mu, var.
+#' @title Estimate annual-count overdispersion.
+#' @description Estimates the negative-binomial overdispersion parameter from total annual storm counts using the identity `Var(N) = mu + mu^2 / k`.
+#' @param annual_counts Tibble returned by \code{\link{compute_annual_counts}}.
+#' @return List with elements `k_hat`, `annual_total`, `mu`, and `var`.
+#' @examples
+#' annual_counts <- data.frame(
+#'   year = c(2000, 2000, 2001, 2001),
+#'   storm_class = c("TS", "HUR", "TS", "HUR"),
+#'   n_events = c(1, 0, 2, 1)
+#' )
+#' estimate_k_hat(annual_counts)
+#' @seealso \code{\link{compute_annual_counts}}, \code{\link{compute_lambda_table}}
 #' @export
 estimate_k_hat <- function(annual_counts) {
 

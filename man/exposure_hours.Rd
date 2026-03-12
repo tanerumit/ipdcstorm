@@ -7,16 +7,21 @@
 exposure_hours(daily, threshold_kt, use_gust = FALSE)
 }
 \arguments{
-\item{daily}{Tibble from \code{generate_daily_hazard_impact()}.}
+\item{daily}{Tibble/data.frame returned by
+\code{generate_daily_hazard_impact()}.}
 
-\item{threshold_kt}{Wind speed threshold (kt).}
+\item{threshold_kt}{Numeric scalar wind threshold (kt).}
 
-\item{use_gust}{Logical; if TRUE, use \code{wind_gust_kt}.}
+\item{use_gust}{Logical scalar; if \code{TRUE}, use \code{wind_gust_kt}.}
 }
 \value{
-Numeric vector of hours (0 or 24 at daily resolution).
+Numeric vector of daily exposure hours at package daily resolution.
 }
 \description{
 Converts a daily wind threshold exceedance test into daily exposure hours at
 package daily resolution.
+}
+\examples{
+daily <- tibble::tibble(wind_kt = c(20, 40), wind_gust_kt = c(24, 48))
+exposure_hours(daily, threshold_kt = 34)
 }

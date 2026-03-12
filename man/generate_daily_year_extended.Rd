@@ -7,18 +7,34 @@
 generate_daily_year_extended(year, sampled_events, pulse_shape = "cosine")
 }
 \arguments{
-\item{year}{Integer calendar year.}
+\item{year}{Integer scalar calendar year.}
 
 \item{sampled_events}{Tibble from \code{sample_events_for_year_extended()}.}
 
-\item{pulse_shape}{Pulse shape passed to \code{event_pulse()}.}
+\item{pulse_shape}{Character scalar pulse shape passed to
+\code{event_pulse()}.}
 }
 \value{
-Tibble with columns: date, wind_kt, event_id, event_class, pressure_hpa,
-pressure_deficit_hpa, rmw_km.
+Tibble with one row per calendar day and daily hazard attributes.
 }
 \description{
 Converts sampled storm events for one calendar year into a daily sustained
 wind series while tracking the dominant event and key event attributes for
 each day.
+}
+\examples{
+sampled_events <- tibble::tibble(
+  start_date = as.Date("2000-08-01"),
+  dur_days = 3L,
+  V_peak = 60,
+  event_id = "evt_1",
+  event_class = "TS",
+  Pc_min_hPa = 995,
+  dP_max_hPa = 18,
+  RMW_mean_km = 40
+)
+generate_daily_year_extended(2000, sampled_events)
+}
+\seealso{
+\code{\link{sample_events_for_year_extended}}, \code{\link{event_pulse}}
 }

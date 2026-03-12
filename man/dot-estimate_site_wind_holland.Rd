@@ -2,13 +2,12 @@
 % Please edit documentation in R/hazard_core.R
 \name{.estimate_site_wind_holland}
 \alias{.estimate_site_wind_holland}
-\title{Estimate site wind using a Holland-type radial wind profile (patched)}
+\title{Estimate site wind with Holland profile.}
 \usage{
 .estimate_site_wind_holland(
   Vmax_kt,
   r_km,
   R34_km,
-  R34_source = NULL,
   R50_km = NA,
   R64_km = NA,
   RMW_km,
@@ -18,34 +17,28 @@
 )
 }
 \arguments{
-\item{Vmax_kt}{Numeric; storm maximum wind (kt).}
+\item{Vmax_kt}{Numeric vector of maximum sustained wind speeds in knots.}
 
-\item{r_km}{Numeric; distance from storm center to site (km).}
+\item{r_km}{Numeric vector of distances from storm centre to site in kilometres.}
 
-\item{R34_km}{Numeric; 34-kt wind radius (km). If NA and Vmax >= 34 kt,
-a climatological estimate is used.}
+\item{R34_km}{Numeric vector of 34-kt radii in kilometres.}
 
-\item{R50_km, R64_km}{Numeric; 50/64-kt wind radii (km), optional.}
+\item{R50_km}{Numeric vector of 50-kt radii in kilometres.}
 
-\item{RMW_km}{Numeric; radius of maximum wind (km). Required.}
+\item{R64_km}{Numeric vector of 64-kt radii in kilometres.}
 
-\item{Pn}{Numeric; ambient pressure (hPa), default 1013.}
+\item{RMW_km}{Numeric vector of radius of maximum wind values in kilometres.}
 
-\item{Pc}{Numeric; central pressure (hPa), optional.}
+\item{Pn}{Numeric vector of ambient pressures in hPa.}
 
-\item{lat}{Numeric; storm latitude (degrees N), used for climatological infill.}
+\item{Pc}{Numeric vector of central pressures in hPa.}
+
+\item{lat}{Numeric vector of storm latitudes in decimal degrees north.}
 }
 \value{
-Numeric scalar; estimated sustained wind at site (kt).
+Numeric vector of estimated sustained site winds in knots.
 }
 \description{
-Computes a gradient-wind-like radial profile. This version fixes:
-\itemize{
-\item Holland B: uses Vickery & Wadhera (2008)-style parameterization that
-increases B for compact intense storms (was inverted above 120 kt).
-\item R34 calibration: widens the acceptable V_at_R34 window from [25,50] to
-[5,60] so weak tropical storms get calibrated.
-\item Adds climatological R34 infill when observed R34 is missing.
-}
+Computes site wind speed from storm intensity, storm size, and site distance using a Holland-type radial wind profile with internal fallback logic for missing radii.
 }
 \keyword{internal}

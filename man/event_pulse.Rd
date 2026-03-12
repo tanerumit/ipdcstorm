@@ -7,16 +7,23 @@
 event_pulse(dur_days, V_peak, shape = c("cosine", "triangle"))
 }
 \arguments{
-\item{dur_days}{Integer; event duration (days).}
+\item{dur_days}{Integer scalar event duration in days.}
 
-\item{V_peak}{Numeric; peak wind (kt).}
+\item{V_peak}{Numeric scalar peak sustained wind in kt.}
 
-\item{shape}{Pulse shape: "cosine" (smooth) or "triangle" (linear).}
+\item{shape}{Character scalar pulse shape; one of \code{"cosine"} or
+\code{"triangle"}.}
 }
 \value{
-Numeric vector length dur_days of daily winds (kt).
+Numeric vector of daily sustained wind values in kt.
 }
 \description{
 Creates a deterministic within-event daily wind profile from an event
 duration and peak sustained wind.
+}
+\examples{
+event_pulse(dur_days = 5, V_peak = 60)
+}
+\seealso{
+\code{\link{generate_daily_year_extended}}
 }

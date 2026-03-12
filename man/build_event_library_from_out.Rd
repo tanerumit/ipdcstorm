@@ -9,17 +9,26 @@ build_event_library_from_out(out, location, ..., seed = NULL)
 \arguments{
 \item{out}{List returned by \code{run_hazard_model()}.}
 
-\item{location}{Character; target location name (must exist in out lists).}
+\item{location}{Character scalar target location name.}
 
-\item{...}{Passed to \code{build_event_library()}.}
+\item{...}{Additional arguments passed to \code{build_event_library()}.}
 
-\item{seed}{Optional integer seed.}
+\item{seed}{Optional integer seed for deterministic library construction.}
 }
 \value{
-Event library as returned by \code{build_event_library()}.
+List in the format returned by \code{build_event_library()}.
 }
 \description{
 Extracts one location's track-point and event tables from
 \code{run_hazard_model()} output and forwards them to
 \code{build_event_library()}.
+}
+\examples{
+\dontrun{
+lib <- build_event_library_from_out(out, location = "Saba")
+lib$events
+}
+}
+\seealso{
+\code{\link{build_event_library}}
 }

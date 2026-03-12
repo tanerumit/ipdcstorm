@@ -14,22 +14,29 @@ damage_rate_from_wind(
 )
 }
 \arguments{
-\item{wind_kt}{Numeric vector of wind speeds (kt).}
+\item{wind_kt}{Numeric vector of sustained wind speeds in kt.}
 
-\item{thr}{Numeric threshold wind (kt) below which damage is zero.}
+\item{thr}{Numeric scalar threshold wind in kt below which damage is zero.}
 
-\item{V_ref}{Numeric reference wind (kt) where damage equals d_ref.}
+\item{V_ref}{Numeric scalar reference wind in kt where damage equals
+\code{d_ref}.}
 
-\item{d_ref}{Numeric damage fraction at V_ref.}
+\item{d_ref}{Numeric scalar damage fraction at \code{V_ref}.}
 
-\item{p}{Numeric exponent controlling nonlinearity.}
+\item{p}{Numeric scalar exponent controlling nonlinearity.}
 
-\item{d_max}{Numeric cap on daily damage fraction.}
+\item{d_max}{Numeric scalar upper cap on daily damage fraction.}
 }
 \value{
-Numeric vector of damage rates (fractions per day).
+Numeric vector of daily damage rates.
 }
 \description{
 Converts sustained wind speed to a bounded daily damage fraction using a
 thresholded power-law response calibrated at \code{V_ref}.
+}
+\examples{
+damage_rate_from_wind(c(20, 40, 80))
+}
+\seealso{
+\code{\link{add_damage_forcing}}
 }

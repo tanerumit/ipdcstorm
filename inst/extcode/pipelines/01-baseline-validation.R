@@ -10,9 +10,11 @@ library(ggplot2)
 # Paths and output folders
 # ------------------------------------------------------------------------------
 
-ibtracs_file_path <- "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
-baseline_output_dir <- "output/baseline"
+ibtracs_file_path     <- "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
+baseline_output_dir   <- "output/baseline"
 validation_output_dir <- "output/validation"
+
+seed <- 2026
 
 # ------------------------------------------------------------------------------
 # Target locations
@@ -27,22 +29,21 @@ targets <- tibble::tribble(
   "Miami",        25.7617, -80.1918
 )
 
-
 # ------------------------------------------------------------------------------
 # Configure and run the model
 # ------------------------------------------------------------------------------
 
 hazard_cfg <- make_hazard_cfg(
   data_path = ibtracs_file_path,
-  search_radius_km = 800,
+  search_radius_km = 600,
   historical_start_year = 1970L,
-  simulation_years = 500L
+  simulation_years = 2000L
 )
 
 hazard_out <- run_hazard_model(
   cfg = hazard_cfg,
   targets = targets,
-  seed = 42L,
+  seed = seed,
   climate = make_climate_cfg(scenario = "stationary")
 )
 
@@ -52,7 +53,7 @@ hazard_out <- run_hazard_model(
 
 validation_cfg <- make_validation_cfg(
   holdout_years = 10L,
-  n_sim = 500L,
+  n_sim = 2000L,
   return_periods = c(5, 10, 25, 50),
   conf_level = 0.90,
   seed = 42L,
@@ -78,83 +79,78 @@ daily_by_location <- generate_daily_hazard_impact(
   sim_years = seq_len(hazard_cfg$n_sim),
   year0 = hazard_cfg$start_year,
   gust_factor = 1.3,
-  damage_method = "powerlaw",
-  damage_params = list(
-    thr = 34,
-    V_ref = 80,
-    d_ref = 0.03,
-    p = 3,
-    d_max = 0.10
-  ),
+  damage = list(method = "intensity"),
   pulse_shape = "cosine",
   scenario = "stationary",
-  seed = 42L
+  seed = seed
 )
 
 
-# ------------------------------------------------------------------------------
-# Save per-location visualizations
-# ------------------------------------------------------------------------------
-
-
-
-
-
-
-
-for (location in names(daily_by_location)) {
-
-  location_output_dir <- file.path(
-    baseline_output_dir,
-    gsub("[^A-Za-z0-9_]", "_", location)
-  )
-
-  save_hazard_viz_plots(
-    daily = daily_by_location[[location]],
-    output_dir = location_output_dir,
-    location_name = location,
-    width = 9,
-    height = 6,
-    dpi = 300,
-    base_size = 11,
-    thr_tc = 34,
-    thr_hur = 64
-  )
-}
-
-
-# ------------------------------------------------------------------------------
-# Save cross-location comparison plot
-# ------------------------------------------------------------------------------
-
-comparison_output_dir <- file.path(baseline_output_dir, "comparison")
-
-rate_comparison_plot <- ggplot(
-  hazard_out$rates,
-  aes(x = location, y = lambda, fill = storm_class)
-) +
-  geom_col(position = "dodge", width = 0.6) +
-  geom_text(
-    aes(label = sprintf("%.2f", lambda)),
-    position = position_dodge(0.6),
-    vjust = -0.4,
-    size = 3.2
-  ) +
-  scale_fill_manual(
-    values = c(TS = "#E69F00", HUR = "#D55E00"),
-    labels = c(TS = "Tropical Storm", HUR = "Hurricane"),
-    name = NULL
-  ) +
-  labs(
-    x = NULL,
-    y = expression(lambda ~ "(events yr"^-1 * ")"),
-    title = "Historical Annual Storm Rates by Island"
-  )
-
-ggsave(
-  filename = file.path(comparison_output_dir, "rate_comparison.png"),
-  plot = rate_comparison_plot,
-  width = 8,
-  height = 4
-)
-
+# # ------------------------------------------------------------------------------
+# # Save per-location visualizations
+# # ------------------------------------------------------------------------------
+#
+#
+#
+# location <- "Statia"
+#
+# save_hazard_viz_plots(daily_by_location[[location]],
+#                       output_dir = baseline_output_dir,
+#                       location_name = location)
+#
+# for (location in names(daily_by_location)) {
+#
+#   location_output_dir <- file.path(
+#     baseline_output_dir,
+#     gsub("[^A-Za-z0-9_]", "_", location)
+#   )
+#
+#   save_hazard_viz_plots(
+#     daily = daily_by_location[[location]],
+#     output_dir = location_output_dir,
+#     location_name = location,
+#     width = 9,
+#     height = 6,
+#     dpi = 300,
+#     base_size = 11,
+#     thr_tc = 34,
+#     thr_hur = 64
+#   )
+# }
+#
+#
+# # ------------------------------------------------------------------------------
+# # Save cross-location comparison plot
+# # ------------------------------------------------------------------------------
+#
+# comparison_output_dir <- file.path(baseline_output_dir, "comparison")
+#
+# rate_comparison_plot <- ggplot(
+#   hazard_out$rates,
+#   aes(x = location, y = lambda, fill = storm_class)
+# ) +
+#   geom_col(position = "dodge", width = 0.6) +
+#   geom_text(
+#     aes(label = sprintf("%.2f", lambda)),
+#     position = position_dodge(0.6),
+#     vjust = -0.4,
+#     size = 3.2
+#   ) +
+#   scale_fill_manual(
+#     values = c(TS = "#E69F00", HUR = "#D55E00"),
+#     labels = c(TS = "Tropical Storm", HUR = "Hurricane"),
+#     name = NULL
+#   ) +
+#   labs(
+#     x = NULL,
+#     y = expression(lambda ~ "(events yr"^-1 * ")"),
+#     title = "Historical Annual Storm Rates by Island"
+#   )
+#
+# ggsave(
+#   filename = file.path(comparison_output_dir, "rate_comparison.png"),
+#   plot = rate_comparison_plot,
+#   width = 8,
+#   height = 4
+# )
+#

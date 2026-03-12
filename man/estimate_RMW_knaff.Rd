@@ -2,20 +2,24 @@
 % Please edit documentation in R/hazard_core.R
 \name{estimate_RMW_knaff}
 \alias{estimate_RMW_knaff}
-\title{Estimate radius of maximum wind using Knaff & Zehr (2007) climatology}
+\title{Estimate climatological radius of maximum wind.}
 \usage{
 estimate_RMW_knaff(Vmax_kt, lat = 18)
 }
 \arguments{
-\item{Vmax_kt}{Numeric vector; maximum sustained wind (kt).}
+\item{Vmax_kt}{Numeric vector of maximum sustained wind speeds in knots.}
 
-\item{lat}{Numeric vector; storm latitude (degrees N).}
+\item{lat}{Numeric vector of storm latitudes in decimal degrees north.}
 }
 \value{
-Numeric vector of estimated RMW in km.
+Numeric vector of estimated radius of maximum wind values in kilometres.
 }
 \description{
-Latitude-dependent RMW estimation based on Knaff & Zehr (2007), which captures
-the key relationship: intense low-latitude storms (like Irma at 17Ãƒâ€šÃ‚Â°N) have
-smaller RMW than the same intensity at higher latitudes.
+Estimates radius of maximum wind from storm intensity and latitude using a Knaff and Zehr climatological relationship.
+}
+\examples{
+estimate_RMW_knaff(Vmax_kt = c(40, 80, 120), lat = c(15, 18, 22))
+}
+\seealso{
+\code{\link{estimate_R34_climo}}, \code{\link{compute_site_winds_full}}
 }

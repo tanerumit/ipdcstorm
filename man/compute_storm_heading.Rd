@@ -2,18 +2,28 @@
 % Please edit documentation in R/hazard_core.R
 \name{compute_storm_heading}
 \alias{compute_storm_heading}
-\title{Compute storm heading (track motion bearing) per track point}
+\title{Compute storm heading by track point.}
 \usage{
 compute_storm_heading(df)
 }
 \arguments{
-\item{df}{Data frame with columns: SID, iso_time (POSIXct), lat, lon.}
+\item{df}{Data frame with columns \code{SID}, \code{iso_time}, \code{lat}, and \code{lon}.}
 }
 \value{
-Same data frame with \code{heading_deg} (numeric).
+Data frame with the original columns plus numeric \code{heading_deg} in degrees clockwise from north.
 }
 \description{
-Adds \code{heading_deg} in [0, 360) where 0=N, 90=E, 180=S, 270=W.
-Heading is computed from point i to i+1 (forward bearing). The last point
-uses the previous segment if available.
+Adds a \code{heading_deg} column based on great-circle motion between successive track points within each storm.
+}
+\examples{
+df <- data.frame(
+  SID = c("AL012000", "AL012000"),
+  iso_time = as.POSIXct(c("2000-08-01 00:00:00", "2000-08-01 06:00:00"), tz = "UTC"),
+  lat = c(18, 18.2),
+  lon = c(-63, -63.2)
+)
+compute_storm_heading(df)
+}
+\seealso{
+\code{\link{compute_site_winds_full}}
 }

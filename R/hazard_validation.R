@@ -61,8 +61,16 @@ if (!exists("%||%", mode = "function")) {
 #'     \item{`base_size`}{Numeric; base font size for ggplot themes
 #'       (default: 11).}
 #'     \item{`hindcast_use_raw_rates`}{Logical; whether Tier 1A hindcast uses
-#'       raw fitted rates instead of adjusted rates (default: `TRUE`).}
+#'       raw fitted rates instead of adjusted rates (default: `TRUE`). This is
+#'       the validated package default because adjusted lambda worsened
+#'       hindcast bias at Saba and Statia.}
 #'   }
+#'
+#' The default validation path is the current best validated overall tradeoff:
+#' Tier 1A hindcast uses raw lambda, the package runs the legacy wind-field
+#' path unless an internal option overrides it, and the hindcast sampler
+#' defaults to `legacy`. Experimental wind-field comparison modes remain
+#' internal and are never activated by `make_validation_cfg()` defaults.
 #'
 #' @return A list with class `c("validation_cfg", "list")`.
 #' @export
@@ -397,7 +405,7 @@ compute_return_levels <- function(annual_max,
 #'   \item{converged}{Logical; whether estimation produced valid parameters.}
 #'
 #' @export
-fit_gev_lmom <- function(x, xi_bounds = c(-0.5, 0.5)) {
+fit_gev_lmom <- function(x, xi_bounds = c(-0.4, 0.5)) {
   x <- sort(x[is.finite(x)])
   n <- length(x)
 
@@ -833,6 +841,950 @@ bootstrap_return_level_ci <- function(annual_max,
     )
 }
 
+.hindcast_r34_source_levels <- function() {
+  c("observed", "partial", "climo", "none")
+}
+
+.hindcast_quantiles_or_na <- function(x,
+                                      probs = c(0.9, 0.95, 0.99)) {
+  x <- as.numeric(x)
+  x <- x[is.finite(x)]
+  if (length(x) == 0) {
+    out <- rep(NA_real_, length(probs))
+  } else {
+    out <- as.numeric(stats::quantile(x, probs = probs, na.rm = TRUE, names = FALSE))
+  }
+  names(out) <- paste0("q", probs * 100)
+  out
+}
+
+.dominant_r34_source <- function(sources,
+                                 counts) {
+  levels <- .hindcast_r34_source_levels()
+  if (length(sources) == 0 || length(counts) == 0 || all(!is.finite(counts)) || sum(counts, na.rm = TRUE) <= 0) {
+    return("none")
+  }
+  src <- as.character(sources)
+  cnt <- as.numeric(counts)
+  ord <- order(-cnt, match(src, levels), na.last = TRUE)
+  src[[ord[1]]]
+}
+
+.dominant_category <- function(values,
+                               counts) {
+  if (length(values) == 0 || length(counts) == 0 || all(!is.finite(counts)) || sum(counts, na.rm = TRUE) <= 0) {
+    return("none")
+  }
+  val <- as.character(values)
+  cnt <- as.numeric(counts)
+  ord <- order(-cnt, val, na.last = TRUE)
+  val[[ord[1]]]
+}
+
+.pathway_metric_or_zero <- function(tbl,
+                                    source,
+                                    column) {
+  idx <- match(source, tbl$peak_r34_source)
+  if (is.na(idx) || !(column %in% names(tbl))) {
+    return(0)
+  }
+  val <- tbl[[column]][idx]
+  if (length(val) == 0 || is.na(val) || !is.finite(val)) 0 else val
+}
+
+.hindcast_normalized_radius_breaks <- function() {
+  c(0, 1.25, 1.75, 2.5, 4, Inf)
+}
+
+.hindcast_normalized_radius_labels <- function() {
+  c("[0,1.25)", "[1.25,1.75)", "[1.75,2.5)", "[2.5,4)", "[4,Inf)")
+}
+
+.hindcast_normalized_radius_bin <- function(x) {
+  cut(
+    x,
+    breaks = .hindcast_normalized_radius_breaks(),
+    labels = .hindcast_normalized_radius_labels(),
+    include.lowest = TRUE,
+    right = FALSE
+  )
+}
+
+.hindcast_precal_radius_band_levels <- function() {
+  c("<1.75", "[1.75,2.5)", ">=2.5")
+}
+
+.hindcast_precal_radius_band <- function(x) {
+  out <- rep(NA_character_, length(x))
+  out[is.finite(x) & x < 1.75] <- "<1.75"
+  out[is.finite(x) & x >= 1.75 & x < 2.5] <- "[1.75,2.5)"
+  out[is.finite(x) & x >= 2.5] <- ">=2.5"
+  factor(out, levels = .hindcast_precal_radius_band_levels())
+}
+
+.summarize_peak_r34_completeness <- function(storm_tp,
+                                             peak_row) {
+  r34_cols <- c("r34_ne_nm", "r34_se_nm", "r34_sw_nm", "r34_nw_nm")
+  if (all(r34_cols %in% names(peak_row))) {
+    n_quadrants <- sum(is.finite(as.numeric(peak_row[1, r34_cols, drop = TRUE])))
+  } else if ("nq34" %in% names(peak_row) && is.finite(peak_row$nq34[1])) {
+    n_quadrants <- as.integer(peak_row$nq34[1])
+  } else {
+    n_quadrants <- switch(
+      as.character(peak_row$R34_source[1]),
+      observed = 4L,
+      partial = 2L,
+      climo = 0L,
+      none = 0L,
+      0L
+    )
+  }
+  completeness <- if (n_quadrants >= 4L) {
+    "full_4of4"
+  } else if (n_quadrants > 0L) {
+    paste0("partial_", n_quadrants, "of4")
+  } else {
+    "none_0of4"
+  }
+  list(
+    n_quadrants = as.integer(n_quadrants),
+    completeness = completeness
+  )
+}
+
+.infer_peak_rmw_provenance <- function(peak_row) {
+  if ("rmw_km" %in% names(peak_row) && .is_valid_observed_rmw_km(as.numeric(peak_row$rmw_km[1]))) {
+    return("observed")
+  }
+  if ("R64_mean_km" %in% names(peak_row) && is.finite(as.numeric(peak_row$R64_mean_km[1])) &&
+      as.numeric(peak_row$R64_mean_km[1]) >= 10 && as.numeric(peak_row$R64_mean_km[1]) <= 305.58) {
+    return("r64_mean")
+  }
+  if ("R50_mean_km" %in% names(peak_row) && is.finite(as.numeric(peak_row$R50_mean_km[1])) &&
+      as.numeric(peak_row$R50_mean_km[1]) >= 10 && as.numeric(peak_row$R50_mean_km[1]) <= 481.52) {
+    return("r50_mean")
+  }
+  if ("R34_mean_km" %in% names(peak_row) && is.finite(as.numeric(peak_row$R34_mean_km[1])) &&
+      as.numeric(peak_row$R34_mean_km[1]) >= 10 && as.numeric(peak_row$R34_mean_km[1]) <= 888.96) {
+    return("r34_mean")
+  }
+  if ("Vmax_kt" %in% names(peak_row) || "wind_kt" %in% names(peak_row)) {
+    return("knaff")
+  }
+  "unknown"
+}
+
+.compute_peak_solver_forensics <- function(peak_row) {
+  wind_field_mode <- getOption("ipdcstorm.wind_field_mode", "legacy")
+  use_diagnostic_new <- identical(wind_field_mode, "diagnostic_new")
+  use_observed_r34_calibration_adjusted <- identical(wind_field_mode, "observed_r34_calibration_adjusted")
+  vmax <- if ("Vmax_kt" %in% names(peak_row)) {
+    as.numeric(peak_row$Vmax_kt[1])
+  } else if ("wind_kt" %in% names(peak_row)) {
+    as.numeric(peak_row$wind_kt[1])
+  } else {
+    NA_real_
+  }
+  r_km <- as.numeric(peak_row$dist_km[1])
+  rmw_used_km <- as.numeric(peak_row$RMW_used_km[1])
+  r34_eff_km <- as.numeric(peak_row$R34_eff_km[1])
+  site_wind_kt <- as.numeric(peak_row$site_wind_kt[1])
+  lat <- if ("lat" %in% names(peak_row)) as.numeric(peak_row$lat[1]) else NA_real_
+  r34_source <- if ("R34_source" %in% names(peak_row)) as.character(peak_row$R34_source[1]) else "observed"
+  rmw_provenance <- if ("RMW_provenance" %in% names(peak_row)) {
+    as.character(peak_row$RMW_provenance[1])
+  } else {
+    .infer_peak_rmw_provenance(peak_row)
+  }
+  out <- list(
+    peak_vmax_kt = vmax,
+    peak_gradient_factor = NA_real_,
+    peak_surface_factor = NA_real_,
+    peak_steepening_factor = NA_real_,
+    peak_precal_response_factor = NA_real_,
+    peak_pre_cal_site_wind_kt = NA_real_,
+    peak_post_cal_site_wind_kt = NA_real_,
+    peak_r34_calibration_factor = NA_real_,
+    peak_r34_calibration_increment_kt = NA_real_,
+    peak_forward_motion_increment_kt = NA_real_,
+    peak_calibration_stage = NA_character_
+  )
+  if (!is.finite(vmax) || !is.finite(r_km) || r_km < 0 || !is.finite(rmw_used_km) || rmw_used_km <= 0) {
+    return(out)
+  }
+
+  r_norm <- r_km / rmw_used_km
+  if (!is.finite(r_norm) || r_norm <= 0) {
+    return(out)
+  }
+
+  b_val <- if (vmax >= 100) {
+    1.4 + (vmax - 100) * 0.008
+  } else if (vmax >= 64) {
+    1.3 + (vmax - 64) * 0.003
+  } else {
+    1.1 + (vmax - 20) * 0.005
+  }
+  b_val <- max(1.0, min(2.5, b_val))
+  if (r_norm < 1) {
+    v_gradient <- sqrt((1 / r_norm) ^ b_val * exp(1 - (1 / r_norm) ^ b_val))
+  } else {
+    v_gradient <- sqrt((rmw_used_km / r_km) ^ b_val * exp(1 - (rmw_used_km / r_km) ^ b_val))
+  }
+
+  srf_alpha <- 0.15
+  srf_beta <- 0.5
+  srf <- 1 - srf_alpha * (1 - exp(-srf_beta * max(0, r_norm - 1)))
+  steep_gamma <- 0.35
+  f_int <- max(0, (vmax - 40) / 115)
+  f_dist <- min(2.0, max(0, (r_norm - 1) * 5))
+  steep_factor <- max(0.55, 1 - steep_gamma * f_int * f_dist)
+  precal_response_factor <- 1
+  v_pre_cal <- vmax * v_gradient * srf * steep_factor * precal_response_factor
+
+  cal_factor <- 1
+  if (is.finite(r34_eff_km) && r34_eff_km > 0 && r_km > rmw_used_km * 1.2) {
+    r_norm_r34 <- r34_eff_km / rmw_used_km
+    v_at_r34_model <- vmax * sqrt((rmw_used_km / r34_eff_km) ^ b_val * exp(1 - (rmw_used_km / r34_eff_km) ^ b_val))
+    srf_r34 <- 1 - srf_alpha * (1 - exp(-srf_beta * max(0, r_norm_r34 - 1)))
+    v_at_r34_model <- v_at_r34_model * srf_r34
+    if (is.finite(v_at_r34_model) && v_at_r34_model > 5 && v_at_r34_model < 60) {
+      cal_base <- min(if (use_diagnostic_new) 1.2 else 1.4, 34 / v_at_r34_model)
+      r34_safe <- max(r34_eff_km, rmw_used_km * 1.5)
+      taper_linear <- min(1, max(0, (r_km - rmw_used_km * 1.2) / (r34_safe - rmw_used_km * 1.2)))
+      cal_tapered <- 1 + (if (use_diagnostic_new) taper_linear^3 else taper_linear^2) * (cal_base - 1)
+      intensity_damp <- if (use_diagnostic_new) {
+        min(1.0, max(0.2, 1.0 - (vmax - 64) / 90))
+      } else {
+        min(1.0, max(0.3, 1.0 - (vmax - 64) / 120))
+      }
+      cal_factor <- 1 + intensity_damp * (cal_tapered - 1)
+      if (use_observed_r34_calibration_adjusted &&
+          identical(r34_source, "observed") &&
+          is.finite(rmw_used_km) &&
+          is.finite(r_km) &&
+          rmw_used_km > 0) {
+        band_phase <- min(1, max(0, (r_norm - 1.5) / 1.0))
+        band_term <- sin(pi * band_phase)^2
+        inflation_excess <- max(0, cal_factor - 1)
+        cal_factor <- 1 + min(0.10, 0.35 * band_term * inflation_excess)
+      }
+    }
+  }
+
+  v_post_cal <- v_pre_cal * cal_factor
+  cal_increment <- v_post_cal - v_pre_cal
+  forward_motion_increment <- if (is.finite(site_wind_kt)) site_wind_kt - v_post_cal else NA_real_
+  cal_stage <- if (!is.finite(cal_increment)) {
+    NA_character_
+  } else if (cal_increment > 1) {
+    "post_calibration_inflation"
+  } else if (cal_increment < -1) {
+    "post_calibration_damping"
+  } else {
+    "pre_calibration_dominant"
+  }
+
+  out$peak_vmax_kt <- vmax
+  out$peak_gradient_factor <- v_gradient
+  out$peak_surface_factor <- srf
+  out$peak_steepening_factor <- steep_factor
+  out$peak_precal_response_factor <- precal_response_factor
+  out$peak_pre_cal_site_wind_kt <- v_pre_cal
+  out$peak_post_cal_site_wind_kt <- v_post_cal
+  out$peak_r34_calibration_factor <- cal_factor
+  out$peak_r34_calibration_increment_kt <- cal_increment
+  out$peak_forward_motion_increment_kt <- forward_motion_increment
+  out$peak_calibration_stage <- cal_stage
+  out
+}
+
+.extract_hindcast_top_tail_events <- function(event_tbl,
+                                              yearly_tbl,
+                                              sim_annual_max = NULL,
+                                              obs_anchor_tbl = NULL,
+                                              location,
+                                              top_n = 5L,
+                                              ts_threshold_kt = 34) {
+  top_n <- max(1L, as.integer(top_n))
+  if (is.null(obs_anchor_tbl)) {
+    obs_anchor_tbl <- tibble::tibble(
+      location = location,
+      year = integer(0),
+      observed_site_year_annual_max_kt = numeric(0)
+    )
+  }
+
+  observed_top <- yearly_tbl |>
+    dplyr::filter(.data$period == "test", .data$annual_max_kt >= ts_threshold_kt, nzchar(.data$annual_max_storm_id)) |>
+    dplyr::arrange(dplyr::desc(.data$annual_max_kt), .data$year, .data$annual_max_storm_id) |>
+    dplyr::mutate(
+      annual_max_rank = dplyr::row_number(),
+      exceedance_rank = dplyr::row_number()
+    ) |>
+    dplyr::slice_head(n = top_n) |>
+    dplyr::left_join(
+      event_tbl |>
+        dplyr::select(
+          "location", "storm_id", "year", "storm_class", "peak_wind_kt",
+          "peak_r34_source", "peak_r34_eff_km", "peak_rmw_used_km",
+          "peak_rmw_provenance",
+          "peak_iso_time", "peak_dist_km", "closest_approach_km",
+          "peak_bearing_to_target", "peak_quadrant", "peak_normalized_radius",
+          "peak_r34_quadrants", "peak_r34_completeness",
+          "peak_vmax_kt", "peak_gradient_factor", "peak_surface_factor",
+          "peak_steepening_factor", "peak_precal_response_factor",
+          "peak_pre_cal_site_wind_kt", "peak_post_cal_site_wind_kt",
+          "peak_r34_calibration_factor", "peak_r34_calibration_increment_kt",
+          "peak_forward_motion_increment_kt", "peak_calibration_stage"
+        ),
+      by = c("location", "year", "annual_max_storm_id" = "storm_id")
+    ) |>
+    dplyr::left_join(
+      obs_anchor_tbl,
+      by = c("location", "year")
+    ) |>
+    dplyr::transmute(
+      location = .data$location,
+      sample = "observed_test",
+      year = .data$year,
+      sample_year = .data$year,
+      storm_id = .data$annual_max_storm_id,
+      storm_class = .data$storm_class,
+      annual_max_rank = .data$annual_max_rank,
+      exceedance_rank = .data$exceedance_rank,
+      simulated_site_wind_kt = .data$peak_wind_kt,
+      observed_site_year_annual_max_kt = dplyr::coalesce(.data$observed_site_year_annual_max_kt, .data$annual_max_kt),
+      peak_iso_time = .data$peak_iso_time,
+      closest_approach_km = .data$closest_approach_km,
+      peak_dist_km = .data$peak_dist_km,
+      peak_rmw_used_km = .data$peak_rmw_used_km,
+      peak_rmw_provenance = .data$peak_rmw_provenance,
+      peak_normalized_radius = .data$peak_normalized_radius,
+      peak_r34_eff_km = .data$peak_r34_eff_km,
+      peak_r34_source = .data$annual_max_r34_source,
+      peak_r34_quadrants = .data$peak_r34_quadrants,
+      peak_r34_completeness = .data$peak_r34_completeness,
+      peak_vmax_kt = .data$peak_vmax_kt,
+      peak_gradient_factor = .data$peak_gradient_factor,
+      peak_surface_factor = .data$peak_surface_factor,
+      peak_steepening_factor = .data$peak_steepening_factor,
+      peak_precal_response_factor = .data$peak_precal_response_factor,
+      peak_pre_cal_site_wind_kt = .data$peak_pre_cal_site_wind_kt,
+      peak_post_cal_site_wind_kt = .data$peak_post_cal_site_wind_kt,
+      peak_r34_calibration_factor = .data$peak_r34_calibration_factor,
+      peak_r34_calibration_increment_kt = .data$peak_r34_calibration_increment_kt,
+      peak_forward_motion_increment_kt = .data$peak_forward_motion_increment_kt,
+      peak_calibration_stage = .data$peak_calibration_stage,
+      peak_bearing_to_target = .data$peak_bearing_to_target,
+      peak_quadrant = .data$peak_quadrant,
+      period = .data$period
+    )
+
+  sim_top <- tibble::tibble(
+    location = location,
+    sample = "simulated_annual_max",
+    year = NA_integer_,
+    sample_year = integer(0),
+    storm_id = character(0),
+    storm_class = character(0),
+    annual_max_rank = integer(0),
+    exceedance_rank = integer(0),
+    simulated_site_wind_kt = numeric(0),
+    observed_site_year_annual_max_kt = numeric(0),
+    peak_iso_time = as.POSIXct(character(0), tz = "UTC"),
+    closest_approach_km = numeric(0),
+    peak_dist_km = numeric(0),
+    peak_rmw_used_km = numeric(0),
+    peak_rmw_provenance = character(0),
+    peak_normalized_radius = numeric(0),
+    peak_r34_eff_km = numeric(0),
+    peak_r34_source = character(0),
+    peak_r34_quadrants = integer(0),
+    peak_r34_completeness = character(0),
+    peak_vmax_kt = numeric(0),
+    peak_gradient_factor = numeric(0),
+    peak_surface_factor = numeric(0),
+    peak_steepening_factor = numeric(0),
+    peak_precal_response_factor = numeric(0),
+    peak_pre_cal_site_wind_kt = numeric(0),
+    peak_post_cal_site_wind_kt = numeric(0),
+    peak_r34_calibration_factor = numeric(0),
+    peak_r34_calibration_increment_kt = numeric(0),
+    peak_forward_motion_increment_kt = numeric(0),
+    peak_calibration_stage = character(0),
+    peak_bearing_to_target = numeric(0),
+    peak_quadrant = character(0),
+    period = character(0)
+  )
+  if (!is.null(sim_annual_max) && length(sim_annual_max) > 0) {
+    sim_top <- tibble::tibble(
+      location = location,
+      sample = "simulated_annual_max",
+      year = NA_integer_,
+      sample_year = seq_along(sim_annual_max),
+      storm_id = NA_character_,
+      storm_class = NA_character_,
+      annual_max_rank = seq_along(sim_annual_max),
+      exceedance_rank = seq_along(sim_annual_max),
+      simulated_site_wind_kt = as.numeric(sim_annual_max),
+      observed_site_year_annual_max_kt = NA_real_,
+      peak_iso_time = as.POSIXct(NA, origin = "1970-01-01", tz = "UTC"),
+      closest_approach_km = NA_real_,
+      peak_dist_km = NA_real_,
+      peak_rmw_used_km = NA_real_,
+      peak_rmw_provenance = NA_character_,
+      peak_normalized_radius = NA_real_,
+      peak_r34_eff_km = NA_real_,
+      peak_r34_source = NA_character_,
+      peak_r34_quadrants = NA_integer_,
+      peak_r34_completeness = NA_character_,
+      peak_vmax_kt = NA_real_,
+      peak_pre_cal_site_wind_kt = NA_real_,
+      peak_post_cal_site_wind_kt = NA_real_,
+      peak_r34_calibration_factor = NA_real_,
+      peak_r34_calibration_increment_kt = NA_real_,
+      peak_forward_motion_increment_kt = NA_real_,
+      peak_calibration_stage = NA_character_,
+      peak_bearing_to_target = NA_real_,
+      peak_quadrant = NA_character_,
+      period = "simulated"
+    ) |>
+      dplyr::arrange(dplyr::desc(.data$simulated_site_wind_kt), .data$sample_year) |>
+      dplyr::mutate(
+        annual_max_rank = dplyr::row_number(),
+        exceedance_rank = dplyr::row_number()
+      ) |>
+      dplyr::slice_head(n = top_n)
+  }
+
+  dplyr::bind_rows(observed_top, sim_top)
+}
+
+.summarize_observed_r34_radius_bias <- function(event_tbl,
+                                                yearly_tbl,
+                                                obs_anchor_tbl = NULL,
+                                                location,
+                                                top_n = 5L,
+                                                ts_threshold_kt = 34) {
+  radius_levels <- .hindcast_normalized_radius_labels()
+  top_n <- max(1L, as.integer(top_n))
+  if (is.null(obs_anchor_tbl)) {
+    obs_anchor_tbl <- tibble::tibble(
+      location = location,
+      year = integer(0),
+      observed_site_year_annual_max_kt = numeric(0)
+    )
+  }
+
+  annual_max_flags <- yearly_tbl |>
+    dplyr::filter(.data$period == "test", .data$annual_max_kt >= ts_threshold_kt, nzchar(.data$annual_max_storm_id)) |>
+    dplyr::arrange(dplyr::desc(.data$annual_max_kt), .data$year, .data$annual_max_storm_id) |>
+    dplyr::mutate(
+      annual_max_rank = dplyr::row_number(),
+      is_top_tail_event = dplyr::row_number() <= top_n
+    ) |>
+    dplyr::select("location", "year", annual_max_storm_id = "annual_max_storm_id", "annual_max_rank", "is_top_tail_event")
+
+  observed_detail <- event_tbl |>
+    dplyr::filter(.data$period == "test", .data$retained_tsplus, .data$peak_r34_source == "observed") |>
+    dplyr::left_join(
+      annual_max_flags,
+      by = c("location", "year", "storm_id" = "annual_max_storm_id")
+    ) |>
+    dplyr::left_join(
+      obs_anchor_tbl,
+      by = c("location", "year")
+    ) |>
+    dplyr::mutate(
+      is_annual_max_event = !is.na(.data$annual_max_rank),
+      is_top_tail_event = dplyr::coalesce(.data$is_top_tail_event, FALSE),
+      observed_site_year_annual_max_kt = dplyr::coalesce(.data$observed_site_year_annual_max_kt, NA_real_),
+      normalized_radius = as.numeric(.data$peak_normalized_radius),
+      normalized_radius_bin = as.character(.hindcast_normalized_radius_bin(.data$normalized_radius)),
+      precal_radius_band = as.character(.hindcast_precal_radius_band(.data$normalized_radius)),
+      site_wind_minus_year_anchor_kt = .data$peak_wind_kt - .data$observed_site_year_annual_max_kt
+    ) |>
+    dplyr::arrange(dplyr::desc(.data$peak_wind_kt), .data$year, .data$storm_id) |>
+    dplyr::transmute(
+      location = .data$location,
+      year = .data$year,
+      storm_id = .data$storm_id,
+      storm_class = .data$storm_class,
+      annual_max_rank = as.integer(.data$annual_max_rank),
+      is_annual_max_event = .data$is_annual_max_event,
+      is_top_tail_event = .data$is_top_tail_event,
+      simulated_site_wind_kt = .data$peak_wind_kt,
+      observed_site_year_annual_max_kt = .data$observed_site_year_annual_max_kt,
+      site_wind_minus_year_anchor_kt = .data$site_wind_minus_year_anchor_kt,
+      closest_approach_km = .data$closest_approach_km,
+      peak_rmw_used_km = .data$peak_rmw_used_km,
+      peak_rmw_provenance = .data$peak_rmw_provenance,
+      normalized_radius = .data$normalized_radius,
+      normalized_radius_bin = .data$normalized_radius_bin,
+      peak_r34_source = .data$peak_r34_source,
+      peak_vmax_kt = .data$peak_vmax_kt,
+      peak_gradient_factor = .data$peak_gradient_factor,
+      peak_surface_factor = .data$peak_surface_factor,
+      peak_steepening_factor = .data$peak_steepening_factor,
+      peak_precal_response_factor = .data$peak_precal_response_factor,
+      peak_pre_cal_site_wind_kt = .data$peak_pre_cal_site_wind_kt,
+      peak_post_cal_site_wind_kt = .data$peak_post_cal_site_wind_kt,
+      peak_r34_calibration_factor = .data$peak_r34_calibration_factor,
+      peak_r34_calibration_increment_kt = .data$peak_r34_calibration_increment_kt,
+      peak_forward_motion_increment_kt = .data$peak_forward_motion_increment_kt,
+      peak_calibration_stage = .data$peak_calibration_stage,
+      precal_radius_band = .data$precal_radius_band
+    )
+
+  summary_tbl <- observed_detail |>
+    dplyr::filter(is.finite(.data$normalized_radius)) |>
+    dplyr::group_by(.data$location, .data$normalized_radius_bin) |>
+    dplyr::summarise(
+      n_retained_events = dplyr::n(),
+      n_annual_max_events = sum(.data$is_annual_max_event, na.rm = TRUE),
+      n_top_tail_events = sum(.data$is_top_tail_event, na.rm = TRUE),
+      mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+      median_simulated_site_wind_kt = stats::median(.data$simulated_site_wind_kt, na.rm = TRUE),
+      q90_simulated_site_wind_kt = .hindcast_quantiles_or_na(.data$simulated_site_wind_kt, probs = 0.9)[[1]],
+      mean_site_wind_minus_year_anchor_kt = mean(.data$site_wind_minus_year_anchor_kt, na.rm = TRUE),
+      median_site_wind_minus_year_anchor_kt = stats::median(.data$site_wind_minus_year_anchor_kt, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    tidyr::complete(
+      location = location,
+      normalized_radius_bin = radius_levels,
+      fill = list(
+        n_retained_events = 0L,
+        n_annual_max_events = 0L,
+        n_top_tail_events = 0L,
+        mean_simulated_site_wind_kt = NA_real_,
+        median_simulated_site_wind_kt = NA_real_,
+        q90_simulated_site_wind_kt = NA_real_,
+        mean_site_wind_minus_year_anchor_kt = NA_real_,
+        median_site_wind_minus_year_anchor_kt = NA_real_
+      )
+    ) |>
+    dplyr::mutate(
+      top_tail_share = if (sum(.data$n_top_tail_events, na.rm = TRUE) > 0) {
+        .data$n_top_tail_events / sum(.data$n_top_tail_events, na.rm = TRUE)
+      } else {
+        0
+      }
+    )
+
+  comparison_tbl <- if (nrow(summary_tbl) == 0) {
+    tibble::tibble()
+  } else {
+    tibble::tibble(
+      location = location,
+      dominant_top_tail_radius_bin = .dominant_r34_source(summary_tbl$normalized_radius_bin, summary_tbl$n_top_tail_events),
+      dominant_top_tail_radius_bin_share = if (sum(summary_tbl$n_top_tail_events) > 0) {
+        max(summary_tbl$n_top_tail_events) / sum(summary_tbl$n_top_tail_events)
+      } else {
+        0
+      },
+      mean_top_tail_normalized_radius = if (any(observed_detail$is_top_tail_event, na.rm = TRUE)) {
+        mean(observed_detail$normalized_radius[observed_detail$is_top_tail_event], na.rm = TRUE)
+      } else {
+        NA_real_
+      },
+      dominant_top_tail_rmw_provenance = if (any(observed_detail$is_top_tail_event, na.rm = TRUE)) {
+        .dominant_category(
+          observed_detail$peak_rmw_provenance[observed_detail$is_top_tail_event],
+          rep(1, sum(observed_detail$is_top_tail_event, na.rm = TRUE))
+        )
+      } else {
+        "none"
+      },
+      dominant_top_tail_calibration_stage = if (any(observed_detail$is_top_tail_event, na.rm = TRUE)) {
+        .dominant_category(
+          observed_detail$peak_calibration_stage[observed_detail$is_top_tail_event],
+          rep(1, sum(observed_detail$is_top_tail_event, na.rm = TRUE))
+        )
+      } else {
+        "none"
+      },
+      mean_top_tail_calibration_factor = if (any(observed_detail$is_top_tail_event, na.rm = TRUE)) {
+        mean(observed_detail$peak_r34_calibration_factor[observed_detail$is_top_tail_event], na.rm = TRUE)
+      } else {
+        NA_real_
+      },
+      mean_top_tail_calibration_increment_kt = if (any(observed_detail$is_top_tail_event, na.rm = TRUE)) {
+        mean(observed_detail$peak_r34_calibration_increment_kt[observed_detail$is_top_tail_event], na.rm = TRUE)
+      } else {
+        NA_real_
+      },
+      q90_top_tail_normalized_radius = if (any(observed_detail$is_top_tail_event, na.rm = TRUE)) {
+        .hindcast_quantiles_or_na(observed_detail$normalized_radius[observed_detail$is_top_tail_event], probs = 0.9)[[1]]
+      } else {
+        NA_real_
+      }
+    )
+  }
+
+  cluster_summary <- dplyr::bind_rows(
+    observed_detail |>
+      dplyr::group_by(.data$location, cluster_value = .data$normalized_radius_bin) |>
+      dplyr::summarise(
+        cluster_type = "normalized_radius_bin",
+        n_events = dplyr::n(),
+        mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+        mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+        mean_peak_r34_calibration_factor = mean(.data$peak_r34_calibration_factor, na.rm = TRUE),
+        mean_peak_r34_calibration_increment_kt = mean(.data$peak_r34_calibration_increment_kt, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    observed_detail |>
+      dplyr::group_by(.data$location, cluster_value = .data$storm_class) |>
+      dplyr::summarise(
+        cluster_type = "storm_class",
+        n_events = dplyr::n(),
+        mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+        mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+        mean_peak_r34_calibration_factor = mean(.data$peak_r34_calibration_factor, na.rm = TRUE),
+        mean_peak_r34_calibration_increment_kt = mean(.data$peak_r34_calibration_increment_kt, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    observed_detail |>
+      dplyr::group_by(.data$location, cluster_value = .data$peak_rmw_provenance) |>
+      dplyr::summarise(
+        cluster_type = "rmw_provenance",
+        n_events = dplyr::n(),
+        mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+        mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+        mean_peak_r34_calibration_factor = mean(.data$peak_r34_calibration_factor, na.rm = TRUE),
+        mean_peak_r34_calibration_increment_kt = mean(.data$peak_r34_calibration_increment_kt, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    observed_detail |>
+      dplyr::group_by(.data$location, cluster_value = .data$peak_r34_source) |>
+      dplyr::summarise(
+        cluster_type = "r34_source",
+        n_events = dplyr::n(),
+        mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+        mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+        mean_peak_r34_calibration_factor = mean(.data$peak_r34_calibration_factor, na.rm = TRUE),
+        mean_peak_r34_calibration_increment_kt = mean(.data$peak_r34_calibration_increment_kt, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    observed_detail |>
+      dplyr::group_by(.data$location, cluster_value = .data$precal_radius_band) |>
+      dplyr::summarise(
+        cluster_type = "precal_radius_band",
+        n_events = dplyr::n(),
+        mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+        mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+        mean_peak_r34_calibration_factor = mean(.data$peak_r34_calibration_factor, na.rm = TRUE),
+        mean_peak_r34_calibration_increment_kt = mean(.data$peak_r34_calibration_increment_kt, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    observed_detail |>
+      dplyr::group_by(.data$location, cluster_value = paste0(.data$precal_radius_band, "|", .data$storm_class)) |>
+      dplyr::summarise(
+        cluster_type = "precal_radius_band_storm_class",
+        n_events = dplyr::n(),
+        mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+        mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+        mean_peak_r34_calibration_factor = mean(.data$peak_r34_calibration_factor, na.rm = TRUE),
+        mean_peak_r34_calibration_increment_kt = mean(.data$peak_r34_calibration_increment_kt, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    observed_detail |>
+      dplyr::group_by(.data$location, cluster_value = paste0(.data$precal_radius_band, "|", .data$peak_rmw_provenance)) |>
+      dplyr::summarise(
+        cluster_type = "precal_radius_band_rmw_provenance",
+        n_events = dplyr::n(),
+        mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+        mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+        mean_peak_r34_calibration_factor = mean(.data$peak_r34_calibration_factor, na.rm = TRUE),
+        mean_peak_r34_calibration_increment_kt = mean(.data$peak_r34_calibration_increment_kt, na.rm = TRUE),
+        .groups = "drop"
+      )
+  )
+
+  observed_rmw_detail <- observed_detail |>
+    dplyr::filter(.data$peak_rmw_provenance == "observed")
+  precal_band_levels <- .hindcast_precal_radius_band_levels()
+  if (nrow(observed_rmw_detail) == 0) {
+    precal_band_summary <- tibble::tibble(
+      location = location,
+      precal_radius_band = precal_band_levels,
+      n_retained_events = 0L,
+      n_annual_max_events = 0L,
+      n_top_tail_events = 0L,
+      mean_simulated_site_wind_kt = NA_real_,
+      mean_peak_pre_cal_site_wind_kt = NA_real_,
+      mean_peak_post_cal_site_wind_kt = NA_real_,
+      mean_peak_forward_motion_increment_kt = NA_real_,
+      mean_peak_precal_response_factor = NA_real_,
+      mean_site_wind_minus_year_anchor_kt = NA_real_,
+      top_tail_share = 0
+    )
+    precal_band_cluster_summary <- tibble::tibble(
+      location = location,
+      precal_radius_band = character(0),
+      cluster_value = character(0),
+      cluster_type = character(0),
+      n_events = integer(0),
+      mean_simulated_site_wind_kt = numeric(0),
+      mean_peak_pre_cal_site_wind_kt = numeric(0),
+      mean_peak_precal_response_factor = numeric(0)
+    )
+    precal_band_comparison <- tibble::tibble(
+      location = location,
+      dominant_top_tail_precal_radius_band = "none",
+      dominant_top_tail_precal_radius_band_share = 0,
+      mean_top_tail_pre_cal_site_wind_kt = NA_real_,
+      mean_top_tail_post_cal_site_wind_kt = NA_real_,
+      mean_top_tail_precal_response_factor = NA_real_,
+      dominant_top_tail_storm_class = "none"
+    )
+  } else {
+    precal_band_summary <- observed_rmw_detail |>
+      dplyr::group_by(.data$location, .data$precal_radius_band) |>
+      dplyr::summarise(
+        n_retained_events = dplyr::n(),
+        n_annual_max_events = sum(.data$is_annual_max_event, na.rm = TRUE),
+        n_top_tail_events = sum(.data$is_top_tail_event, na.rm = TRUE),
+        mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+        mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+        mean_peak_post_cal_site_wind_kt = mean(.data$peak_post_cal_site_wind_kt, na.rm = TRUE),
+        mean_peak_forward_motion_increment_kt = mean(.data$peak_forward_motion_increment_kt, na.rm = TRUE),
+        mean_peak_precal_response_factor = mean(.data$peak_precal_response_factor, na.rm = TRUE),
+        mean_site_wind_minus_year_anchor_kt = mean(.data$site_wind_minus_year_anchor_kt, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      tidyr::complete(
+        location = location,
+        precal_radius_band = precal_band_levels,
+        fill = list(
+          n_retained_events = 0L,
+          n_annual_max_events = 0L,
+          n_top_tail_events = 0L,
+          mean_simulated_site_wind_kt = NA_real_,
+          mean_peak_pre_cal_site_wind_kt = NA_real_,
+          mean_peak_post_cal_site_wind_kt = NA_real_,
+          mean_peak_forward_motion_increment_kt = NA_real_,
+          mean_peak_precal_response_factor = NA_real_,
+          mean_site_wind_minus_year_anchor_kt = NA_real_
+        )
+      ) |>
+      dplyr::mutate(
+        top_tail_share = if (sum(.data$n_top_tail_events, na.rm = TRUE) > 0) {
+          .data$n_top_tail_events / sum(.data$n_top_tail_events, na.rm = TRUE)
+        } else {
+          0
+        }
+      )
+    precal_band_cluster_summary <- dplyr::bind_rows(
+      observed_rmw_detail |>
+        dplyr::group_by(.data$location, .data$precal_radius_band, cluster_value = .data$storm_class) |>
+        dplyr::summarise(
+          cluster_type = "precal_band_storm_class",
+          n_events = dplyr::n(),
+          mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+          mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+          mean_peak_precal_response_factor = mean(.data$peak_precal_response_factor, na.rm = TRUE),
+          .groups = "drop"
+        ),
+      observed_rmw_detail |>
+        dplyr::group_by(.data$location, .data$precal_radius_band, cluster_value = .data$peak_rmw_provenance) |>
+        dplyr::summarise(
+          cluster_type = "precal_band_rmw_provenance",
+          n_events = dplyr::n(),
+          mean_simulated_site_wind_kt = mean(.data$simulated_site_wind_kt, na.rm = TRUE),
+          mean_peak_pre_cal_site_wind_kt = mean(.data$peak_pre_cal_site_wind_kt, na.rm = TRUE),
+          mean_peak_precal_response_factor = mean(.data$peak_precal_response_factor, na.rm = TRUE),
+          .groups = "drop"
+        )
+    )
+    precal_band_comparison <- tibble::tibble(
+      location = location,
+      dominant_top_tail_precal_radius_band = .dominant_r34_source(precal_band_summary$precal_radius_band, precal_band_summary$n_top_tail_events),
+      dominant_top_tail_precal_radius_band_share = if (sum(precal_band_summary$n_top_tail_events) > 0) {
+        max(precal_band_summary$n_top_tail_events) / sum(precal_band_summary$n_top_tail_events)
+      } else {
+        0
+      },
+      mean_top_tail_pre_cal_site_wind_kt = if (any(observed_rmw_detail$is_top_tail_event, na.rm = TRUE)) {
+        mean(observed_rmw_detail$peak_pre_cal_site_wind_kt[observed_rmw_detail$is_top_tail_event], na.rm = TRUE)
+      } else {
+        NA_real_
+      },
+      mean_top_tail_post_cal_site_wind_kt = if (any(observed_rmw_detail$is_top_tail_event, na.rm = TRUE)) {
+        mean(observed_rmw_detail$peak_post_cal_site_wind_kt[observed_rmw_detail$is_top_tail_event], na.rm = TRUE)
+      } else {
+        NA_real_
+      },
+      mean_top_tail_precal_response_factor = if (any(observed_rmw_detail$is_top_tail_event, na.rm = TRUE)) {
+        mean(observed_rmw_detail$peak_precal_response_factor[observed_rmw_detail$is_top_tail_event], na.rm = TRUE)
+      } else {
+        NA_real_
+      },
+      dominant_top_tail_storm_class = if (any(observed_rmw_detail$is_top_tail_event, na.rm = TRUE)) {
+        .dominant_category(
+          observed_rmw_detail$storm_class[observed_rmw_detail$is_top_tail_event],
+          rep(1, sum(observed_rmw_detail$is_top_tail_event, na.rm = TRUE))
+        )
+      } else {
+        "none"
+      }
+    )
+  }
+
+  list(
+    detail = observed_detail,
+    summary = summary_tbl,
+    comparison = comparison_tbl,
+    cluster_summary = cluster_summary,
+    precal_band_summary = precal_band_summary,
+    precal_band_comparison = precal_band_comparison,
+    precal_band_cluster_summary = precal_band_cluster_summary
+  )
+}
+
+.summarize_hindcast_tail_pathways <- function(event_tbl,
+                                             yearly_tbl,
+                                             thresholds_kt = c(64, 96),
+                                             top_n = 5L,
+                                             location) {
+  r34_levels <- .hindcast_r34_source_levels()
+  thresholds_kt <- sort(unique(as.integer(thresholds_kt)))
+  top_n <- max(1L, as.integer(top_n))
+
+  overall_share_tbl <- event_tbl |>
+    dplyr::filter(.data$retained_tsplus) |>
+    dplyr::count(.data$location, .data$peak_r34_source, name = "n_overall_retained_events") |>
+    tidyr::complete(
+      location = location,
+      peak_r34_source = r34_levels,
+      fill = list(n_overall_retained_events = 0L)
+    ) |>
+    dplyr::group_by(.data$location) |>
+    dplyr::mutate(
+      overall_retained_event_share = if (sum(.data$n_overall_retained_events) > 0) {
+        .data$n_overall_retained_events / sum(.data$n_overall_retained_events)
+      } else {
+        0
+      }
+    ) |>
+    dplyr::ungroup()
+
+  test_am <- yearly_tbl |>
+    dplyr::filter(.data$period == "test", .data$annual_max_kt >= 34, nzchar(.data$annual_max_storm_id)) |>
+    dplyr::arrange(dplyr::desc(.data$annual_max_kt), .data$year, .data$annual_max_storm_id) |>
+    dplyr::mutate(top_tail_flag = dplyr::row_number() <= top_n)
+
+  tail_summary <- test_am |>
+    dplyr::group_by(.data$location, peak_r34_source = .data$annual_max_r34_source) |>
+    dplyr::summarise(
+      n_test_annual_max_events = dplyr::n(),
+      n_top_tail_events = sum(.data$top_tail_flag, na.rm = TRUE),
+      mean_simulated_site_wind_kt = mean(.data$annual_max_kt, na.rm = TRUE),
+      median_simulated_site_wind_kt = stats::median(.data$annual_max_kt, na.rm = TRUE),
+      q95_simulated_site_wind_kt = .hindcast_quantiles_or_na(.data$annual_max_kt, probs = 0.95)[[1]],
+      q99_simulated_site_wind_kt = .hindcast_quantiles_or_na(.data$annual_max_kt, probs = 0.99)[[1]],
+      .groups = "drop"
+    ) |>
+    tidyr::complete(
+      location = location,
+      peak_r34_source = r34_levels,
+      fill = list(
+        n_test_annual_max_events = 0L,
+        n_top_tail_events = 0L,
+        mean_simulated_site_wind_kt = NA_real_,
+        median_simulated_site_wind_kt = NA_real_,
+        q95_simulated_site_wind_kt = NA_real_,
+        q99_simulated_site_wind_kt = NA_real_
+      )
+    ) |>
+    dplyr::mutate(
+      top_n_annual_max_share = if (top_n > 0) .data$n_top_tail_events / top_n else 0
+    ) |>
+    dplyr::left_join(overall_share_tbl, by = c("location", "peak_r34_source"))
+
+  exceedance_template <- tidyr::expand_grid(
+    location = location,
+    peak_r34_source = r34_levels,
+    threshold_kt = thresholds_kt
+  )
+  exceedance_counts <- dplyr::bind_rows(lapply(thresholds_kt, function(threshold_kt) {
+    test_am |>
+      dplyr::filter(.data$annual_max_kt >= threshold_kt) |>
+      dplyr::count(.data$location, peak_r34_source = .data$annual_max_r34_source, name = "n_threshold_exceedances") |>
+      dplyr::mutate(threshold_kt = threshold_kt)
+  }))
+  exceedance_share_tbl <- exceedance_template |>
+    dplyr::left_join(
+      exceedance_counts,
+      by = c("location", "peak_r34_source", "threshold_kt")
+    ) |>
+    dplyr::mutate(
+      n_threshold_exceedances = dplyr::coalesce(.data$n_threshold_exceedances, 0L)
+    ) |>
+    dplyr::group_by(.data$location, .data$threshold_kt) |>
+    dplyr::mutate(
+      threshold_exceedance_share = if (sum(.data$n_threshold_exceedances) > 0) {
+        .data$n_threshold_exceedances / sum(.data$n_threshold_exceedances)
+      } else {
+        0
+      }
+    ) |>
+    dplyr::ungroup()
+
+  threshold_wide <- exceedance_share_tbl |>
+    tidyr::pivot_wider(
+      names_from = "threshold_kt",
+      values_from = c("n_threshold_exceedances", "threshold_exceedance_share"),
+      names_glue = "{.value}_{threshold_kt}kt"
+    )
+  for (threshold_kt in thresholds_kt) {
+    count_col <- paste0("n_threshold_exceedances_", threshold_kt, "kt")
+    share_col <- paste0("threshold_exceedance_share_", threshold_kt, "kt")
+    if (!(count_col %in% names(threshold_wide))) {
+      threshold_wide[[count_col]] <- 0L
+    }
+    if (!(share_col %in% names(threshold_wide))) {
+      threshold_wide[[share_col]] <- 0
+    }
+  }
+
+  summary_tbl <- tail_summary |>
+    dplyr::left_join(threshold_wide, by = c("location", "peak_r34_source")) |>
+    dplyr::arrange(.data$location, match(.data$peak_r34_source, r34_levels))
+
+  comparison_tbl <- if (nrow(summary_tbl) == 0) {
+    tibble::tibble()
+  } else {
+    tibble::tibble(
+      location = summary_tbl$location[1],
+      dominant_test_top_pathway = .dominant_r34_source(summary_tbl$peak_r34_source, summary_tbl$n_top_tail_events),
+      dominant_test_top_pathway_share = if (sum(summary_tbl$n_top_tail_events) > 0) {
+        max(summary_tbl$n_top_tail_events) / sum(summary_tbl$n_top_tail_events)
+      } else {
+        0
+      },
+      dominant_test_threshold64_pathway = .dominant_r34_source(
+        summary_tbl$peak_r34_source,
+        if ("n_threshold_exceedances_64kt" %in% names(summary_tbl)) summary_tbl$n_threshold_exceedances_64kt else rep(0, nrow(summary_tbl))
+      ),
+      dominant_test_threshold96_pathway = .dominant_r34_source(
+        summary_tbl$peak_r34_source,
+        if ("n_threshold_exceedances_96kt" %in% names(summary_tbl)) summary_tbl$n_threshold_exceedances_96kt else rep(0, nrow(summary_tbl))
+      ),
+      observed_top_tail_share = .pathway_metric_or_zero(summary_tbl, "observed", "top_n_annual_max_share"),
+      partial_top_tail_share = .pathway_metric_or_zero(summary_tbl, "partial", "top_n_annual_max_share"),
+      climo_top_tail_share = .pathway_metric_or_zero(summary_tbl, "climo", "top_n_annual_max_share")
+    )
+  }
+
+  list(
+    summary = summary_tbl,
+    comparison = comparison_tbl
+  )
+}
+
 .annotate_hindcast_case_table <- function(tbl,
                                           case_id,
                                           wind_field_mode,
@@ -899,9 +1851,29 @@ bootstrap_return_level_ci <- function(annual_max,
     year = integer(0),
     storm_class = character(0),
     peak_wind_kt = numeric(0),
+    peak_iso_time = as.POSIXct(character(0), tz = "UTC"),
+    peak_dist_km = numeric(0),
+    closest_approach_km = numeric(0),
+    peak_bearing_to_target = numeric(0),
+    peak_quadrant = character(0),
     peak_r34_source = character(0),
+    peak_r34_quadrants = integer(0),
+    peak_r34_completeness = character(0),
     peak_r34_eff_km = numeric(0),
     peak_rmw_used_km = numeric(0),
+    peak_rmw_provenance = character(0),
+    peak_normalized_radius = numeric(0),
+    peak_vmax_kt = numeric(0),
+    peak_gradient_factor = numeric(0),
+    peak_surface_factor = numeric(0),
+    peak_steepening_factor = numeric(0),
+    peak_precal_response_factor = numeric(0),
+    peak_pre_cal_site_wind_kt = numeric(0),
+    peak_post_cal_site_wind_kt = numeric(0),
+    peak_r34_calibration_factor = numeric(0),
+    peak_r34_calibration_increment_kt = numeric(0),
+    peak_forward_motion_increment_kt = numeric(0),
+    peak_calibration_stage = character(0),
     retained_tsplus = logical(0),
     retained_hur = logical(0),
     near_ts_threshold = logical(0)
@@ -920,9 +1892,29 @@ bootstrap_return_level_ci <- function(annual_max,
           year = as.integer(.data$year),
           storm_class = as.character(.data$storm_class),
           peak_wind_kt = as.numeric(.data$peak_wind_kt),
+          peak_iso_time = as.POSIXct(NA, origin = "1970-01-01", tz = "UTC"),
+          peak_dist_km = NA_real_,
+          closest_approach_km = NA_real_,
+          peak_bearing_to_target = NA_real_,
+          peak_quadrant = NA_character_,
           peak_r34_source = "none",
+          peak_r34_quadrants = 0L,
+          peak_r34_completeness = "none_0of4",
           peak_r34_eff_km = NA_real_,
           peak_rmw_used_km = NA_real_,
+          peak_rmw_provenance = "unknown",
+          peak_normalized_radius = NA_real_,
+          peak_vmax_kt = NA_real_,
+          peak_gradient_factor = NA_real_,
+          peak_surface_factor = NA_real_,
+          peak_steepening_factor = NA_real_,
+          peak_precal_response_factor = NA_real_,
+          peak_pre_cal_site_wind_kt = NA_real_,
+          peak_post_cal_site_wind_kt = NA_real_,
+          peak_r34_calibration_factor = NA_real_,
+          peak_r34_calibration_increment_kt = NA_real_,
+          peak_forward_motion_increment_kt = NA_real_,
+          peak_calibration_stage = NA_character_,
           retained_tsplus = is.finite(.data$peak_wind_kt) & (.data$peak_wind_kt >= ts_threshold_kt),
           retained_hur = is.finite(.data$peak_wind_kt) & (.data$peak_wind_kt >= hurricane_threshold_kt),
           near_ts_threshold = is.finite(.data$peak_wind_kt) &
@@ -936,6 +1928,9 @@ bootstrap_return_level_ci <- function(annual_max,
     return(out_template)
   }
   if (!("iso_time" %in% names(tp))) tp$iso_time <- as.POSIXct(NA, origin = "1970-01-01", tz = "UTC")
+  if (!("dist_km" %in% names(tp))) tp$dist_km <- NA_real_
+  if (!("bearing_to_target" %in% names(tp))) tp$bearing_to_target <- NA_real_
+  if (!("quadrant" %in% names(tp))) tp$quadrant <- NA_character_
   if (!("R34_source" %in% names(tp))) tp$R34_source <- NA_character_
   if (!("R34_eff_km" %in% names(tp))) tp$R34_eff_km <- NA_real_
   if (!("RMW_used_km" %in% names(tp))) tp$RMW_used_km <- NA_real_
@@ -946,15 +1941,45 @@ bootstrap_return_level_ci <- function(annual_max,
   peak_tbl <- dplyr::bind_rows(lapply(split(tp, tp$SID), function(storm_tp) {
     ord <- order(-storm_tp$site_wind_kt, storm_tp$iso_time, na.last = TRUE)
     peak_row <- storm_tp[ord[1], , drop = FALSE]
+    r34_info <- .summarize_peak_r34_completeness(storm_tp = storm_tp, peak_row = peak_row)
+    solver_info <- .compute_peak_solver_forensics(peak_row)
+    closest_approach_km <- suppressWarnings(min(storm_tp$dist_km, na.rm = TRUE))
+    if (!is.finite(closest_approach_km)) closest_approach_km <- NA_real_
     tibble::tibble(
       storm_id = as.character(peak_row$SID[1]),
+      peak_iso_time = as.POSIXct(peak_row$iso_time[1], origin = "1970-01-01", tz = "UTC"),
+      peak_dist_km = as.numeric(peak_row$dist_km[1]),
+      closest_approach_km = as.numeric(closest_approach_km),
+      peak_bearing_to_target = as.numeric(peak_row$bearing_to_target[1]),
+      peak_quadrant = as.character(peak_row$quadrant[1]),
       peak_r34_source = if (is.finite(match(as.character(peak_row$R34_source[1]), c("observed", "partial", "climo", "none")))) {
         as.character(peak_row$R34_source[1])
       } else {
         "none"
       },
+      peak_r34_quadrants = r34_info$n_quadrants,
+      peak_r34_completeness = r34_info$completeness,
       peak_r34_eff_km = as.numeric(peak_row$R34_eff_km[1]),
-      peak_rmw_used_km = as.numeric(peak_row$RMW_used_km[1])
+      peak_rmw_used_km = as.numeric(peak_row$RMW_used_km[1]),
+      peak_rmw_provenance = .infer_peak_rmw_provenance(peak_row),
+      peak_normalized_radius = if (is.finite(closest_approach_km) &&
+        is.finite(as.numeric(peak_row$RMW_used_km[1])) &&
+        as.numeric(peak_row$RMW_used_km[1]) > 0) {
+        closest_approach_km / as.numeric(peak_row$RMW_used_km[1])
+      } else {
+        NA_real_
+      },
+      peak_vmax_kt = solver_info$peak_vmax_kt,
+      peak_gradient_factor = solver_info$peak_gradient_factor,
+      peak_surface_factor = solver_info$peak_surface_factor,
+      peak_steepening_factor = solver_info$peak_steepening_factor,
+      peak_precal_response_factor = solver_info$peak_precal_response_factor,
+      peak_pre_cal_site_wind_kt = solver_info$peak_pre_cal_site_wind_kt,
+      peak_post_cal_site_wind_kt = solver_info$peak_post_cal_site_wind_kt,
+      peak_r34_calibration_factor = solver_info$peak_r34_calibration_factor,
+      peak_r34_calibration_increment_kt = solver_info$peak_r34_calibration_increment_kt,
+      peak_forward_motion_increment_kt = solver_info$peak_forward_motion_increment_kt,
+      peak_calibration_stage = solver_info$peak_calibration_stage
     )
   }))
 
@@ -977,9 +2002,29 @@ bootstrap_return_level_ci <- function(annual_max,
       year = as.integer(.data$year),
       storm_class = as.character(.data$storm_class),
       peak_wind_kt = as.numeric(.data$peak_wind_kt),
+      peak_iso_time = .data$peak_iso_time,
+      peak_dist_km = as.numeric(.data$peak_dist_km),
+      closest_approach_km = as.numeric(.data$closest_approach_km),
+      peak_bearing_to_target = as.numeric(.data$peak_bearing_to_target),
+      peak_quadrant = as.character(.data$peak_quadrant),
       peak_r34_source = .data$peak_r34_source,
+      peak_r34_quadrants = as.integer(.data$peak_r34_quadrants),
+      peak_r34_completeness = as.character(.data$peak_r34_completeness),
       peak_r34_eff_km = as.numeric(.data$peak_r34_eff_km),
       peak_rmw_used_km = as.numeric(.data$peak_rmw_used_km),
+      peak_rmw_provenance = as.character(.data$peak_rmw_provenance),
+      peak_normalized_radius = as.numeric(.data$peak_normalized_radius),
+      peak_vmax_kt = as.numeric(.data$peak_vmax_kt),
+      peak_gradient_factor = as.numeric(.data$peak_gradient_factor),
+      peak_surface_factor = as.numeric(.data$peak_surface_factor),
+      peak_steepening_factor = as.numeric(.data$peak_steepening_factor),
+      peak_precal_response_factor = as.numeric(.data$peak_precal_response_factor),
+      peak_pre_cal_site_wind_kt = as.numeric(.data$peak_pre_cal_site_wind_kt),
+      peak_post_cal_site_wind_kt = as.numeric(.data$peak_post_cal_site_wind_kt),
+      peak_r34_calibration_factor = as.numeric(.data$peak_r34_calibration_factor),
+      peak_r34_calibration_increment_kt = as.numeric(.data$peak_r34_calibration_increment_kt),
+      peak_forward_motion_increment_kt = as.numeric(.data$peak_forward_motion_increment_kt),
+      peak_calibration_stage = as.character(.data$peak_calibration_stage),
       retained_tsplus = .data$retained_tsplus,
       retained_hur = .data$retained_hur,
       near_ts_threshold = .data$near_ts_threshold
@@ -991,10 +2036,14 @@ bootstrap_return_level_ci <- function(annual_max,
                                           train_years,
                                           test_years,
                                           location,
+                                          sim_annual_max = NULL,
+                                          obs_annual_max = NULL,
                                           metadata = NULL,
                                           ts_threshold_kt = 34,
                                           hurricane_threshold_kt = 64,
-                                          near_ts_band_kt = 5) {
+                                          near_ts_band_kt = 5,
+                                          top_n = 5L) {
+  r34_levels <- .hindcast_r34_source_levels()
   event_tbl <- .hindcast_event_peak_provenance(
     events_island = events_island,
     trackpoints_island = trackpoints_island,
@@ -1048,10 +2097,34 @@ bootstrap_return_level_ci <- function(annual_max,
       near_ts_threshold = dplyr::if_else(is.na(.data$near_ts_threshold), FALSE, .data$near_ts_threshold)
     )
 
+  top_n <- max(1L, as.integer(top_n))
+  top_annual_max_tbl <- yearly_tbl |>
+    dplyr::filter(.data$annual_max_kt >= ts_threshold_kt) |>
+    dplyr::arrange(dplyr::desc(.data$annual_max_kt), .data$year, .data$annual_max_storm_id) |>
+    dplyr::mutate(annual_max_rank = dplyr::row_number()) |>
+    dplyr::slice_head(n = top_n)
+
+  obs_anchor_tbl <- if (is.null(obs_annual_max)) {
+    tibble::tibble(
+      location = location,
+      year = integer(0),
+      observed_site_year_annual_max_kt = numeric(0)
+    )
+  } else {
+    tibble::as_tibble(obs_annual_max) |>
+      dplyr::transmute(
+        location = location,
+        year = as.integer(.data$year),
+        observed_site_year_annual_max_kt = as.numeric(.data$V_max_kt)
+      )
+  }
+
+  top_annual_max_ids <- top_annual_max_tbl$annual_max_storm_id[nzchar(top_annual_max_tbl$annual_max_storm_id)]
   annual_max_ids <- yearly_tbl$annual_max_storm_id[nzchar(yearly_tbl$annual_max_storm_id)]
   event_tbl <- event_tbl |>
     dplyr::mutate(
-      is_annual_max_event = .data$storm_id %in% annual_max_ids
+      is_annual_max_event = .data$storm_id %in% annual_max_ids,
+      is_top_annual_max_event = .data$storm_id %in% top_annual_max_ids
     )
 
   retention_summary <- yearly_tbl |>
@@ -1069,37 +2142,244 @@ bootstrap_return_level_ci <- function(annual_max,
     ) |>
     .append_hindcast_metadata(metadata = metadata)
 
+  period_totals <- yearly_tbl |>
+    dplyr::group_by(.data$location, .data$period) |>
+    dplyr::summarise(
+      n_annual_max_sample_years = sum(.data$annual_max_kt >= ts_threshold_kt, na.rm = TRUE),
+      n_top_annual_max_sample_years = sum(.data$annual_max_storm_id %in% top_annual_max_ids, na.rm = TRUE),
+      .groups = "drop"
+    )
+
   r34_summary <- event_tbl |>
     dplyr::group_by(.data$location, .data$period, .data$peak_r34_source) |>
     dplyr::summarise(
       n_events = dplyr::n(),
+      n_retained_events = sum(.data$retained_tsplus, na.rm = TRUE),
+      n_affected_years = dplyr::n_distinct(.data$year[.data$retained_tsplus]),
       n_tsplus_events = sum(.data$retained_tsplus, na.rm = TRUE),
       n_hur_events = sum(.data$retained_hur, na.rm = TRUE),
       n_near_ts_events = sum(.data$near_ts_threshold, na.rm = TRUE),
       n_annual_max_years = sum(.data$is_annual_max_event, na.rm = TRUE),
-      mean_peak_wind_kt = if (all(!is.finite(.data$peak_wind_kt))) NA_real_ else mean(.data$peak_wind_kt, na.rm = TRUE),
+      n_top_annual_max_years = sum(.data$is_top_annual_max_event, na.rm = TRUE),
+      mean_peak_wind_kt = if (all(!is.finite(.data$peak_wind_kt[.data$retained_tsplus]))) NA_real_ else mean(.data$peak_wind_kt[.data$retained_tsplus], na.rm = TRUE),
+      q90_peak_wind_kt = .hindcast_quantiles_or_na(.data$peak_wind_kt[.data$retained_tsplus], probs = 0.90)[[1]],
+      q95_peak_wind_kt = .hindcast_quantiles_or_na(.data$peak_wind_kt[.data$retained_tsplus], probs = 0.95)[[1]],
+      q99_peak_wind_kt = .hindcast_quantiles_or_na(.data$peak_wind_kt[.data$retained_tsplus], probs = 0.99)[[1]],
       .groups = "drop"
     ) |>
     tidyr::complete(
       location = location,
       period = c("train", "test"),
-      peak_r34_source = c("observed", "partial", "climo", "none"),
+      peak_r34_source = r34_levels,
       fill = list(
         n_events = 0L,
+        n_retained_events = 0L,
+        n_affected_years = 0L,
         n_tsplus_events = 0L,
         n_hur_events = 0L,
         n_near_ts_events = 0L,
         n_annual_max_years = 0L,
+        n_top_annual_max_years = 0L,
         mean_peak_wind_kt = NA_real_
       )
     ) |>
+    dplyr::left_join(period_totals, by = c("location", "period")) |>
+    dplyr::mutate(
+      annual_max_sample_share = dplyr::if_else(
+        .data$n_annual_max_sample_years > 0,
+        .data$n_annual_max_years / .data$n_annual_max_sample_years,
+        0
+      ),
+      top_annual_max_share = dplyr::if_else(
+        .data$n_top_annual_max_sample_years > 0,
+        .data$n_top_annual_max_years / .data$n_top_annual_max_sample_years,
+        0
+      )
+    ) |>
+    dplyr::arrange(.data$location, .data$period, match(.data$peak_r34_source, r34_levels)) |>
+    dplyr::relocate("n_annual_max_sample_years", "annual_max_sample_share", "n_top_annual_max_years", "n_top_annual_max_sample_years", "top_annual_max_share", .after = "n_annual_max_years") |>
     .append_hindcast_metadata(metadata = metadata)
+
+  exceedance_thresholds <- sort(unique(c(ts_threshold_kt, hurricane_threshold_kt, 96)))
+  exceedance_samples <- list(
+    event_peak = event_tbl |>
+      dplyr::filter(.data$retained_tsplus) |>
+      dplyr::transmute(
+        location = .data$location,
+        period = .data$period,
+        peak_r34_source = .data$peak_r34_source,
+        wind_kt = .data$peak_wind_kt
+      ),
+    annual_max = yearly_tbl |>
+      dplyr::filter(.data$annual_max_kt >= ts_threshold_kt) |>
+      dplyr::transmute(
+        location = .data$location,
+        period = .data$period,
+        peak_r34_source = .data$annual_max_r34_source,
+        wind_kt = .data$annual_max_kt
+      )
+  )
+
+  exceedance_tbl <- dplyr::bind_rows(lapply(names(exceedance_samples), function(sample_name) {
+    sample_tbl <- exceedance_samples[[sample_name]]
+    dplyr::bind_rows(lapply(exceedance_thresholds, function(threshold_kt) {
+      sample_tbl |>
+        dplyr::filter(is.finite(.data$wind_kt), .data$wind_kt >= threshold_kt) |>
+        dplyr::count(.data$location, .data$period, .data$peak_r34_source, name = "n_exceedances") |>
+        dplyr::mutate(
+          sample = sample_name,
+          threshold_kt = threshold_kt
+        )
+    }))
+  })) |>
+    tidyr::complete(
+      location = location,
+      period = c("train", "test"),
+      sample = c("event_peak", "annual_max"),
+      threshold_kt = exceedance_thresholds,
+      peak_r34_source = r34_levels,
+      fill = list(n_exceedances = 0L)
+    ) |>
+    dplyr::group_by(.data$location, .data$period, .data$sample, .data$threshold_kt) |>
+    dplyr::mutate(
+      n_total_exceedances = sum(.data$n_exceedances, na.rm = TRUE),
+      exceedance_share = dplyr::if_else(
+        .data$n_total_exceedances > 0,
+        .data$n_exceedances / .data$n_total_exceedances,
+        0
+      )
+    ) |>
+    dplyr::ungroup() |>
+    dplyr::arrange(.data$location, .data$period, .data$sample, .data$threshold_kt, match(.data$peak_r34_source, r34_levels)) |>
+    .append_hindcast_metadata(metadata = metadata)
+
+  top_annual_max_tbl <- top_annual_max_tbl |>
+    dplyr::transmute(
+      location = .data$location,
+      year = .data$year,
+      period = .data$period,
+      annual_max_rank = .data$annual_max_rank,
+      annual_max_kt = .data$annual_max_kt,
+      annual_class = .data$annual_class,
+      annual_max_storm_id = .data$annual_max_storm_id,
+      annual_max_r34_source = .data$annual_max_r34_source
+    ) |>
+    .append_hindcast_metadata(metadata = metadata)
+
+  tail_event_detail <- .extract_hindcast_top_tail_events(
+    event_tbl = event_tbl,
+    yearly_tbl = yearly_tbl,
+    sim_annual_max = sim_annual_max,
+    obs_anchor_tbl = obs_anchor_tbl,
+    location = location,
+    top_n = top_n,
+    ts_threshold_kt = ts_threshold_kt
+  ) |>
+    .append_hindcast_metadata(metadata = metadata)
+
+  tail_pathways <- .summarize_hindcast_tail_pathways(
+    event_tbl = event_tbl,
+    yearly_tbl = yearly_tbl,
+    thresholds_kt = c(hurricane_threshold_kt, 96),
+    top_n = top_n,
+    location = location
+  )
+
+  observed_radius_diag <- .summarize_observed_r34_radius_bias(
+    event_tbl = event_tbl,
+    yearly_tbl = yearly_tbl,
+    obs_anchor_tbl = obs_anchor_tbl,
+    location = location,
+    top_n = top_n,
+    ts_threshold_kt = ts_threshold_kt
+  )
+
+  positive_obs_annual_max <- yearly_tbl$annual_max_kt[yearly_tbl$annual_max_kt > 0]
+  observed_source_counts <- yearly_tbl |>
+    dplyr::filter(.data$annual_max_kt >= ts_threshold_kt) |>
+    dplyr::count(.data$annual_max_r34_source, name = "n_years") |>
+    tidyr::complete(
+      annual_max_r34_source = r34_levels,
+      fill = list(n_years = 0L)
+    )
+  top_source_counts <- top_annual_max_tbl |>
+    dplyr::group_by(.data$annual_max_r34_source) |>
+    dplyr::summarise(
+      n_years = dplyr::n(),
+      top_wind_sum_kt = sum(.data$annual_max_kt, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    tidyr::complete(
+      annual_max_r34_source = r34_levels,
+      fill = list(n_years = 0L, top_wind_sum_kt = 0)
+    )
+  obs_q <- .hindcast_quantiles_or_na(positive_obs_annual_max)
+  sim_q <- .hindcast_quantiles_or_na(sim_annual_max)
+  obs_gev <- if (length(positive_obs_annual_max) >= 5) fit_gev_lmom(positive_obs_annual_max) else NULL
+  sim_gev <- if (!is.null(sim_annual_max) && sum(is.finite(sim_annual_max) & sim_annual_max > 0) >= 5) {
+    fit_gev_lmom(sim_annual_max[is.finite(sim_annual_max) & sim_annual_max > 0])
+  } else {
+    NULL
+  }
+  annual_max_comparison <- .append_hindcast_metadata(
+    tibble::tibble(
+      location = location,
+      obs_n_years = length(all_years),
+      sim_n_years = sum(is.finite(sim_annual_max)),
+      obs_mean_annual_max_kt = if (length(all_years) == 0) NA_real_ else mean(yearly_tbl$annual_max_kt, na.rm = TRUE),
+      sim_mean_annual_max_kt = if (is.null(sim_annual_max)) NA_real_ else mean(sim_annual_max, na.rm = TRUE),
+      obs_q90_annual_max_kt = obs_q[["q90"]],
+      obs_q95_annual_max_kt = obs_q[["q95"]],
+      obs_q99_annual_max_kt = obs_q[["q99"]],
+      sim_q90_annual_max_kt = sim_q[["q90"]],
+      sim_q95_annual_max_kt = sim_q[["q95"]],
+      sim_q99_annual_max_kt = sim_q[["q99"]],
+      obs_xi = obs_gev$xi %||% NA_real_,
+      sim_xi = sim_gev$xi %||% NA_real_,
+      dominant_observed_r34_source = .dominant_r34_source(
+        observed_source_counts$annual_max_r34_source,
+        observed_source_counts$n_years
+      ),
+      dominant_observed_r34_source_share = if (sum(observed_source_counts$n_years) > 0) {
+        max(observed_source_counts$n_years) / sum(observed_source_counts$n_years)
+      } else {
+        0
+      },
+      dominant_top_annual_max_r34_source = .dominant_r34_source(
+        top_source_counts$annual_max_r34_source,
+        top_source_counts$top_wind_sum_kt
+      ),
+      dominant_top_annual_max_r34_source_share = if (sum(top_source_counts$top_wind_sum_kt) > 0) {
+        max(top_source_counts$top_wind_sum_kt) / sum(top_source_counts$top_wind_sum_kt)
+      } else {
+        0
+      }
+    ),
+    metadata = metadata
+  )
+  tail_pathway_comparison <- .append_hindcast_metadata(
+    tail_pathways$comparison,
+    metadata = metadata
+  )
 
   list(
     event_provenance = .append_hindcast_metadata(event_tbl, metadata = metadata),
     yearly = .append_hindcast_metadata(yearly_tbl, metadata = metadata),
     summary = retention_summary,
-    r34_source = r34_summary
+    r34_source = r34_summary,
+    threshold_exceedance = exceedance_tbl,
+    top_annual_max = top_annual_max_tbl,
+    annual_max_comparison = annual_max_comparison,
+    tail_event_detail = tail_event_detail,
+    tail_pathway_summary = .append_hindcast_metadata(tail_pathways$summary, metadata = metadata),
+    tail_pathway_comparison = tail_pathway_comparison,
+    observed_r34_tail_detail = .append_hindcast_metadata(observed_radius_diag$detail, metadata = metadata),
+    observed_r34_radius_summary = .append_hindcast_metadata(observed_radius_diag$summary, metadata = metadata),
+    observed_r34_radius_comparison = .append_hindcast_metadata(observed_radius_diag$comparison, metadata = metadata),
+    observed_r34_cluster_summary = .append_hindcast_metadata(observed_radius_diag$cluster_summary, metadata = metadata),
+    observed_rmw_precal_band_summary = .append_hindcast_metadata(observed_radius_diag$precal_band_summary, metadata = metadata),
+    observed_rmw_precal_band_comparison = .append_hindcast_metadata(observed_radius_diag$precal_band_comparison, metadata = metadata),
+    observed_rmw_precal_band_cluster_summary = .append_hindcast_metadata(observed_radius_diag$precal_band_cluster_summary, metadata = metadata)
   )
 }
 
@@ -1110,7 +2390,20 @@ bootstrap_return_level_ci <- function(annual_max,
       r34_source_summary = tibble::tibble(),
       retention_summary = tibble::tibble(),
       retention_yearly = tibble::tibble(),
-      event_provenance = tibble::tibble()
+      event_provenance = tibble::tibble(),
+      threshold_exceedance = tibble::tibble(),
+      top_annual_max = tibble::tibble(),
+      annual_max_comparison = tibble::tibble(),
+      tail_event_detail = tibble::tibble(),
+      tail_pathway_summary = tibble::tibble(),
+      tail_pathway_comparison = tibble::tibble(),
+      observed_r34_tail_detail = tibble::tibble(),
+      observed_r34_radius_summary = tibble::tibble(),
+      observed_r34_radius_comparison = tibble::tibble(),
+      observed_r34_cluster_summary = tibble::tibble(),
+      observed_rmw_precal_band_summary = tibble::tibble(),
+      observed_rmw_precal_band_comparison = tibble::tibble(),
+      observed_rmw_precal_band_cluster_summary = tibble::tibble()
     ))
   }
 
@@ -1128,7 +2421,20 @@ bootstrap_return_level_ci <- function(annual_max,
     r34_source_summary = pull_diag("r34_source_summary"),
     retention_summary = pull_diag("retention_summary"),
     retention_yearly = pull_diag("retention_yearly"),
-    event_provenance = pull_diag("event_provenance")
+    event_provenance = pull_diag("event_provenance"),
+    threshold_exceedance = pull_diag("threshold_exceedance"),
+    top_annual_max = pull_diag("top_annual_max"),
+    annual_max_comparison = pull_diag("annual_max_comparison"),
+    tail_event_detail = pull_diag("tail_event_detail"),
+    tail_pathway_summary = pull_diag("tail_pathway_summary"),
+    tail_pathway_comparison = pull_diag("tail_pathway_comparison"),
+    observed_r34_tail_detail = pull_diag("observed_r34_tail_detail"),
+    observed_r34_radius_summary = pull_diag("observed_r34_radius_summary"),
+    observed_r34_radius_comparison = pull_diag("observed_r34_radius_comparison"),
+    observed_r34_cluster_summary = pull_diag("observed_r34_cluster_summary"),
+    observed_rmw_precal_band_summary = pull_diag("observed_rmw_precal_band_summary"),
+    observed_rmw_precal_band_comparison = pull_diag("observed_rmw_precal_band_comparison"),
+    observed_rmw_precal_band_cluster_summary = pull_diag("observed_rmw_precal_band_cluster_summary")
   )
 }
 
@@ -1526,6 +2832,8 @@ bootstrap_return_level_ci <- function(annual_max,
     train_years = train_years,
     test_years = test_years,
     location = location,
+    sim_annual_max = sim_annual_max,
+    obs_annual_max = obs_annual_max,
     metadata = metadata
   )
 
@@ -1556,7 +2864,20 @@ bootstrap_return_level_ci <- function(annual_max,
       r34_source_summary = retention_diag$r34_source,
       retention_summary = retention_diag$summary,
       retention_yearly = retention_diag$yearly,
-      event_provenance = retention_diag$event_provenance
+      event_provenance = retention_diag$event_provenance,
+      threshold_exceedance = retention_diag$threshold_exceedance,
+      top_annual_max = retention_diag$top_annual_max,
+      annual_max_comparison = retention_diag$annual_max_comparison,
+      tail_event_detail = retention_diag$tail_event_detail,
+      tail_pathway_summary = retention_diag$tail_pathway_summary,
+      tail_pathway_comparison = retention_diag$tail_pathway_comparison,
+      observed_r34_tail_detail = retention_diag$observed_r34_tail_detail,
+      observed_r34_radius_summary = retention_diag$observed_r34_radius_summary,
+      observed_r34_radius_comparison = retention_diag$observed_r34_radius_comparison,
+      observed_r34_cluster_summary = retention_diag$observed_r34_cluster_summary,
+      observed_rmw_precal_band_summary = retention_diag$observed_rmw_precal_band_summary,
+      observed_rmw_precal_band_comparison = retention_diag$observed_rmw_precal_band_comparison,
+      observed_rmw_precal_band_cluster_summary = retention_diag$observed_rmw_precal_band_cluster_summary
     )
   )
 }
@@ -2794,7 +4115,20 @@ validate_hazard_model <- function(cfg,
     r34_source_summary = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$r34_source_summary)),
     retention_summary = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$retention_summary)),
     retention_yearly = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$retention_yearly)),
-    event_provenance = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$event_provenance))
+    event_provenance = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$event_provenance)),
+    threshold_exceedance = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$threshold_exceedance)),
+    top_annual_max = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$top_annual_max)),
+    annual_max_comparison = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$annual_max_comparison)),
+    tail_event_detail = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$tail_event_detail)),
+    tail_pathway_summary = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$tail_pathway_summary)),
+    tail_pathway_comparison = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$tail_pathway_comparison)),
+    observed_r34_tail_detail = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$observed_r34_tail_detail)),
+    observed_r34_radius_summary = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$observed_r34_radius_summary)),
+    observed_r34_radius_comparison = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$observed_r34_radius_comparison)),
+    observed_r34_cluster_summary = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$observed_r34_cluster_summary)),
+    observed_rmw_precal_band_summary = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$observed_rmw_precal_band_summary)),
+    observed_rmw_precal_band_comparison = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$observed_rmw_precal_band_comparison)),
+    observed_rmw_precal_band_cluster_summary = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$observed_rmw_precal_band_cluster_summary))
   )
   baseline_diagnostics <- if (!is.null(case_results[[baseline_case_id]])) {
     case_results[[baseline_case_id]]$diagnostics
@@ -2804,7 +4138,20 @@ validate_hazard_model <- function(cfg,
       r34_source_summary = tibble::tibble(),
       retention_summary = tibble::tibble(),
       retention_yearly = tibble::tibble(),
-      event_provenance = tibble::tibble()
+      event_provenance = tibble::tibble(),
+      threshold_exceedance = tibble::tibble(),
+      top_annual_max = tibble::tibble(),
+      annual_max_comparison = tibble::tibble(),
+      tail_event_detail = tibble::tibble(),
+      tail_pathway_summary = tibble::tibble(),
+      tail_pathway_comparison = tibble::tibble(),
+      observed_r34_tail_detail = tibble::tibble(),
+      observed_r34_radius_summary = tibble::tibble(),
+      observed_r34_radius_comparison = tibble::tibble(),
+      observed_r34_cluster_summary = tibble::tibble(),
+      observed_rmw_precal_band_summary = tibble::tibble(),
+      observed_rmw_precal_band_comparison = tibble::tibble(),
+      observed_rmw_precal_band_cluster_summary = tibble::tibble()
     )
   }
   wind_retention_comparison <- if (!is.null(case_results[[baseline_case_id]]) &&

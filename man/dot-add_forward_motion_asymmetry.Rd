@@ -2,7 +2,7 @@
 % Please edit documentation in R/hazard_core.R
 \name{.add_forward_motion_asymmetry}
 \alias{.add_forward_motion_asymmetry}
-\title{Add forward-motion asymmetry to a symmetric site-wind estimate}
+\title{Add forward-motion asymmetry.}
 \usage{
 .add_forward_motion_asymmetry(
   V_site_base_kt,
@@ -14,23 +14,22 @@
 )
 }
 \arguments{
-\item{V_site_base_kt}{Numeric; symmetric site wind (kt).}
+\item{V_site_base_kt}{Numeric vector of symmetric site wind estimates in knots.}
 
-\item{storm_speed_kt}{Numeric; storm translation speed (kt).}
+\item{storm_speed_kt}{Numeric vector of storm translation speeds in knots.}
 
-\item{r_km}{Numeric; distance from storm center to site (km).}
+\item{r_km}{Numeric vector of distances from storm centre to site in kilometres.}
 
-\item{bearing_to_target}{Numeric; bearing from storm center to site (deg).}
+\item{bearing_to_target}{Numeric vector of bearings from storm centre to site in degrees.}
 
-\item{storm_heading}{Numeric; storm motion heading (deg).}
+\item{storm_heading}{Numeric vector of storm motion headings in degrees.}
 
-\item{RMW_km}{Numeric; radius of maximum wind (km), used to taper asymmetry with radius.}
+\item{RMW_km}{Numeric vector of radius of maximum wind values in kilometres.}
 }
 \value{
-Numeric scalar; adjusted site wind (kt).
+Numeric vector of asymmetry-adjusted site winds in knots.
 }
 \description{
-Applies a direction-dependent additive term proportional to storm translation
-speed and cos(angle) between storm heading and bearing-to-target.
+Applies a translation-speed asymmetry adjustment to a symmetric site wind estimate using the angle between storm heading and site bearing.
 }
 \keyword{internal}

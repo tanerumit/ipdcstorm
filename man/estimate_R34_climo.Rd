@@ -2,23 +2,27 @@
 % Please edit documentation in R/hazard_core.R
 \name{estimate_R34_climo}
 \alias{estimate_R34_climo}
-\title{Estimate climatological R34 (km) from maximum wind using Knaff et al. (2015)}
+\title{Estimate climatological R34.}
 \usage{
 estimate_R34_climo(Vmax_kt, lat = 18)
 }
 \arguments{
-\item{Vmax_kt}{Numeric vector; maximum sustained wind (kt).}
+\item{Vmax_kt}{Numeric vector of maximum sustained wind speeds in knots.}
 
-\item{lat}{Numeric vector; storm latitude (degrees N). Used for size correction.}
+\item{lat}{Numeric vector of storm latitudes in decimal degrees north.}
 }
 \value{
-Numeric vector of estimated R34 in km. NA where Vmax < 34 kt.
+Numeric vector of estimated 34-kt wind radii in kilometres, with \code{NA} where \code{Vmax_kt < 34} or inputs are non-finite.
 }
 \description{
-Provides an empirical estimate of the 34-kt wind radius for storms without
-observed radii data (primarily pre-2004). Based on the Knaff, Sampson & Chirokova
-(2015) statistical relationships for the North Atlantic.
-
-The relationship captures the well-known expansion of the wind field with
-intensity up to ~80 kt, then contraction for the most intense compact storms.
+Provides an empirical estimate of the 34-kt wind radius for storms without observed radii data using a North Atlantic climatological relationship.
+}
+\note{
+This is used as a fallback when directional 34-kt radii are unavailable.
+}
+\examples{
+estimate_R34_climo(Vmax_kt = c(30, 50, 100), lat = c(18, 18, 20))
+}
+\seealso{
+\code{\link{estimate_RMW_knaff}}, \code{\link{compute_site_winds_full}}
 }

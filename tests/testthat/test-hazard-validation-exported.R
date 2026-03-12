@@ -101,9 +101,23 @@ hindcast_retention_fixture <- function() {
         tz = "UTC"
       ),
       site_wind_kt = c(33, 36, 70, 45),
+      dist_km = c(80, 60, 40, 55),
+      bearing_to_target = c(15, 105, 195, 285),
+      quadrant = c("NE", "SE", "SW", "NW"),
+      lat = c(18, 18, 18, 18),
+      wind_kt = c(33, 45, 95, 70),
+      Vmax_kt = c(33, 45, 95, 70),
+      rmw_km = c(NA_real_, NA_real_, 28, NA_real_),
       R34_source = c("none", "partial", "climo", "observed"),
+      r34_ne_nm = c(NA, 60, NA, 80),
+      r34_se_nm = c(NA, 55, NA, 75),
+      r34_sw_nm = c(NA, NA, NA, 70),
+      r34_nw_nm = c(NA, NA, NA, 65),
       R34_eff_km = c(NA_real_, 120, 150, 180),
-      RMW_used_km = c(20, 25, 30, 35)
+      RMW_used_km = c(20, 25, 30, 35),
+      R64_mean_km = c(NA_real_, 80, 90, 100),
+      R50_mean_km = c(NA_real_, 110, 120, 130),
+      R34_mean_km = c(NA_real_, 150, 160, 170)
     ),
     metadata = list(
       model_seed = 11L,
@@ -116,6 +130,12 @@ hindcast_retention_fixture <- function() {
 }
 
 test_that("validation configs and return-level helpers expose stable public results", {
+  old_opt <- options(
+    ipdcstorm.wind_field_mode = NULL,
+    ipdcstorm.hindcast_sampler_mode = NULL
+  )
+  on.exit(options(old_opt), add = TRUE)
+
   cfg <- make_validation_cfg(n_sim = 120L, save_plots = FALSE, save_tables = FALSE)
   rl_emp <- compute_return_levels(c(0, 30, 40, 50, 60, 70), return_periods = c(2, 5))
   gev_fit <- fit_gev_lmom(c(20, 25, 30, 35, 40, 45))
@@ -124,6 +144,8 @@ test_that("validation configs and return-level helpers expose stable public resu
   expect_s3_class(cfg, "validation_cfg")
   expect_output(print(cfg), "Validation configuration")
   expect_true(cfg$advanced$hindcast_use_raw_rates)
+  expect_equal(getOption("ipdcstorm.wind_field_mode", "legacy"), "legacy")
+  expect_equal(ipdcstorm:::.hindcast_sampler_mode(), "legacy")
   expect_equal(names(rl_emp), c("RL_2yr", "RL_5yr"))
   expect_true(isTRUE(gev_fit$converged))
   expect_true(all(c("return_levels", "p_zero", "n_total", "n_nonzero") %in% names(rl_gev)))
@@ -163,6 +185,7 @@ test_that("hindcast retention diagnostics stratify by R34 source and summarize t
     train_years = 2001:2002,
     test_years = 2003:2004,
     location = "Saba",
+    sim_annual_max = c(0, 42, 71, 78, 88, 94),
     metadata = fix$metadata
   )
 
@@ -185,15 +208,161 @@ test_that("hindcast retention diagnostics stratify by R34 source and summarize t
   observed_row <- dplyr::filter(diag$r34_source, period == "test", peak_r34_source == "observed")
   expect_equal(partial_row$n_tsplus_events, 1L)
   expect_equal(partial_row$n_annual_max_years, 1L)
+  expect_equal(partial_row$n_affected_years, 1L)
   expect_equal(none_row$n_tsplus_events, 0L)
   expect_equal(climo_row$n_hur_events, 1L)
   expect_equal(observed_row$n_tsplus_events, 1L)
+  expect_equal(sum(dplyr::filter(diag$threshold_exceedance, sample == "annual_max", period == "test", threshold_kt == 64)$exceedance_share), 1)
+  expect_equal(diag$top_annual_max$annual_max_r34_source, c("climo", "observed", "partial"))
+  expect_equal(diag$annual_max_comparison$dominant_top_annual_max_r34_source, "climo")
 
   expect_true(all(diag$summary$model_seed == 11L))
   expect_true(all(diag$r34_source$validation_seed == 22L))
   expect_true(all(diag$event_provenance$data_id == "ibtracs-fixture|rows=4"))
+  expect_equal(
+    round(diag$event_provenance$peak_normalized_radius, 3),
+    c(4.000, 2.400, 1.333, 1.571)
+  )
+  expect_equal(diag$event_provenance$peak_rmw_provenance, c("knaff", "r64_mean", "observed", "r64_mean"))
   expect_true(all(diag$yearly$parameter_id == "params-fixture"))
   expect_true(all(diag$yearly$lambda_scaler_id == "lambda-fixture"))
+  expect_true(all(diag$threshold_exceedance$model_seed == 11L))
+  expect_true(all(diag$top_annual_max$validation_seed == 22L))
+  expect_true(all(diag$annual_max_comparison$data_id == "ibtracs-fixture|rows=4"))
+  expect_true(all(diag$tail_event_detail$parameter_id == "params-fixture"))
+  expect_true(all(diag$tail_pathway_summary$lambda_scaler_id == "lambda-fixture"))
+  expect_true(all(diag$tail_pathway_comparison$model_seed == 11L))
+  expect_true(all(diag$observed_r34_tail_detail$parameter_id == "params-fixture"))
+  expect_true(all(diag$observed_r34_radius_summary$lambda_scaler_id == "lambda-fixture"))
+  expect_true(all(diag$observed_r34_radius_comparison$model_seed == 11L))
+  expect_true(all(diag$observed_r34_cluster_summary$data_id == "ibtracs-fixture|rows=4"))
+})
+
+test_that("hindcast tail diagnostics complete missing pathways deterministically", {
+  fix <- hindcast_retention_fixture()
+  fix$trackpoints$R34_source <- c("partial", "partial", "climo", "climo")
+
+  diag <- ipdcstorm:::.summarize_hindcast_retention(
+    events_island = fix$events,
+    trackpoints_island = fix$trackpoints,
+    train_years = 2001:2002,
+    test_years = 2003:2004,
+    location = "Saba",
+    sim_annual_max = c(0, 40, 65, 90),
+    metadata = fix$metadata
+  )
+
+  expect_equal(
+    dplyr::filter(diag$r34_source, period == "train")$peak_r34_source,
+    c("observed", "partial", "climo", "none")
+  )
+  expect_equal(
+    dplyr::filter(diag$r34_source, period == "train")$n_events,
+    c(0L, 2L, 0L, 0L)
+  )
+  expect_equal(
+    dplyr::filter(diag$threshold_exceedance, sample == "event_peak", period == "train", threshold_kt == 64)$n_exceedances,
+    c(0L, 0L, 0L, 0L)
+  )
+  expect_equal(
+    diag$tail_pathway_summary$peak_r34_source,
+    c("observed", "partial", "climo", "none")
+  )
+})
+
+test_that("hindcast top-tail summaries stay reproducible for fixed inputs", {
+  fix <- hindcast_retention_fixture()
+
+  diag_a <- ipdcstorm:::.summarize_hindcast_retention(
+    events_island = fix$events,
+    trackpoints_island = fix$trackpoints,
+    train_years = 2001:2002,
+    test_years = 2003:2004,
+    location = "Saba",
+    sim_annual_max = c(0, 42, 71, 78, 88, 94),
+    metadata = fix$metadata
+  )
+  diag_b <- ipdcstorm:::.summarize_hindcast_retention(
+    events_island = fix$events,
+    trackpoints_island = fix$trackpoints,
+    train_years = 2001:2002,
+    test_years = 2003:2004,
+    location = "Saba",
+    sim_annual_max = c(0, 42, 71, 78, 88, 94),
+    metadata = fix$metadata
+  )
+
+  expect_equal(diag_a$top_annual_max, diag_b$top_annual_max)
+  expect_equal(diag_a$threshold_exceedance, diag_b$threshold_exceedance)
+  expect_equal(diag_a$annual_max_comparison, diag_b$annual_max_comparison)
+  expect_equal(diag_a$tail_event_detail, diag_b$tail_event_detail)
+  expect_equal(diag_a$tail_pathway_summary, diag_b$tail_pathway_summary)
+  expect_equal(diag_a$observed_r34_radius_summary, diag_b$observed_r34_radius_summary)
+})
+
+test_that("hindcast event-level tail extraction keeps geometry and deterministic ranks", {
+  fix <- hindcast_retention_fixture()
+
+  diag <- ipdcstorm:::.summarize_hindcast_retention(
+    events_island = fix$events,
+    trackpoints_island = fix$trackpoints,
+    train_years = 2001:2002,
+    test_years = 2003:2004,
+    location = "Saba",
+    sim_annual_max = c(0, 42, 71, 78, 88, 94),
+    metadata = fix$metadata
+  )
+
+  obs_tail <- dplyr::filter(diag$tail_event_detail, sample == "observed_test")
+  sim_tail <- dplyr::filter(diag$tail_event_detail, sample == "simulated_annual_max")
+  expect_equal(obs_tail$storm_id, c("s3", "s4"))
+  expect_equal(obs_tail$annual_max_rank, c(1L, 2L))
+  expect_equal(obs_tail$closest_approach_km, c(40, 55))
+  expect_equal(round(obs_tail$peak_normalized_radius, 3), c(1.333, 1.571))
+  expect_equal(obs_tail$peak_r34_completeness, c("none_0of4", "full_4of4"))
+  expect_equal(obs_tail$peak_quadrant, c("SW", "NW"))
+  expect_equal(sim_tail$annual_max_rank, 1:5)
+  expect_equal(sim_tail$simulated_site_wind_kt, c(94, 88, 78, 71, 42))
+  expect_true(all(is.na(sim_tail$storm_id)))
+})
+
+test_that("observed-R34 radius diagnostics are deterministic and isolated", {
+  fix <- hindcast_retention_fixture()
+
+  diag <- ipdcstorm:::.summarize_hindcast_retention(
+    events_island = fix$events,
+    trackpoints_island = fix$trackpoints,
+    train_years = 2001:2002,
+    test_years = 2003:2004,
+    location = "Saba",
+    sim_annual_max = c(0, 42, 71, 78, 88, 94),
+    metadata = fix$metadata
+  )
+
+  expect_equal(diag$observed_r34_tail_detail$storm_id, "s4")
+  expect_equal(round(diag$observed_r34_tail_detail$normalized_radius, 3), 1.571)
+  expect_equal(diag$observed_r34_tail_detail$annual_max_rank, 2L)
+  expect_equal(diag$observed_r34_tail_detail$peak_rmw_provenance, "r64_mean")
+  expect_true(is.finite(diag$observed_r34_tail_detail$peak_gradient_factor))
+  expect_true(is.finite(diag$observed_r34_tail_detail$peak_surface_factor))
+  expect_true(is.finite(diag$observed_r34_tail_detail$peak_steepening_factor))
+  expect_true(is.finite(diag$observed_r34_tail_detail$peak_precal_response_factor))
+  expect_true(is.finite(diag$observed_r34_tail_detail$peak_pre_cal_site_wind_kt))
+  expect_true(is.finite(diag$observed_r34_tail_detail$peak_post_cal_site_wind_kt))
+  expect_true(is.finite(diag$observed_r34_tail_detail$peak_r34_calibration_factor))
+  expect_equal(diag$observed_r34_tail_detail$precal_radius_band, "<1.75")
+  expect_equal(
+    diag$observed_r34_radius_summary$normalized_radius_bin,
+    c("[0,1.25)", "[1.25,1.75)", "[1.75,2.5)", "[2.5,4)", "[4,Inf)")
+  )
+  expect_equal(diag$observed_r34_radius_comparison$dominant_top_tail_radius_bin, "[1.25,1.75)")
+  expect_equal(diag$observed_r34_radius_comparison$dominant_top_tail_radius_bin_share, 1)
+  expect_true(all(c("normalized_radius_bin", "storm_class", "rmw_provenance", "r34_source", "precal_radius_band", "precal_radius_band_storm_class", "precal_radius_band_rmw_provenance") %in% diag$observed_r34_cluster_summary$cluster_type))
+  expect_equal(diag$observed_rmw_precal_band_summary$precal_radius_band, c("<1.75", "[1.75,2.5)", ">=2.5"))
+  expect_equal(diag$observed_rmw_precal_band_comparison$dominant_top_tail_precal_radius_band, "none")
+  expect_equal(nrow(diag$observed_rmw_precal_band_cluster_summary), 0L)
+  expect_true(all(diag$observed_rmw_precal_band_summary$model_seed == 11L))
+  expect_true(all(diag$observed_rmw_precal_band_comparison$validation_seed == 22L))
 })
 
 test_that("wind-mode retention comparison stays deterministic by source and period", {
@@ -304,6 +473,8 @@ test_that("hindcast attribution grid records mode metadata from workspace reruns
   expect_true(all(c("baseline_case_id", "baseline_diagnostics", "case_diagnostics", "wind_retention_comparison") %in% names(grid)))
   expect_true(all(c("case_id", "data_id", "parameter_id", "model_seed", "validation_seed") %in% names(grid$metadata)))
   expect_true(all(c("rl_bias_rp5", "rl_bias_rp10", "sim_xi", "obs_xi") %in% names(grid$summary)))
+    expect_true(all(c("threshold_exceedance", "top_annual_max", "annual_max_comparison", "tail_event_detail", "tail_pathway_summary", "tail_pathway_comparison") %in% names(grid$case_diagnostics)))
+    expect_true(all(c("observed_r34_tail_detail", "observed_r34_radius_summary", "observed_r34_radius_comparison", "observed_r34_cluster_summary", "observed_rmw_precal_band_summary", "observed_rmw_precal_band_comparison", "observed_rmw_precal_band_cluster_summary") %in% names(grid$case_diagnostics)))
   expect_equal(sort(unique(grid$wind_rate_grid$annual_rate_mode)), c("adjusted", "raw"))
   expect_equal(sort(unique(grid$sampler_grid$sampler_mode)), c("bounded", "legacy"))
   expect_equal(grid$baseline_case_id, "wind=legacy|rate=raw|sampler=legacy")
