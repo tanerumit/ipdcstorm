@@ -1,4 +1,0 @@
-﻿interface:
-  display_name: "R Coding"
-  short_description: "Help with R coding tasks and package workflows"
-  default_prompt: "Use $r-coding to implement and validate an R package change with targeted tests."

@@ -21,10 +21,10 @@ run_hazard_model(
 \item{storm_classes}{Character vector of storm classes to model (default TS and HUR).}
 
 \item{climate}{Optional climate workflow configuration from
-\code{make_climate_cfg()}. When \code{NULL}, the run is stationary with
-\code{delta_sst = 0}, \code{beta_sst = 0}, \code{gamma = 0}, and storm perturbation
-disabled. Legacy \code{make_climate_input()} objects are still accepted
-internally for transition safety.}
+\code{make_climate_cfg()}. Use \code{make_climate_cfg(scenario = "stationary")}
+for a baseline climate run with \code{delta_sst = 0}. When \code{NULL}, the climate
+module is disabled entirely and the run uses \code{delta_sst = 0},
+\code{beta_sst = 0}, \code{gamma = 0}, with storm perturbation disabled.}
 
 \item{seed}{Optional integer seed. When \code{NULL}, \code{run_hazard_model()}
 generates one, sets it at entry, and records it in \code{run_metadata$seed}.}

@@ -11,8 +11,9 @@ make_climate_cfg(
   sst_path = NULL,
   baseline_years = 1991L:2020L,
   start_year = 2025L,
-  beta_sst = NULL,
-  gamma = NULL,
+  sensitivity_mode = c("fixed", "linear_shifted"),
+  k_beta = 0,
+  k_gamma = 0,
   perturb = NULL
 )
 }
@@ -29,11 +30,14 @@ make_climate_cfg(
 
 \item{start_year}{Integer; first year of the simulation scenario.}
 
-\item{beta_sst}{Optional numeric scalar. If \code{NULL}, the rate effect is
-estimated from data during \code{prepare_climate()}.}
+\item{sensitivity_mode}{Character scalar; one of \code{"fixed"} or
+\code{"linear_shifted"}.}
 
-\item{gamma}{Optional numeric scalar. If \code{NULL}, the intensity effect is
-estimated from data during \code{prepare_climate()}.}
+\item{k_beta}{Numeric scalar; linear sensitivity-shift coefficient applied
+to \code{beta_0} when \code{sensitivity_mode = "linear_shifted"}.}
+
+\item{k_gamma}{Numeric scalar; linear sensitivity-shift coefficient applied
+to \code{gamma_0} when \code{sensitivity_mode = "linear_shifted"}.}
 
 \item{perturb}{Optional storm-perturbation settings.
 \itemize{
@@ -47,8 +51,16 @@ A list with class "climate_cfg" containing climate configuration parameters.
 }
 \description{
 Creates a climate configuration object for \code{run_hazard_model()}.
-The default climate-adjusted workflow combines a rate effect (\code{beta_sst})
-and an intensity effect (\code{gamma}) derived from MDR SST anomalies.
+The climate workflow first calibrates historical baseline sensitivities
+(\code{beta_0}, \code{gamma_0}) from historical annual counts and MDR SST anomalies,
+then resolves scenario-specific simulation scalars from \code{delta_sst}.
+By default the historical sensitivities are used unchanged. Expert users may
+instead enable a linear sensitivity shift:
+
+\code{beta_sst = beta_0 * (1 + k_beta * delta_sst)}
+
+\code{gamma = gamma_0 * (1 + k_gamma * delta_sst)}
+
 Optional storm perturbation is available as an expert sensitivity and is
 disabled unless \code{perturb} is supplied explicitly.
 
@@ -56,8 +68,9 @@ disabled unless \code{perturb} is supplied explicitly.
 \code{sst_scenario_info("all")$scenario} (for example SSP and optional KNMI
 scenarios when KNMI helpers are available).
 
-If \code{scenario = "stationary"}, the returned config forces
-\code{enabled = FALSE} so the model behaves as a stationary run.
+If \code{scenario = "stationary"} and \code{enabled = TRUE}, the returned config
+represents an explicit baseline climate run with \code{delta_sst = 0}.
+Set \code{enabled = FALSE} to disable the climate module entirely.
 }
 \examples{
 cfg <- make_climate_cfg(

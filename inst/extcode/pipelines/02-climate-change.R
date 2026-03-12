@@ -13,22 +13,19 @@
 #   5) Generate a daily series example for one island
 #
 # Scientific note:
-#   This script uses scalar SST time-slice shifts (`delta_sst`) plus illustrative
-#   response parameters (`beta_sst`, `gamma`) for a transparent example. It does
-#   not estimate transient climate responses from data inside the pipeline.
+#   This script uses the simplified climate workflow: scenario `delta_sst` is
+#   resolved from the built-in scenario table and historical sensitivities are
+#   calibrated inside `run_hazard_model()`. It does not build transient or
+#   nested climate-response objects inside the pipeline.
 # =============================================================================
 
 library(dplyr)
 library(ggplot2)
 library(ipdcstorm)
 
-
-
-
 # =============================================================================
 # 1) Core model setup
 # =============================================================================
-
 
 seed <- 123L
 
@@ -38,7 +35,7 @@ cfg <- make_hazard_cfg(
   data_path = ibtracs_path,
   search_radius_km = 800,
   historical_start_year = 1970,
-  simulation_years = 1000
+  simulation_years = 500
 )
 
 targets <- tibble::tribble(
@@ -61,68 +58,32 @@ out_baseline <- run_hazard_model(
   targets = targets,
   climate = NULL,
   seed = seed,
-  verbose = FALSE
+  verbose = TRUE
 )
 
 # =============================================================================
-# 3) Climate scenarios
+# 3) Climate scenario
 # =============================================================================
-
-get_scenario_delta("ssp585", future_period = 2035:2065)
 
 future_period <- 2035:2065
 
-make_time_slice_climate <- function(scenario,
-                                    future_period,
-                                    beta_sst = 0.4,
-                                    gamma = 0.05,
-                                    perturb = NULL,
-                                    baseline_years = 1991L:2020L) {
-  delta_sst <- get_scenario_delta(
-    scenario = scenario,
-    future_period = future_period,
-    baseline_years = baseline_years
-  )
-
-  make_climate_input(
-    shift = make_climate_shift(
-      delta_sst = delta_sst,
-      baseline_years = baseline_years
-    ),
-    response = make_climate_response(
-      beta_sst = beta_sst,
-      gamma = gamma,
-      perturb = perturb
-    )
-  )
-}
-climate_585 <- make_time_slice_climate(
-  scenario = "ssp585",
-  future_period = future_period)
-
 scenario_table <- tibble::tibble(
   scenario = "ssp585",
-  delta_sst = climate_585$shift$delta_sst,
-  beta_sst =  climate_585$response$beta_sst,
-  gamma = climate_585$response$gamma)
-
-cat("\n--- Time-slice climate assumptions ---\n")
-print(
-  scenario_table |>
-    mutate(across(where(is.numeric), ~ round(.x, 3)))
+  delta_sst = get_scenario_delta("ssp585", future_period = future_period)
 )
 
-# =============================================================================
-# 4) Climate scenario runs
-# =============================================================================
+clim_in <- make_climate_cfg(
+  scenario = scenario_table$scenario[[1]],
+  start_year = min(future_period),
+  sensitivity_mode = c("linear_shifted")
+)
 
 out_585 <- run_hazard_model(
   cfg = cfg,
   targets = targets,
-  climate = climate_585,
+  climate = clim_in,
   seed = seed,
-  verbose = FALSE
-)
+  verbose = FALSE)
 
 # =============================================================================
 # 5) Compare simulated annual activity across scenarios
@@ -130,8 +91,7 @@ out_585 <- run_hazard_model(
 
 sim_compare <- bind_rows(
   out_baseline$sim |> mutate(scenario = "Baseline"),
-  out_585$sim |> mutate(scenario = "SSP5-8.5")
-)
+  out_585$sim |> mutate(scenario = "SSP5-8.5"))
 
 activity_summary <- sim_compare |>
   group_by(scenario, location) |>
@@ -140,8 +100,7 @@ activity_summary <- sim_compare |>
     mean_ts = mean(n_ts, na.rm = TRUE),
     mean_hur = mean(n_hur, na.rm = TRUE),
     mean_p_hur = mean(n_hur / pmax(1, n_total), na.rm = TRUE),
-    .groups = "drop"
-  ) |>
+    .groups = "drop") |>
   arrange(location, scenario)
 
 cat("\n--- Mean annual activity by scenario ---\n")

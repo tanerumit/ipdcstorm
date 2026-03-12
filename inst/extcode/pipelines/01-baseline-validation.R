@@ -69,8 +69,8 @@ validation_cfg <- make_validation_cfg(
 hazard_out <- run_hazard_model(
   cfg = hazard_cfg,
   targets = targets,
-  climate = NULL,
-  seed = 42L
+  seed = 42L,
+  climate = make_climate_cfg(scenario = "stationary")
 )
 
 validation_out <- run_validation_suite(

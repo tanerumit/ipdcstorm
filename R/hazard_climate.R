@@ -760,160 +760,6 @@ sst_scenario_info <- function(source = c("all", "ipcc_ar6", "knmi23")) {
   baseline_years
 }
 
-#' Build a stationary climate-shift object
-#'
-#' @description
-#' Creates a scalar SST time-slice shift for the hazard model. `delta_sst`
-#' represents the mean SST difference between a future period and a baseline
-#' period, both referenced to the same climatology.
-#'
-#' @param delta_sst Numeric scalar; SST shift in degC.
-#' @param baseline_years Integer vector of climatological reference years.
-#'
-#' @return A list with class `c("climate_shift", "list")`.
-#' @examples
-#' make_climate_shift(delta_sst = 0.8)
-#' @export
-make_climate_shift <- function(delta_sst, baseline_years = 1991L:2020L) {
-  if (!is.numeric(delta_sst) || length(delta_sst) != 1L || !is.finite(delta_sst)) {
-    stop("delta_sst must be a single finite numeric value.", call. = FALSE)
-  }
-
-  shift <- list(
-    delta_sst = as.numeric(delta_sst),
-    baseline_years = .validate_baseline_years(baseline_years)
-  )
-  class(shift) <- c("climate_shift", "list")
-  shift
-}
-
-#' @export
-print.climate_shift <- function(x, ...) {
-  cat("Climate shift\n")
-  cat(sprintf("  delta_sst      : %.3f\n", x$delta_sst))
-  cat(sprintf("  baseline_years : %d-%d\n", min(x$baseline_years), max(x$baseline_years)))
-  invisible(x)
-}
-
-#' Build a stationary climate-response object
-#'
-#' @description
-#' Creates the scalar response parameters used by the time-slice climate-shift
-#' workflow. Level 3 storm perturbation is disabled when `perturb = NULL`.
-#'
-#' @param beta_sst Numeric scalar; log-linear rate sensitivity per degC.
-#' @param gamma Numeric scalar; fractional hurricane-fraction sensitivity per degC.
-#' @param perturb `NULL` or a named list with keys `v_scale`, `r_scale`,
-#'   `speed_scale`, and `precip_scale`, all interpreted per degC.
-#'
-#' @return A list with class `c("climate_response", "list")`.
-#' @examples
-#' make_climate_response(beta_sst = 0.4, gamma = 0.05)
-#' @export
-make_climate_response <- function(beta_sst = 0, gamma = 0, perturb = NULL) {
-  if (!is.numeric(beta_sst) || length(beta_sst) != 1L || !is.finite(beta_sst)) {
-    stop("beta_sst must be a single finite numeric value.", call. = FALSE)
-  }
-  if (!is.numeric(gamma) || length(gamma) != 1L || !is.finite(gamma)) {
-    stop("gamma must be a single finite numeric value.", call. = FALSE)
-  }
-  if (gamma < 0) {
-    stop("gamma must be >= 0.", call. = FALSE)
-  }
-
-  perturb_out <- NULL
-  if (!is.null(perturb)) {
-    if (!is.list(perturb)) {
-      stop("perturb must be NULL or a named list.", call. = FALSE)
-    }
-    defaults <- default_cc_params()
-    perturb_out <- defaults
-    for (nm in names(defaults)) {
-      if (!is.null(perturb[[nm]])) {
-        perturb_out[[nm]] <- perturb[[nm]]
-      }
-    }
-    for (nm in names(defaults)) {
-      val <- perturb_out[[nm]]
-      if (!is.numeric(val) || length(val) != 1L || !is.finite(val)) {
-        stop("perturb$", nm, " must be a single finite numeric value.", call. = FALSE)
-      }
-      perturb_out[[nm]] <- as.numeric(val)
-    }
-  }
-
-  response <- list(
-    beta_sst = as.numeric(beta_sst),
-    gamma = as.numeric(gamma),
-    perturb = perturb_out
-  )
-  class(response) <- c("climate_response", "list")
-  response
-}
-
-#' @export
-print.climate_response <- function(x, ...) {
-  cat("Climate response\n")
-  cat(sprintf("  beta_sst : %.3f\n", x$beta_sst))
-  cat(sprintf("  gamma    : %.3f\n", x$gamma))
-  cat(sprintf("  perturb  : %s\n", if (is.null(x$perturb)) "disabled" else "enabled"))
-  invisible(x)
-}
-
-.response_is_zero <- function(response) {
-  isTRUE(all.equal(response$beta_sst, 0)) &&
-    isTRUE(all.equal(response$gamma, 0)) &&
-    is.null(response$perturb)
-}
-
-#' Build a climate input for the hazard runner
-#'
-#' @description
-#' Combines a `climate_shift` and a `climate_response` into the stationary
-#' climate input consumed by `run_hazard_model()`.
-#'
-#' @param shift A `climate_shift` object from `make_climate_shift()`.
-#' @param response A `climate_response` object from `make_climate_response()`.
-#'
-#' @return A list with class `c("climate_input", "list")`.
-#' @examples
-#' shift <- make_climate_shift(delta_sst = 0.8)
-#' response <- make_climate_response(beta_sst = 0.4, gamma = 0.05)
-#' make_climate_input(shift, response)
-#' @export
-make_climate_input <- function(shift, response) {
-  if (!inherits(shift, "climate_shift")) {
-    stop("shift must be created by make_climate_shift().", call. = FALSE)
-  }
-  if (!inherits(response, "climate_response")) {
-    stop("response must be created by make_climate_response().", call. = FALSE)
-  }
-
-  if (!isTRUE(all.equal(shift$delta_sst, 0)) && .response_is_zero(response)) {
-    warning(
-      "delta_sst is nonzero but all response parameters are zero; the climate shift will have no effect.",
-      call. = FALSE
-    )
-  }
-
-  out <- list(
-    shift = shift,
-    response = response
-  )
-  class(out) <- c("climate_input", "list")
-  out
-}
-
-#' @export
-print.climate_input <- function(x, ...) {
-  cat("Climate input\n")
-  cat(sprintf("  delta_sst : %.3f\n", x$shift$delta_sst))
-  cat(sprintf("  beta_sst  : %.3f\n", x$response$beta_sst))
-  cat(sprintf("  gamma     : %.3f\n", x$response$gamma))
-  cat(sprintf("  perturb   : %s\n", if (is.null(x$response$perturb)) "disabled" else "enabled"))
-  invisible(x)
-}
-
 #' Look up a time-slice scenario SST shift
 #'
 #' @description
@@ -1285,7 +1131,7 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
     stop("enabled must be a single TRUE or FALSE value.", call. = FALSE)
   }
 
-  cfg$enabled <- isTRUE(cfg$enabled) && !identical(cfg$scenario, "stationary")
+  cfg$enabled <- isTRUE(cfg$enabled)
   cfg$baseline_years <- as.integer(cfg$baseline_years)
   cfg$start_year <- as.integer(cfg$start_year[[1]])
 
@@ -1295,21 +1141,17 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
   if (!is.finite(cfg$start_year)) {
     stop("start_year must be a single finite integer year.", call. = FALSE)
   }
-
-  if (!is.null(cfg$beta_sst)) {
-    cfg$beta_sst <- as.numeric(cfg$beta_sst[[1]])
-    if (!is.finite(cfg$beta_sst)) {
-      stop("beta_sst must be NULL or a single finite numeric value.", call. = FALSE)
-    }
+  cfg$sensitivity_mode <- match.arg(
+    as.character(cfg$sensitivity_mode[[1]]),
+    choices = c("fixed", "linear_shifted")
+  )
+  cfg$k_beta <- as.numeric(cfg$k_beta[[1]])
+  cfg$k_gamma <- as.numeric(cfg$k_gamma[[1]])
+  if (!is.finite(cfg$k_beta)) {
+    stop("k_beta must be a single finite numeric value.", call. = FALSE)
   }
-  if (!is.null(cfg$gamma)) {
-    cfg$gamma <- as.numeric(cfg$gamma[[1]])
-    if (!is.finite(cfg$gamma)) {
-      stop("gamma must be NULL or a single finite numeric value.", call. = FALSE)
-    }
-    if (cfg$gamma < 0) {
-      stop("gamma must be >= 0.", call. = FALSE)
-    }
+  if (!is.finite(cfg$k_gamma)) {
+    stop("k_gamma must be a single finite numeric value.", call. = FALSE)
   }
 
   perturb_info <- .normalize_climate_perturb(
@@ -1320,7 +1162,6 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
   cfg[["perturb_state"]] <- perturb_info$state
   cfg[["cc_params"]] <- perturb_info$params
   cfg[["scenario_start_year"]] <- cfg[["start_year"]]
-  cfg[["gamma_intensity"]] <- cfg[["gamma"]]
   cfg
 }
 
@@ -1328,8 +1169,16 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 #'
 #' @description
 #' Creates a climate configuration object for `run_hazard_model()`.
-#' The default climate-adjusted workflow combines a rate effect (`beta_sst`)
-#' and an intensity effect (`gamma`) derived from MDR SST anomalies.
+#' The climate workflow first calibrates historical baseline sensitivities
+#' (`beta_0`, `gamma_0`) from historical annual counts and MDR SST anomalies,
+#' then resolves scenario-specific simulation scalars from `delta_sst`.
+#' By default the historical sensitivities are used unchanged. Expert users may
+#' instead enable a linear sensitivity shift:
+#'
+#' `beta_sst = beta_0 * (1 + k_beta * delta_sst)`
+#'
+#' `gamma = gamma_0 * (1 + k_gamma * delta_sst)`
+#'
 #' Optional storm perturbation is available as an expert sensitivity and is
 #' disabled unless `perturb` is supplied explicitly.
 #'
@@ -1337,8 +1186,9 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 #' `sst_scenario_info("all")$scenario` (for example SSP and optional KNMI
 #' scenarios when KNMI helpers are available).
 #'
-#' If `scenario = "stationary"`, the returned config forces
-#' `enabled = FALSE` so the model behaves as a stationary run.
+#' If `scenario = "stationary"` and `enabled = TRUE`, the returned config
+#' represents an explicit baseline climate run with `delta_sst = 0`.
+#' Set `enabled = FALSE` to disable the climate module entirely.
 #'
 #' @param enabled Logical; whether to enable climate adjustments.
 #' @param scenario Character; climate scenario name.
@@ -1346,10 +1196,12 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 #' @param sst_path Optional character; path to SST data file (CSV or NetCDF).
 #' @param baseline_years Integer vector; years for climatological baseline.
 #' @param start_year Integer; first year of the simulation scenario.
-#' @param beta_sst Optional numeric scalar. If `NULL`, the rate effect is
-#'   estimated from data during `prepare_climate()`.
-#' @param gamma Optional numeric scalar. If `NULL`, the intensity effect is
-#'   estimated from data during `prepare_climate()`.
+#' @param sensitivity_mode Character scalar; one of `"fixed"` or
+#'   `"linear_shifted"`.
+#' @param k_beta Numeric scalar; linear sensitivity-shift coefficient applied
+#'   to `beta_0` when `sensitivity_mode = "linear_shifted"`.
+#' @param k_gamma Numeric scalar; linear sensitivity-shift coefficient applied
+#'   to `gamma_0` when `sensitivity_mode = "linear_shifted"`.
 #' @param perturb Optional storm-perturbation settings.
 #'   - `NULL`: disable storm perturbation.
 #'   - `list()`: enable storm perturbation with defaults from `default_cc_params()`.
@@ -1371,10 +1223,12 @@ make_climate_cfg <- function(enabled = TRUE,
                              sst_path = NULL,
                              baseline_years = 1991L:2020L,
                              start_year = 2025L,
-                             beta_sst = NULL,
-                             gamma = NULL,
+                             sensitivity_mode = c("fixed", "linear_shifted"),
+                             k_beta = 0,
+                             k_gamma = 0,
                              perturb = NULL) {
   sst_source <- match.arg(sst_source)
+  sensitivity_mode <- match.arg(sensitivity_mode)
   scenario <- match.arg(scenario, choices = c("stationary", sst_scenario_info("all")$scenario))
 
   cfg <- list(
@@ -1384,13 +1238,12 @@ make_climate_cfg <- function(enabled = TRUE,
     sst_path = sst_path,
     baseline_years = baseline_years,
     start_year = start_year,
-    beta_sst = beta_sst,
-    gamma = gamma,
+    sensitivity_mode = sensitivity_mode,
+    k_beta = k_beta,
+    k_gamma = k_gamma,
     perturb = perturb
   )
   cfg[["sst_path"]] <- sst_path
-  cfg[["beta_sst"]] <- beta_sst
-  cfg[["gamma"]] <- gamma
   cfg[["perturb"]] <- perturb
   cfg <- .normalize_climate_cfg(cfg)
   class(cfg) <- c("climate_cfg", "list")
@@ -1405,18 +1258,15 @@ print.climate_cfg <- function(x, ...) {
   cat(sprintf("  Baseline          : %d-%d\n", min(x$baseline_years), max(x$baseline_years)))
 
   if (isTRUE(x$enabled)) {
-    beta_mode <- if (!is.null(x$beta_sst) && is.finite(x$beta_sst)) {
-      sprintf("fixed at %.3f", x$beta_sst)
-    } else {
-      "estimated from data"
+    if (identical(x$scenario, "stationary")) {
+      cat("  Climate mode      : baseline climate run (delta_sst = 0)\n")
     }
-    gamma_mode <- if (!is.null(x$gamma) && is.finite(x$gamma)) {
-      sprintf("fixed at %.4f", x$gamma)
+    cat(sprintf("  Sensitivity mode  : %s\n", x$sensitivity_mode))
+    if (identical(x$sensitivity_mode, "linear_shifted")) {
+      cat(sprintf("  Shift coefficients: k_beta=%.3f, k_gamma=%.3f\n", x$k_beta, x$k_gamma))
     } else {
-      "estimated from data"
+      cat("  Shift coefficients: fixed historical sensitivities\n")
     }
-    cat(sprintf("  Rate effect       : %s\n", beta_mode))
-    cat(sprintf("  Intensity effect  : %s\n", gamma_mode))
   } else {
     cat("  Climate mode      : disabled (stationary)\n")
   }
@@ -1432,40 +1282,133 @@ print.climate_cfg <- function(x, ...) {
   invisible(x)
 }
 
-#' Load and prepare climate data based on configuration
+#' Resolve climate scalars for the hazard model
 #'
 #' @description
-#' Reads SST data from the configured source, computes anomalies, and
-#' optionally estimates the rate effect and intensity effect. Returns a
-#' processed climate object ready for use in the hazard model.
+#' Calibrates historical baseline sensitivities from annual counts and MDR SST
+#' anomalies, resolves scenario `delta_sst`, and returns flat simulation-ready
+#' climate scalars for `run_hazard_model()`.
 #'
 #' @param climate_cfg List from `make_climate_cfg()`.
-#' @param annual_counts Optional tibble of annual counts for rate and intensity estimation.
-#' @param lambda_table Optional tibble from `compute_lambda_table()` for p_HUR_base.
+#' @param annual_counts Optional tibble of annual counts for baseline
+#'   sensitivity estimation.
+#' @param lambda_table Optional tibble from `compute_lambda_table()` for
+#'   historical `p_hur_base`.
 #' @param min_year Integer; passed to estimation functions.
+#' @param future_period Optional integer vector of scenario years used to
+#'   resolve `delta_sst`. Defaults to the 30-year window starting at
+#'   `climate_cfg$start_year`.
 #' @param verbose Logical.
 #'
 #' @return A list with:
-#'   \item{sst_df}{Tibble of historical SST with anomalies.}
-#'   \item{beta_sst}{Estimated or user-supplied rate-effect coefficient.}
-#'   \item{beta_info}{Full output from `estimate_beta_sst()` (or NULL).}
-#'   \item{gamma}{Estimated or user-supplied intensity-effect coefficient.}
-#'   \item{gamma_info}{Full output from `estimate_gamma_intensity()` (or NULL).}
-#'   \item{p_hur_base}{Baseline hurricane fraction.}
+#'   \item{delta_sst}{Scenario-derived SST shift in degC.}
+#'   \item{beta_sst}{Final rate sensitivity used in simulation.}
+#'   \item{gamma}{Final intensity sensitivity used in simulation.}
+#'   \item{p_hur_base}{Historical baseline hurricane fraction.}
+#'   \item{beta_0}{Historical baseline rate sensitivity.}
+#'   \item{gamma_0}{Historical baseline intensity sensitivity.}
+#'   \item{scenario}{Resolved scenario name.}
+#'   \item{sensitivity_mode}{Resolved sensitivity mode.}
+#'   \item{k_beta}{Configured linear shift coefficient for `beta_0`.}
+#'   \item{k_gamma}{Configured linear shift coefficient for `gamma_0`.}
+#'   \item{future_period}{Scenario period used to resolve `delta_sst`.}
+#'   \item{baseline_years}{SST anomaly baseline years.}
 #'   \item{perturb}{Resolved storm-perturbation parameters (or `NULL`).}
-#'   \item{climate_cfg}{The input configuration.}
+#'   \item{perturb_state}{Storm-perturbation state label.}
+#'   \item{enabled}{Whether climate adjustments are enabled.}
+#'   \item{source}{SST source used for calibration.}
 #'
 #' @examples
 #' cfg <- make_climate_cfg(enabled = TRUE, sst_source = "builtin", scenario = "stationary")
-#' prep <- prepare_climate(cfg, verbose = FALSE)
-#' prep$beta_sst
+#' climate <- resolve_climate_inputs(cfg, verbose = FALSE)
+#' climate$beta_sst
 #'
 #' @export
-prepare_climate <- function(climate_cfg,
-                            annual_counts = NULL,
-                            lambda_table = NULL,
-                            min_year = 1970L,
-                            verbose = TRUE) {
+resolve_climate_inputs <- function(climate_cfg,
+                                   annual_counts = NULL,
+                                   lambda_table = NULL,
+                                   min_year = 1970L,
+                                   future_period = NULL,
+                                   verbose = TRUE) {
+  .clamp_nonnegative <- function(x) {
+    if (!is.finite(x) || x < 0) {
+      return(0)
+    }
+    as.numeric(x)
+  }
+
+  .resolve_effective_sensitivity <- function(base_value, shift_coeff, delta_sst) {
+    shifted <- as.numeric(base_value) * (1 + as.numeric(shift_coeff) * as.numeric(delta_sst))
+    .clamp_nonnegative(shifted)
+  }
+
+  baseline <- .calibrate_climate_baseline(
+    climate_cfg = climate_cfg,
+    annual_counts = annual_counts,
+    lambda_table = lambda_table,
+    min_year = min_year,
+    verbose = verbose
+  )
+
+  if (is.null(future_period)) {
+    future_period <- seq.int(from = as.integer(baseline$start_year), length.out = 30L)
+  } else {
+    future_period <- as.integer(future_period)
+  }
+  if (length(future_period) == 0L || any(!is.finite(future_period))) {
+    stop("future_period must contain finite integer years.", call. = FALSE)
+  }
+
+  delta_sst <- 0
+  beta_sst <- baseline$beta_0
+  gamma <- baseline$gamma_0
+  climate_mode <- "off"
+
+  if (isTRUE(baseline$enabled)) {
+    climate_mode <- "baseline"
+    if (!identical(baseline$scenario, "stationary")) {
+      delta_sst <- get_scenario_delta(
+        scenario = baseline$scenario,
+        future_period = future_period,
+        baseline_years = baseline$baseline_years
+      )
+      climate_mode <- "future"
+    }
+    if (identical(baseline$sensitivity_mode, "linear_shifted")) {
+      beta_sst <- .resolve_effective_sensitivity(baseline$beta_0, baseline$k_beta, delta_sst)
+      gamma <- .resolve_effective_sensitivity(baseline$gamma_0, baseline$k_gamma, delta_sst)
+    }
+  } else {
+    beta_sst <- 0
+    gamma <- 0
+  }
+
+  list(
+    enabled = baseline$enabled,
+    scenario = baseline$scenario,
+    source = baseline$source,
+    delta_sst = as.numeric(delta_sst),
+    beta_sst = as.numeric(beta_sst),
+    gamma = as.numeric(gamma),
+    p_hur_base = as.numeric(baseline$p_hur_base),
+    beta_0 = as.numeric(baseline$beta_0),
+    gamma_0 = as.numeric(baseline$gamma_0),
+    sensitivity_mode = baseline$sensitivity_mode,
+    k_beta = as.numeric(baseline$k_beta),
+    k_gamma = as.numeric(baseline$k_gamma),
+    future_period = future_period,
+    baseline_years = baseline$baseline_years,
+    perturb = baseline$perturb,
+    perturb_state = baseline$perturb_state,
+    climate_mode = climate_mode
+  )
+}
+
+.calibrate_climate_baseline <- function(climate_cfg,
+                                        annual_counts = NULL,
+                                        lambda_table = NULL,
+                                        min_year = 1970L,
+                                        verbose = TRUE) {
   beta_prior <- 0.6
   gamma_prior <- 0.065
 
@@ -1473,21 +1416,23 @@ prepare_climate <- function(climate_cfg,
     stop("climate_cfg must be created by make_climate_cfg().")
   }
   climate_cfg <- .normalize_climate_cfg(climate_cfg)
-  if (!is.null(climate_cfg$beta_prior) && is.finite(climate_cfg$beta_prior)) {
-    beta_prior <- as.numeric(climate_cfg$beta_prior)
-  }
-  if (!is.null(climate_cfg$gamma_prior) && is.finite(climate_cfg$gamma_prior)) {
-    gamma_prior <- as.numeric(climate_cfg$gamma_prior)
-  }
 
   if (!climate_cfg$enabled) {
     if (verbose) message("[climate] Climate adjustments disabled.")
     return(list(
-      sst_df = NULL, beta_sst = 0, beta_info = NULL,
-      gamma = 0, gamma_intensity = 0, gamma_info = NULL, p_hur_base = NA_real_,
-      perturb = NULL, cc_params = NULL,
-      climate_cfg = climate_cfg,
-      sst_cfg = climate_cfg
+      enabled = FALSE,
+      scenario = climate_cfg$scenario,
+      source = climate_cfg$sst_source,
+      baseline_years = climate_cfg$baseline_years,
+      start_year = climate_cfg$start_year,
+      sensitivity_mode = climate_cfg$sensitivity_mode,
+      k_beta = climate_cfg$k_beta,
+      k_gamma = climate_cfg$k_gamma,
+      beta_0 = 0,
+      gamma_0 = 0,
+      p_hur_base = NA_real_,
+      perturb = NULL,
+      perturb_state = "disabled"
     ))
   }
 
@@ -1513,12 +1458,8 @@ prepare_climate <- function(climate_cfg,
                     max(sst_df$sst_anomaly, na.rm = TRUE)))
   }
 
-  # Rate effect
-  beta_info <- NULL
-  if (!is.null(climate_cfg$beta_sst) && is.finite(climate_cfg$beta_sst)) {
-    beta_sst <- as.numeric(climate_cfg$beta_sst)
-    if (verbose) message(sprintf("[climate] Using user-supplied rate effect beta_sst = %.3f", beta_sst))
-  } else if (!is.null(annual_counts)) {
+  # Historical baseline rate sensitivity
+  if (!is.null(annual_counts)) {
     beta_info <- estimate_beta_sst(
       annual_counts = annual_counts,
       sst_df = sst_df,
@@ -1526,27 +1467,23 @@ prepare_climate <- function(climate_cfg,
       beta_prior = beta_prior,
       verbose = verbose
     )
-    beta_sst <- as.numeric(beta_info$beta_sst)
+    beta_0 <- as.numeric(beta_info$beta_sst)
   } else {
-    beta_sst <- beta_prior
-    if (verbose) message(sprintf("[climate] No annual_counts provided for beta estimation. Using prior: %.3f", beta_sst))
+    beta_0 <- beta_prior
+    if (verbose) message(sprintf("[climate] No annual_counts provided for beta estimation. Using prior: %.3f", beta_0))
   }
-  if (!is.finite(beta_sst)) {
-    stop("Resolved beta_sst must be finite.", call. = FALSE)
+  if (!is.finite(beta_0)) {
+    stop("Resolved beta_0 must be finite.", call. = FALSE)
   }
 
-  # Intensity effect
-  gamma_info <- NULL
+  # Historical baseline intensity sensitivity
   p_hur_base <- NA_real_
 
   if (!is.null(lambda_table)) {
     p_hur_base <- compute_p_hur_base(lambda_table)
   }
 
-  if (!is.null(climate_cfg$gamma) && is.finite(climate_cfg$gamma)) {
-    gamma <- as.numeric(climate_cfg$gamma)
-    if (verbose) message(sprintf("[climate] Using user-supplied intensity effect gamma = %.4f", gamma))
-  } else if (!is.null(annual_counts)) {
+  if (!is.null(annual_counts)) {
     gamma_info <- estimate_gamma_intensity(
       annual_counts = annual_counts,
       sst_df = sst_df,
@@ -1554,33 +1491,33 @@ prepare_climate <- function(climate_cfg,
       gamma_prior = gamma_prior,
       verbose = verbose
     )
-    gamma <- as.numeric(gamma_info$gamma)
+    gamma_0 <- as.numeric(gamma_info$gamma)
     if (is.na(p_hur_base) && !is.null(gamma_info$p_hur_base) && is.finite(gamma_info$p_hur_base)) {
       p_hur_base <- as.numeric(gamma_info$p_hur_base)
     }
   } else {
-    gamma <- 0
-    if (verbose) message("[climate] No annual_counts for gamma estimation and no user gamma provided. Using gamma = 0.")
+    gamma_0 <- 0
+    if (verbose) message("[climate] No annual_counts provided for gamma estimation. Using gamma_0 = 0.")
   }
 
-  if (!is.finite(gamma) || gamma <= 0) {
+  if (!is.finite(gamma_0) || gamma_0 <= 0) {
     if (verbose) {
-      message(sprintf("[climate] Intensity effect resolved to %.4f; using gamma = 0.", gamma))
+      message(sprintf("[climate] Intensity effect resolved to %.4f; using gamma_0 = 0.", gamma_0))
     }
-    gamma <- 0
+    gamma_0 <- 0
   }
 
-  if (!is.finite(gamma)) {
-    stop("Resolved gamma must be finite.", call. = FALSE)
+  if (!is.finite(gamma_0)) {
+    stop("Resolved gamma_0 must be finite.", call. = FALSE)
   }
 
-  if (verbose && gamma != 0) {
-    message(sprintf("[climate] Intensity effect: gamma=%.4f, p_HUR_base=%.3f",
-                    gamma, p_hur_base))
+  if (verbose && gamma_0 != 0) {
+    message(sprintf("[climate] Historical intensity sensitivity: gamma_0=%.4f, p_HUR_base=%.3f",
+                    gamma_0, p_hur_base))
     message(sprintf("[climate] At +1C SST: p_HUR -> %.3f (was %.3f, %+.1f%%)",
-                    pmin(0.99, p_hur_base * (1 + gamma)),
+                    pmin(0.99, p_hur_base * (1 + gamma_0)),
                     p_hur_base,
-                    100 * gamma))
+                    100 * gamma_0))
   }
 
   resolved_perturb <- climate_cfg[["perturb"]]
@@ -1604,43 +1541,20 @@ prepare_climate <- function(climate_cfg,
     if (verbose) message("[climate] Storm perturbation disabled.")
   }
 
-  climate_cfg[["perturb"]] <- resolved_perturb
-  climate_cfg[["perturb_state"]] <- perturb_state
-  climate_cfg[["cc_params"]] <- resolved_perturb
-  climate_cfg[["gamma_intensity"]] <- gamma
-
   list(
-    sst_df = sst_df,
-    beta_sst = beta_sst,
-    beta_info = beta_info,
-    gamma = gamma,
-    gamma_intensity = gamma,
-    gamma_info = gamma_info,
+    enabled = TRUE,
+    scenario = climate_cfg$scenario,
+    source = climate_cfg$sst_source,
+    baseline_years = climate_cfg$baseline_years,
+    start_year = climate_cfg$start_year,
+    sensitivity_mode = climate_cfg$sensitivity_mode,
+    k_beta = climate_cfg$k_beta,
+    k_gamma = climate_cfg$k_gamma,
+    beta_0 = beta_0,
+    gamma_0 = gamma_0,
     p_hur_base = p_hur_base,
     perturb = resolved_perturb,
-    perturb_state = perturb_state,
-    cc_params = resolved_perturb,
-    climate_cfg = climate_cfg,
-    sst_cfg = climate_cfg
-  )
-}
-
-# Thin bridge kept for internal transition while call sites are updated.
-#' @keywords internal
-prepare_sst_data <- function(sst_cfg,
-                             annual_counts = NULL,
-                             lambda_table = NULL,
-                             min_year = 1970L,
-                             verbose = TRUE) {
-  if (!inherits(sst_cfg, "climate_cfg")) {
-    stop("sst_cfg must be created by make_climate_cfg().", call. = FALSE)
-  }
-  prepare_climate(
-    climate_cfg = sst_cfg,
-    annual_counts = annual_counts,
-    lambda_table = lambda_table,
-    min_year = min_year,
-    verbose = verbose
+    perturb_state = perturb_state
   )
 }
 
