@@ -8,6 +8,7 @@
   Vmax_kt,
   r_km,
   R34_km,
+  R34_source = NULL,
   R50_km = NA,
   R64_km = NA,
   RMW_km,

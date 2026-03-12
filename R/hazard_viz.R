@@ -42,7 +42,7 @@ save_standardized_plot <- function(plot_obj,
                                    file_path,
                                    width,
                                    height,
-                                   dpi) {
+                                   dpi = 300) {
 
   ggplot2::ggsave(
     filename = file_path,
@@ -699,6 +699,51 @@ plot_wind_distribution <- function(daily,
   p
 }
 
+.hazard_viz_location_id <- function(location_name) {
+  location_id <- gsub("[^A-Za-z0-9_]", "_", location_name)
+  location_id <- gsub("_+", "_", location_id)
+  gsub("^_|_$", "", location_id)
+}
+
+.plot_rate_comparison <- function(daily) {
+  events <- prep_events(daily)
+  n_years <- dplyr::n_distinct(daily$sim_year)
+
+  rate_data <- events %>%
+    count(location, event_class, name = "n_events") %>%
+    complete(
+      location = sort(unique(daily$location)),
+      event_class = c("TS", "HUR"),
+      fill = list(n_events = 0)
+    ) %>%
+    mutate(
+      lambda = n_events / n_years,
+      event_class = factor(event_class, levels = c("TS", "HUR"))
+    )
+
+  ggplot(
+    rate_data,
+    aes(x = location, y = lambda, fill = event_class)
+  ) +
+    geom_col(position = "dodge", width = 0.6) +
+    geom_text(
+      aes(label = sprintf("%.2f", lambda)),
+      position = position_dodge(0.6),
+      vjust = -0.4,
+      size = 3.2
+    ) +
+    scale_fill_manual(
+      values = c(TS = "#E69F00", HUR = "#D55E00"),
+      labels = c(TS = "Tropical Storm", HUR = "Hurricane"),
+      name = NULL
+    ) +
+    labs(
+      x = NULL,
+      y = expression(lambda ~ "(events yr"^-1 * ")"),
+      title = "Historical Annual Storm Rates by Island"
+    )
+}
+
 #' Save standard hazard visualization plots as PNG files
 #'
 #' @description Builds a standard set of five hazard plots, applies consistent
@@ -771,60 +816,89 @@ save_hazard_viz_plots <- function(daily,
     stop("Failed to create `output_dir`.")
   }
 
-  plots <- list(
-    monthly_events_boxplot = standardize_plot_labels(
-      plot_monthly_events(daily),
-      location_name = location_name,
-      plot_type = "Monthly event starts by class",
-      subtitle = "Each box summarizes the across-year distribution of monthly event starts; white points mark means",
-      base_size = base_size
+  location_data <- split(daily, daily$location)
+  plot_specs <- list(
+    monthly_events_boxplot = list(
+      plot_fn = function(x, label) {
+        standardize_plot_labels(
+          plot_monthly_events(x),
+          location_name = label,
+          plot_type = "Monthly event starts by class",
+          subtitle = "Each box summarizes the across-year distribution of monthly event starts; white points mark means",
+          base_size = base_size
+        )
+      }
     ),
-    annual_event_count_probability = standardize_plot_labels(
-      plot_annual_counts(daily, metric = "events", show_poisson = TRUE),
-      location_name = location_name,
-      plot_type = "Annual event count probability",
-      subtitle = "Bars show empirical probability in a given year; red circles show Poisson probabilities",
-      base_size = base_size
+    annual_event_count_probability = list(
+      plot_fn = function(x, label) {
+        standardize_plot_labels(
+          plot_annual_counts(x, metric = "events", show_poisson = TRUE),
+          location_name = label,
+          plot_type = "Annual event count probability",
+          subtitle = "Bars show empirical probability in a given year; red circles show Poisson probabilities",
+          base_size = base_size
+        )
+      }
     ),
-    wind_timeseries = standardize_plot_labels(
-      plot_wind_timeseries(daily, thr_tc = thr_tc, thr_hur = thr_hur),
-      location_name = location_name,
-      plot_type = "Wind time series with event overlays",
-      subtitle = "Daily wind speed with event-duration segments drawn at each event's peak intensity",
-      base_size = base_size
+    wind_timeseries = list(
+      plot_fn = function(x, label) {
+        standardize_plot_labels(
+          plot_wind_timeseries(x, thr_tc = thr_tc, thr_hur = thr_hur),
+          location_name = label,
+          plot_type = "Wind time series with event overlays",
+          subtitle = "Daily wind speed with event-duration segments drawn at each event's peak intensity",
+          base_size = base_size
+        )
+      }
     ),
-    wind_distribution = standardize_plot_labels(
-      plot_wind_distribution(daily, thr_tc = thr_tc, thr_hur = thr_hur),
-      location_name = location_name,
-      plot_type = "Daily wind speed distribution (kt)",
-      subtitle = "Histogram of daily wind speeds with tropical-storm and hurricane thresholds",
-      base_size = base_size
+    wind_distribution = list(
+      plot_fn = function(x, label) {
+        standardize_plot_labels(
+          plot_wind_distribution(x, thr_tc = thr_tc, thr_hur = thr_hur),
+          location_name = label,
+          plot_type = "Daily wind speed distribution (kt)",
+          subtitle = "Histogram of daily wind speeds with tropical-storm and hurricane thresholds",
+          base_size = base_size
+        )
+      }
     ),
-    intensity_duration = standardize_plot_labels(
-      plot_intensity_duration(daily = daily, thr_tc = thr_tc, thr_hur = thr_hur),
-      location_name = location_name,
-      plot_type = "Event intensity vs duration",
-      subtitle = "Each point is one event; vertical jitter is small and deterministic to reduce overlap",
-      base_size = base_size
+    intensity_duration = list(
+      plot_fn = function(x, label) {
+        standardize_plot_labels(
+          plot_intensity_duration(daily = x, thr_tc = thr_tc, thr_hur = thr_hur),
+          location_name = label,
+          plot_type = "Event intensity vs duration",
+          subtitle = "Each point is one event; vertical jitter is small and deterministic to reduce overlap",
+          base_size = base_size
+        )
+      }
     )
   )
 
-  file_names <- c(
-    monthly_events_boxplot = "monthly_events_boxplot.png",
-    annual_event_count_probability = "annual_event_count_probability.png",
-    wind_timeseries = "wind_timeseries.png",
-    wind_distribution = "wind_distribution.png",
-    intensity_duration = "intensity_duration.png"
-  )
-  paths <- file.path(output_dir, unname(file_names))
-  names(paths) <- names(file_names)
+  plots <- list()
+  paths <- character()
 
-  for (plot_name in names(plots)) {
+  for (location_key in names(location_data)) {
+    location_daily <- location_data[[location_key]]
+    location_label <- unique(location_daily$location)
+    location_id <- .hazard_viz_location_id(location_label)
+
+    for (plot_id in names(plot_specs)) {
+      plot_name <- sprintf("%s_%s", location_id, plot_id)
+      plots[[plot_name]] <- plot_specs[[plot_id]]$plot_fn(location_daily, location_label)
+      paths[[plot_name]] <- file.path(output_dir, sprintf("%s.png", plot_name))
+    }
+  }
+
+  plots[["rate_comparison"]] <- .plot_rate_comparison(daily) + plot_theme(base_size = base_size)
+  paths[["rate_comparison"]] <- file.path(output_dir, "rate_comparison.png")
+
+  for (plot_name in names(paths)) {
     save_standardized_plot(
       plot_obj = plots[[plot_name]],
       file_path = paths[[plot_name]],
-      width = width,
-      height = height,
+      width = if (identical(plot_name, "rate_comparison")) 8 else width,
+      height = if (identical(plot_name, "rate_comparison")) 4 else height,
       dpi = dpi
     )
   }

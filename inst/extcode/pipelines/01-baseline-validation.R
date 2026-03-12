@@ -14,16 +14,6 @@ ibtracs_file_path <- "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
 baseline_output_dir <- "output/baseline"
 validation_output_dir <- "output/validation"
 
-ensure_dir <- function(path) {
-  if (!dir.exists(path)) {
-    dir.create(path, recursive = TRUE, showWarnings = FALSE)
-  }
-}
-
-ensure_dir(baseline_output_dir)
-ensure_dir(validation_output_dir)
-
-
 # ------------------------------------------------------------------------------
 # Target locations
 # ------------------------------------------------------------------------------
@@ -39,7 +29,7 @@ targets <- tibble::tribble(
 
 
 # ------------------------------------------------------------------------------
-# Model configuration
+# Configure and run the model
 # ------------------------------------------------------------------------------
 
 hazard_cfg <- make_hazard_cfg(
@@ -48,6 +38,17 @@ hazard_cfg <- make_hazard_cfg(
   historical_start_year = 1970L,
   simulation_years = 500L
 )
+
+hazard_out <- run_hazard_model(
+  cfg = hazard_cfg,
+  targets = targets,
+  seed = 42L,
+  climate = make_climate_cfg(scenario = "stationary")
+)
+
+# ------------------------------------------------------------------------------
+# Run validation script
+# ------------------------------------------------------------------------------
 
 validation_cfg <- make_validation_cfg(
   holdout_years = 10L,
@@ -59,18 +60,6 @@ validation_cfg <- make_validation_cfg(
   save_plots = TRUE,
   save_tables = TRUE,
   advanced = NULL
-)
-
-
-# ------------------------------------------------------------------------------
-# Run baseline hazard model and validation
-# ------------------------------------------------------------------------------
-
-hazard_out <- run_hazard_model(
-  cfg = hazard_cfg,
-  targets = targets,
-  seed = 42L,
-  climate = make_climate_cfg(scenario = "stationary")
 )
 
 validation_out <- run_validation_suite(
@@ -107,7 +96,14 @@ daily_by_location <- generate_daily_hazard_impact(
 # Save per-location visualizations
 # ------------------------------------------------------------------------------
 
+
+
+
+
+
+
 for (location in names(daily_by_location)) {
+
   location_output_dir <- file.path(
     baseline_output_dir,
     gsub("[^A-Za-z0-9_]", "_", location)
@@ -132,7 +128,6 @@ for (location in names(daily_by_location)) {
 # ------------------------------------------------------------------------------
 
 comparison_output_dir <- file.path(baseline_output_dir, "comparison")
-ensure_dir(comparison_output_dir)
 
 rate_comparison_plot <- ggplot(
   hazard_out$rates,
@@ -163,10 +158,3 @@ ggsave(
   height = 4
 )
 
-
-# Keep key results available for interactive use
-baseline_validation <- list(
-  hazard = hazard_out,
-  validation = validation_out,
-  daily = daily_by_location
-)

@@ -94,7 +94,7 @@ test_that("rmw resolution is deterministic", {
 test_that("internal option can disable R34 calibration for diagnostics", {
   args <- list(
     Vmax_kt = 80,
-    r_km = 160,
+    r_km = 280,
     R34_km = 220,
     RMW_km = 35,
     lat = 18
@@ -109,4 +109,66 @@ test_that("internal option can disable R34 calibration for diagnostics", {
   no_cal_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, args)
 
   expect_lt(no_cal_val, default_val)
+})
+
+test_that("diagnostic wind-field mode is more conservative for partial and climatology R34", {
+  args <- list(
+    Vmax_kt = 80,
+    r_km = 280,
+    R34_km = 220,
+    RMW_km = 35,
+    lat = 18
+  )
+
+  observed_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "observed")))
+  partial_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "partial")))
+  climo_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "climo")))
+
+  expect_equal(partial_val, observed_val)
+  expect_equal(climo_val, observed_val)
+
+  old_opt <- options(ipdcstorm.wind_field_mode = "diagnostic_new")
+  on.exit(options(old_opt), add = TRUE)
+
+  observed_diag <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "observed")))
+  partial_diag <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "partial")))
+  climo_diag <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "climo")))
+
+  expect_lt(partial_diag, observed_diag)
+  expect_lt(climo_diag, partial_diag)
+})
+
+test_that("compute_site_winds_full records observed, partial, and climo R34 sources", {
+  to_nm <- function(x) ifelse(is.finite(x), x / 1.852, NA_real_)
+  track <- tibble::tibble(
+    SID = rep("AL012020", 3),
+    iso_time = as.POSIXct(
+      c("2020-08-01 00:00:00", "2020-08-01 06:00:00", "2020-08-01 12:00:00"),
+      tz = "UTC"
+    ),
+    lat = c(18, 18, 18),
+    lon = c(-63, -63, -63),
+    dist_km = c(40, 40, 40),
+    wind_kt = c(90, 90, 90),
+    rmw_km = c(35, 35, 35),
+    storm_speed_kt = c(10, 10, 10),
+    r34_ne_nm = c(to_nm(180), NA_real_, NA_real_),
+    r34_se_nm = c(to_nm(180), to_nm(220), NA_real_),
+    r34_sw_nm = c(to_nm(180), to_nm(200), NA_real_),
+    r34_nw_nm = c(to_nm(180), NA_real_, NA_real_),
+    r50_ne_nm = c(to_nm(120), to_nm(120), to_nm(120)),
+    r50_se_nm = c(to_nm(120), to_nm(120), to_nm(120)),
+    r50_sw_nm = c(to_nm(120), to_nm(120), to_nm(120)),
+    r50_nw_nm = c(to_nm(120), to_nm(120), to_nm(120)),
+    r64_ne_nm = c(to_nm(80), to_nm(80), to_nm(80)),
+    r64_se_nm = c(to_nm(80), to_nm(80), to_nm(80)),
+    r64_sw_nm = c(to_nm(80), to_nm(80), to_nm(80)),
+    r64_nw_nm = c(to_nm(80), to_nm(80), to_nm(80))
+  )
+
+  out <- compute_site_winds_full(track, target_lat = 18.5, target_lon = -62.5)
+
+  expect_equal(out$R34_source, c("observed", "partial", "climo"))
+  expect_true(all(is.finite(out$R34_eff_km[1:2])))
+  expect_true(is.finite(out$R34_eff_km[3]))
 })

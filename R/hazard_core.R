@@ -187,22 +187,38 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
 # missing/non-positive R34 via `estimate_R34_climo()`, it marks that row as a
 # fallback radius and uses the climo-specific multiplier.
 .holland_outer_cutoff_multipliers <- function() {
+  wind_field_mode <- getOption("ipdcstorm.wind_field_mode", "legacy")
+  if (identical(wind_field_mode, "diagnostic_new")) {
+    return(list(
+      observed = 1.5,
+      partial = 1.25,
+      climo = 1.1
+    ))
+  }
   list(
     observed = 1.5,
+    partial = 1.5,
     climo = 1.5
   )
 }
 
-.resolve_holland_outer_cutoff_km <- function(R34_km, R34_is_fallback = FALSE) {
+.resolve_holland_outer_cutoff_km <- function(R34_km,
+                                             R34_is_fallback = FALSE,
+                                             R34_source = NULL) {
   mult_cfg <- .holland_outer_cutoff_multipliers()
   n <- length(R34_km)
   R_outer_km <- rep(300, n)
-  R34_is_fallback <- rep_len(R34_is_fallback, n)
+  if (is.null(R34_source)) {
+    R34_source <- ifelse(rep_len(R34_is_fallback, n), "climo", "observed")
+  } else {
+    R34_source <- rep_len(as.character(R34_source), n)
+  }
   has_R34 <- is.finite(R34_km) & (R34_km > 0)
 
   if (any(has_R34)) {
     mult <- rep(mult_cfg$observed, sum(has_R34))
-    mult[R34_is_fallback[has_R34]] <- mult_cfg$climo
+    mult[R34_source[has_R34] == "partial"] <- mult_cfg$partial
+    mult[R34_source[has_R34] == "climo"] <- mult_cfg$climo
     R_outer_km[has_R34] <- mult * R34_km[has_R34]
   }
 
@@ -336,6 +352,7 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
     Vmax_kt,
     r_km,
     R34_km,
+    R34_source = NULL,
     R50_km = NA,
     R64_km = NA,
     RMW_km,
@@ -347,6 +364,8 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   # recycle scalars safely (base R recycling rules assumed by caller)
   out <- rep(NA_real_, n)
   disable_r34_calibration <- isTRUE(getOption("ipdcstorm.disable_r34_calibration", FALSE))
+  wind_field_mode <- getOption("ipdcstorm.wind_field_mode", "legacy")
+  use_diagnostic_new <- identical(wind_field_mode, "diagnostic_new")
 
   ok <- is.finite(Vmax_kt) & Vmax_kt > 0 &
     is.finite(r_km) & r_km >= 0 &
@@ -357,6 +376,11 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   Vmax_kt0 <- Vmax_kt
   r_km0 <- r_km
   RMW_km0 <- pmax(5, pmin(200, RMW_km))
+  if (is.null(R34_source)) {
+    R34_source <- rep("observed", n)
+  } else {
+    R34_source <- rep_len(as.character(R34_source), n)
+  }
 
   # --- FIX 1: Holland B parameterization ---
   B <- rep(NA_real_, n)
@@ -386,7 +410,7 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
 
   # --- FIX 3: Climatological R34 infill ---
   R34_eff <- R34_km
-  R34_is_climo <- rep(FALSE, n)
+  R34_source_used <- R34_source
 
   ##################################
   lat0 <- lat
@@ -395,11 +419,16 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   need_R34 <- ok & (!is.finite(R34_eff) | R34_eff <= 0) & (Vmax_kt0 >= 34)
   if (any(need_R34)) {
     R34_eff[need_R34] <- estimate_R34_climo(Vmax_kt0[need_R34], lat = lat0[need_R34])
-    R34_is_climo[need_R34] <- TRUE
+    R34_source_used[need_R34] <- "climo"
   }
+  R34_is_climo <- R34_source_used == "climo"
+  R34_is_partial <- R34_source_used == "partial"
 
   rmw_over_r34_cap <- 4.0
   clamp_rmw <- ok & R34_is_climo & is.finite(R34_eff) & (R34_eff > 0)
+  if (use_diagnostic_new) {
+    clamp_rmw <- ok & (R34_is_climo | R34_is_partial) & is.finite(R34_eff) & (R34_eff > 0)
+  }
   if (any(clamp_rmw)) {
     RMW_km0[clamp_rmw] <- pmax(5, pmin(RMW_km0[clamp_rmw], R34_eff[clamp_rmw] / rmw_over_r34_cap))
   }
@@ -482,6 +511,9 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
     is.finite(R34_eff[use]) &
     (R34_eff[use] > 0) &
     (r_km0[use] > RMW_km0[use] * 1.2)
+  if (use_diagnostic_new) {
+    can_cal <- can_cal & (R34_source_used[use] == "observed")
+  }
   if (any(can_cal)) {
     R34u <- R34_eff[use][can_cal]
     Bu <- B[use][can_cal]
@@ -500,40 +532,43 @@ estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
       cal_factor[good] <- 34 / V_at_R34_model[good]
 
       # (b) Cap calibration factor to prevent extreme inflation
-      cal_factor <- pmin(cal_factor, 1.4)
+      cal_factor <- pmin(cal_factor, if (use_diagnostic_new) 1.2 else 1.4)
 
       # (a) Quadratic taper: effect concentrates near R34, minimal at intermediate r
       r_site <- r_km0[use][can_cal]
       R34u_safe <- pmax(R34u, RMWu * 1.5)
       taper_linear <- pmin(1.0, pmax(0.0, (r_site - RMWu * 1.2) / (R34u_safe - RMWu * 1.2)))
-      taper <- taper_linear^2  # quadratic: 0.55 linear â†’ 0.30 quadratic
+      taper <- if (use_diagnostic_new) taper_linear^3 else taper_linear^2
       cal_factor[good] <- 1 + taper[good] * (cal_factor[good] - 1)
 
       # (c) Intensity-dependent damping: reduce calibration for strong hurricanes
       # For Vmax > 96 kt (Cat 3+), the inner core dominates and R34 calibration
       # should not inflate intermediate-distance winds
-      intensity_damp <- pmin(1.0, pmax(0.3, 1.0 - (Vmaxu - 64) / 120))
-      cal_factor[good] <- 1 + intensity_damp[good] * (cal_factor[good] - 1)
-
-      # Blend if climatological R34: reduce calibration weight since
-      # climo R34 tends to overestimate (represents mean, not storm-specific
-      # structure). Reduced from 0.5 to 0.3 for tighter tail geometry.
-      is_climo_u <- R34_is_climo[use][can_cal]
-      blend <- is_climo_u & good
-      if (any(blend)) {
-        cal_factor[blend] <- 1 + 0.3 * (cal_factor[blend] - 1)
+      intensity_damp <- if (use_diagnostic_new) {
+        pmin(1.0, pmax(0.2, 1.0 - (Vmaxu - 64) / 90))
+      } else {
+        pmin(1.0, pmax(0.3, 1.0 - (Vmaxu - 64) / 120))
       }
-
+      cal_factor[good] <- 1 + intensity_damp[good] * (cal_factor[good] - 1)
+      if (!use_diagnostic_new) {
+        is_climo_u <- R34_is_climo[use][can_cal]
+        blend <- is_climo_u & good
+        if (any(blend)) {
+          cal_factor[blend] <- 1 + 0.3 * (cal_factor[blend] - 1)
+        }
+      }
       idx <- which(can_cal)
       V_site_kt[idx] <- V_site_kt[idx] * cal_factor
     }
   }
 
   # Outer cutoff is deterministic and pathway-specific.
-  # Both observed and fallback/climatological pathways currently use 1.5x.
+  # Partial or climatology-filled R34 values are tightened to avoid broad
+  # near-miss inflation when outer-wind structure is weakly constrained.
   R_outer <- .resolve_holland_outer_cutoff_km(
     R34_km = R34_eff[use],
-    R34_is_fallback = R34_is_climo[use]
+    R34_is_fallback = R34_is_climo[use],
+    R34_source = R34_source_used[use]
   )
 
   beyond <- r_km0[use] > R_outer
@@ -707,12 +742,23 @@ compute_storm_heading <- function(df) {
 #' @return The input data frame with added site-wind columns.
 #' @export
 compute_site_winds_full <- function(df, target_lat, target_lon) {
+  wind_field_mode <- getOption("ipdcstorm.wind_field_mode", "legacy")
+  use_diagnostic_new <- identical(wind_field_mode, "diagnostic_new")
   mean_radius_nm <- function(r_ne, r_se, r_sw, r_nw) {
     m <- cbind(r_ne, r_se, r_sw, r_nw)
     m[!is.finite(m)] <- NA_real_
     out <- rowMeans(m, na.rm = TRUE)
     out[rowSums(is.finite(m)) == 0] <- NA_real_
     out
+  }
+  min_radius_nm <- function(r_ne, r_se, r_sw, r_nw) {
+    m <- cbind(r_ne, r_se, r_sw, r_nw)
+    m[!is.finite(m)] <- NA_real_
+    out <- apply(m, 1, function(x) {
+      x <- x[is.finite(x)]
+      if (length(x) == 0) NA_real_ else min(x)
+    })
+    as.numeric(out)
   }
 
   if (!("rmw_km" %in% names(df))) df$rmw_km <- NA_real_
@@ -728,13 +774,23 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
       quadrant = .get_quadrant(.data$bearing_to_target),
 
       # R34 radii quality gate:
-      # If fewer than 3 quadrants are present, directional radii are often unreliable.
-      # Fall back to mean radius when >=2 quadrants exist; otherwise leave missing
-      # and allow climo infill downstream.
+      # Keep the legacy mean-radius fallback as the default execution path.
+      # Diagnostic mode can replay the tighter partial-radius behavior for
+      # attribution without changing package defaults.
       nq34 = rowSums(is.finite(cbind(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm))),
       R34_nm_dir = .get_directional_radius(.data$quadrant, .data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
       R34_nm_mean = mean_radius_nm(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
+      R34_nm_min = min_radius_nm(.data$r34_ne_nm, .data$r34_se_nm, .data$r34_sw_nm, .data$r34_nw_nm),
+      R34_source = dplyr::case_when(
+        use_diagnostic_new & is.finite(.data$R34_nm_dir) ~ "observed",
+        use_diagnostic_new & .data$nq34 >= 2 & is.finite(.data$R34_nm_min) ~ "partial",
+        .data$nq34 >= 3 & is.finite(.data$R34_nm_dir) ~ "observed",
+        .data$nq34 >= 2 & is.finite(.data$R34_nm_mean) ~ "partial",
+        TRUE ~ "none"
+      ),
       R34_nm = dplyr::case_when(
+        use_diagnostic_new & is.finite(.data$R34_nm_dir) ~ .data$R34_nm_dir,
+        use_diagnostic_new & .data$nq34 >= 2 & is.finite(.data$R34_nm_min) ~ .data$R34_nm_min,
         .data$nq34 >= 3 ~ .data$R34_nm_dir,
         .data$nq34 >= 2 ~ .data$R34_nm_mean,
         TRUE ~ NA_real_
@@ -768,6 +824,10 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
   df <- df |>
     dplyr::mutate(
       R34_missing = !is.finite(.data$R34_km) | .data$R34_km <= 0,
+      R34_source = dplyr::case_when(
+        .data$R34_source == "none" & is.finite(.data$Vmax_kt) & (.data$Vmax_kt >= 34) ~ "climo",
+        TRUE ~ .data$R34_source
+      ),
       RMW_km = .resolve_trackpoint_rmw_km(
         rmw_obs_km = .data$rmw_km,
         R64_mean_km = .data$R64_mean_km,
@@ -790,7 +850,7 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
   df <- df |>
     dplyr::mutate(
       lat0 = dplyr::if_else(is.finite(.data$lat), .data$lat, 18),
-      R34_is_climo = .data$R34_missing & is.finite(.data$Vmax_kt) & (.data$Vmax_kt >= 34),
+      R34_is_climo = .data$R34_source == "climo",
       R34_eff_km = dplyr::if_else(.data$R34_is_climo, estimate_R34_climo(.data$Vmax_kt, lat = .data$lat0), .data$R34_km),
       RMW_used_km = pmax(5, pmin(200, .data$RMW_km)),
       RMW_used_km = dplyr::if_else(
@@ -799,6 +859,7 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
         .data$RMW_used_km
       )
     )
+  stopifnot(all(df$R34_source %in% c("observed", "partial", "climo", "none")))
 
   stopifnot(nrow(df) == length(df$storm_speed_kt), nrow(df) == length(df$heading_deg))
 
@@ -809,6 +870,7 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
         Vmax_kt = .data$Vmax_kt,
         r_km    = .data$dist_km,
         R34_km  = .data$R34_km,
+        R34_source = .data$R34_source,
         R50_km  = .data$R50_km,
         R64_km  = .data$R64_km,
         RMW_km  = .data$RMW_used_km,

@@ -244,8 +244,13 @@ compute_return_levels <- function(annual_max,
 
 
 # =============================================================================
-# 2) KDE INTENSITY FITTING (internal)
+# 2) INTENSITY SAMPLING (internal)
 # =============================================================================
+
+.hindcast_sampler_mode <- function(mode = NULL) {
+  mode <- mode %||% getOption("ipdcstorm.hindcast_sampler_mode", "legacy")
+  match.arg(as.character(mode), c("legacy", "bounded"))
+}
 
 .fit_intensity_kde <- function(pool, lower, upper = Inf, bw_mult = 1.0) {
   pool <- pool[is.finite(pool)]
@@ -258,48 +263,49 @@ compute_return_levels <- function(annual_max,
       upper = upper,
       n_obs = n,
       pool_mean = if (n > 0) mean(pool) else (lower + 10),
-      pool_sd = if (n > 1) stats::sd(pool) else 10
+      pool_sd = if (n > 1) stats::sd(pool) else 10,
+      pool_min = if (n > 0) min(pool) else lower,
+      pool_max = if (n > 0) max(pool) else upper
     ))
   }
 
-  # Reflect at boundaries
   reflected <- pool
-  reflected <- c(reflected, 2 * lower - pool)  # reflect at lower bound
+  reflected <- c(reflected, 2 * lower - pool)
 
   if (is.finite(upper)) {
-    reflected <- c(reflected, 2 * upper - pool)  # reflect at upper bound
+    reflected <- c(reflected, 2 * upper - pool)
   }
 
-  # Bandwidth: Silverman's rule on original data, scaled
   bw <- bw_mult * stats::bw.nrd0(pool)
 
-  # Fit KDE on reflected data
-  dens <- stats::density(reflected, bw = bw, n = 2048,
-                         from = lower - 3 * bw,
-                         to = if (is.finite(upper)) upper + 3 * bw else max(pool) + 6 * bw)
+  dens <- stats::density(
+    reflected,
+    bw = bw,
+    n = 2048,
+    from = lower - 3 * bw,
+    to = if (is.finite(upper)) upper + 3 * bw else max(pool) + 6 * bw
+  )
 
-  # Restrict to valid support
   valid <- dens$x >= lower & (if (is.finite(upper)) dens$x <= upper else TRUE)
   x_valid <- dens$x[valid]
   y_valid <- dens$y[valid]
 
-  # Renormalize
   y_valid <- pmax(0, y_valid)
-  area <- stats::integrate(stats::approxfun(x_valid, y_valid, rule = 2),
-                           lower = min(x_valid), upper = max(x_valid),
-                           subdivisions = 500)$value
+  area <- stats::integrate(
+    stats::approxfun(x_valid, y_valid, rule = 2),
+    lower = min(x_valid),
+    upper = max(x_valid),
+    subdivisions = 500
+  )$value
   if (area > 0) y_valid <- y_valid / area
 
-  # Build CDF for inverse-CDF sampling
   dx <- diff(x_valid)
   y_mid <- (y_valid[-1] + y_valid[-length(y_valid)]) / 2
   cdf_y <- c(0, cumsum(y_mid * dx))
   cdf_x <- x_valid
 
-  # Ensure CDF reaches exactly 1
   if (max(cdf_y) > 0) cdf_y <- cdf_y / max(cdf_y)
 
-  # Deduplicate CDF (approx() warns on tied x-values)
   dup <- duplicated(cdf_y)
   cdf_x <- cdf_x[!dup]
   cdf_y <- cdf_y[!dup]
@@ -313,8 +319,11 @@ compute_return_levels <- function(annual_max,
     lower = lower,
     upper = upper,
     n_obs = n,
+    pool = pool,
     pool_mean = mean(pool),
     pool_sd = stats::sd(pool),
+    pool_min = min(pool),
+    pool_max = max(pool),
     bw = bw
   )
 }
@@ -329,28 +338,35 @@ compute_return_levels <- function(annual_max,
 #'   `fit$lower` to `fit$upper`.
 #' @keywords internal
 .sample_intensity_kde <- function(fit, n) {
+  n <- as.integer(n)
   if (n <= 0) return(numeric(0))
+  sampler_mode <- .hindcast_sampler_mode()
 
   if (fit$method == "fallback") {
-    # Too few observations: jittered resample
     if (fit$n_obs == 0) {
       return(rep(fit$pool_mean, n))
     }
-    draws <- sample(fit$pool, n, replace = TRUE) +
-      stats::rnorm(n, 0, fit$pool_sd * 0.2)
+    draws <- sample(fit$pool, n, replace = TRUE)
+    if (identical(sampler_mode, "legacy")) {
+      draws <- draws + stats::rnorm(n, 0, fit$pool_sd * 0.2)
+    }
     draws <- pmax(fit$lower, draws)
     if (is.finite(fit$upper)) draws <- pmin(fit$upper, draws)
+    if (identical(sampler_mode, "bounded")) {
+      draws <- pmax(fit$pool_min, draws)
+      draws <- pmin(fit$pool_max, draws)
+    }
     return(draws)
   }
 
-  # Inverse-CDF sampling
   u <- stats::runif(n)
   draws <- stats::approx(fit$cdf_y, fit$cdf_x, xout = u, rule = 2)$y
-
-  # Enforce bounds
   draws <- pmax(fit$lower, draws)
   if (is.finite(fit$upper)) draws <- pmin(fit$upper, draws)
-
+  if (identical(sampler_mode, "bounded")) {
+    draws <- pmax(fit$pool_min, draws)
+    draws <- pmin(fit$pool_max, draws)
+  }
   draws
 }
 
@@ -925,6 +941,7 @@ bootstrap_return_level_ci <- function(annual_max,
   )
 
   message("  Hindcast frequency mode: ", if (isTRUE(use_raw_rates)) "RAW (point)" else "SCALED (reference)")
+  message("  Hindcast sampler mode: ", toupper(.hindcast_sampler_mode()))
 
   message("  Rate calibration (training):")
   for (i in seq_len(nrow(rate_check_train))) {
@@ -940,7 +957,7 @@ bootstrap_return_level_ci <- function(annual_max,
     ))
   }
 
-  # --- FIT KDE INTENSITY DISTRIBUTIONS ---
+  # --- FIT INTENSITY POOLS ---
   train_V_ts <- ev_train |>
     dplyr::filter(.data$storm_class == "TS") |>
     dplyr::pull(.data$peak_wind_kt) |>
@@ -961,14 +978,14 @@ bootstrap_return_level_ci <- function(annual_max,
   n_ts_obs  <- length(train_V_ts)
   n_hur_obs <- length(train_V_hur)
 
-  message(sprintf("  KDE fits: TS pool=%d events (mean=%.0f kt), HUR pool=%d events (mean=%.0f kt)",
+  message(sprintf("  Intensity pools: TS=%d events (mean=%.0f kt), HUR=%d events (mean=%.0f kt)",
                   n_ts_obs,  if (n_ts_obs > 0) mean(train_V_ts) else NA,
                   n_hur_obs, if (n_hur_obs > 0) mean(train_V_hur) else NA))
 
   # Fallback intensities if KDE can't be fit
   fallback_V <- list(TS = 45, HUR = 85)
 
-  # --- SIMULATE ANNUAL MAXIMA WITH KDE SAMPLING ---
+  # --- SIMULATE ANNUAL MAXIMA WITH CONSTRAINED INTENSITY SAMPLING ---
   sim_counts <- simulate_twolevel_counts(
     lt_train_for_sim, ki_train$k_hat, n_years_sim = n_sim,
     delta_sst = 0,
@@ -986,16 +1003,14 @@ bootstrap_return_level_ci <- function(annual_max,
       if (n_ts_obs >= 3) {
         winds <- c(winds, .sample_intensity_kde(kde_ts, n_ts))
       } else {
-        winds <- c(winds, rep(fallback_V$TS, n_ts) +
-                     stats::rnorm(n_ts, 0, 5))
+        winds <- c(winds, rep(fallback_V$TS, n_ts))
       }
     }
     if (n_hur > 0) {
       if (n_hur_obs >= 3) {
         winds <- c(winds, .sample_intensity_kde(kde_hur, n_hur))
       } else {
-        winds <- c(winds, rep(fallback_V$HUR, n_hur) +
-                     stats::rnorm(n_hur, 0, 10))
+        winds <- c(winds, rep(fallback_V$HUR, n_hur))
       }
     }
 
@@ -1108,7 +1123,8 @@ bootstrap_return_level_ci <- function(annual_max,
       n_hur_pool = n_hur_obs,
       gev_xi = sim_gev$gev_fit$xi,
       gev_sigma = sim_gev$gev_fit$sigma,
-      p_zero = sim_gev$p_zero
+      p_zero = sim_gev$p_zero,
+      sampler_mode = .hindcast_sampler_mode()
     )
   )
 }
@@ -2113,6 +2129,223 @@ validate_hazard_model <- function(cfg,
   val <- run_validation_suite(out = out, cfg = validation_cfg)
 
   list(out = out, val = val, artifacts = val$artifacts)
+}
+
+
+.hindcast_xi_table <- function(hc) {
+  if (is.null(hc$per_island) || length(hc$per_island) == 0) {
+    return(tibble::tibble(
+      location = character(0),
+      sim_xi = numeric(0),
+      obs_xi = numeric(0)
+    ))
+  }
+
+  rows <- lapply(names(hc$per_island), function(location) {
+    hi <- hc$per_island[[location]]
+    if (is.null(hi) || isTRUE(hi$skipped)) {
+      return(NULL)
+    }
+    tibble::tibble(
+      location = location,
+      sim_xi = hi$gev_fit$gev_fit$xi %||% NA_real_,
+      obs_xi = hi$obs_gev$gev_fit$xi %||% NA_real_
+    )
+  })
+  dplyr::bind_rows(rows)
+}
+
+.run_hindcast_attribution_case <- function(cfg,
+                                           targets,
+                                           validation_cfg,
+                                           climate,
+                                           model_seed,
+                                           wind_field_mode,
+                                           annual_rate_mode,
+                                           sampler_mode) {
+  old_opts <- options(
+    ipdcstorm.wind_field_mode = wind_field_mode,
+    ipdcstorm.hindcast_sampler_mode = sampler_mode
+  )
+  on.exit(options(old_opts), add = TRUE)
+
+  out <- run_hazard_model(
+    cfg = cfg,
+    targets = targets,
+    storm_classes = c("TS", "HUR"),
+    climate = climate,
+    seed = model_seed,
+    verbose = FALSE
+  )
+
+  n_sim_info <- .resolve_validation_n_sim(cfg = validation_cfg, out = out)
+  beta_sst_val <- 0
+  gamma_val <- 0
+  if (!is.null(out$fit) && nrow(out$fit) > 0) {
+    beta_sst_val <- out$fit$beta_sst[1]
+    gamma_val <- out$fit$gamma_intensity[1]
+  }
+
+  hc <- .validate_hindcast_all(
+    out = out,
+    holdout_years = validation_cfg$holdout_years,
+    n_sim = n_sim_info$n_sim,
+    return_periods = validation_cfg$return_periods,
+    conf_level = validation_cfg$conf_level,
+    seed = validation_cfg$seed,
+    beta_sst = beta_sst_val,
+    gamma_intensity = gamma_val,
+    use_raw_rates = identical(annual_rate_mode, "raw"),
+    xi_bounds = validation_cfg$advanced$xi_bounds,
+    n_boot = 0L
+  )
+
+  xi_tbl <- .hindcast_xi_table(hc)
+  case_id <- paste(
+    paste0("wind=", wind_field_mode),
+    paste0("rate=", annual_rate_mode),
+    paste0("sampler=", sampler_mode),
+    sep = "|"
+  )
+
+  comp <- hc$comparison |>
+    dplyr::left_join(xi_tbl, by = "location") |>
+    dplyr::mutate(
+      case_id = case_id,
+      wind_field_mode = wind_field_mode,
+      annual_rate_mode = annual_rate_mode,
+      sampler_mode = sampler_mode,
+      model_seed = as.integer(model_seed),
+      validation_seed = as.integer(validation_cfg$seed),
+      data_id = out$run_metadata$ibtracs_data_id %||% NA_character_,
+      parameter_id = out$run_metadata$parameter_id %||% NA_character_,
+      lambda_scaler_id = out$lambda_scaler_id %||% NA_character_
+    )
+
+  list(
+    out = out,
+    hindcast = hc,
+    comparison = comp
+  )
+}
+
+.summarize_hindcast_attribution <- function(comp) {
+  if (nrow(comp) == 0) {
+    return(comp)
+  }
+
+  summary_rows <- lapply(split(comp, comp$case_id), function(case_tbl) {
+    split(case_tbl, case_tbl$location) |>
+      lapply(function(site_tbl) {
+        tibble::tibble(
+          case_id = site_tbl$case_id[1],
+          location = site_tbl$location[1],
+          wind_field_mode = site_tbl$wind_field_mode[1],
+          annual_rate_mode = site_tbl$annual_rate_mode[1],
+          sampler_mode = site_tbl$sampler_mode[1],
+          model_seed = site_tbl$model_seed[1],
+          validation_seed = site_tbl$validation_seed[1],
+          data_id = site_tbl$data_id[1],
+          parameter_id = site_tbl$parameter_id[1],
+          lambda_scaler_id = site_tbl$lambda_scaler_id[1],
+          obs_xi = site_tbl$obs_xi[1],
+          sim_xi = site_tbl$sim_xi[1],
+          rl_bias_rp5 = site_tbl$bias_pct[match(5, site_tbl$return_period)],
+          rl_bias_rp10 = site_tbl$bias_pct[match(10, site_tbl$return_period)],
+          rl_bias_rp25 = site_tbl$bias_pct[match(25, site_tbl$return_period)],
+          rl_bias_rp50 = site_tbl$bias_pct[match(50, site_tbl$return_period)]
+        )
+      }) |>
+      dplyr::bind_rows()
+  })
+
+  dplyr::bind_rows(summary_rows)
+}
+
+.run_hindcast_attribution_grid <- function(cfg,
+                                           targets,
+                                           validation_cfg = make_validation_cfg(
+                                             holdout_years = 10L,
+                                             n_sim = 500L,
+                                             return_periods = c(5, 10, 25, 50),
+                                             conf_level = 0.90,
+                                             seed = 42L,
+                                             save_plots = FALSE,
+                                             save_tables = FALSE
+                                           ),
+                                           climate = NULL,
+                                           locations = c("Saba", "Statia", "St_Martin"),
+                                           model_seed = 42L) {
+  if (!inherits(validation_cfg, "validation_cfg")) {
+    stop("validation_cfg must be created by make_validation_cfg().", call. = FALSE)
+  }
+
+  targets_norm <- .normalize_hazard_targets(targets)
+  targets_sub <- targets_norm |>
+    dplyr::filter(.data$name %in% .env$locations)
+  if (nrow(targets_sub) == 0) {
+    stop("No requested locations found in targets.", call. = FALSE)
+  }
+
+  wind_rate_cases <- expand.grid(
+    wind_field_mode = c("legacy", "diagnostic_new"),
+    annual_rate_mode = c("raw", "adjusted"),
+    stringsAsFactors = FALSE
+  )
+  sampler_cases <- tibble::tibble(
+    wind_field_mode = "legacy",
+    annual_rate_mode = "raw",
+    sampler_mode = c("legacy", "bounded")
+  )
+
+  wind_rate_rows <- lapply(seq_len(nrow(wind_rate_cases)), function(i) {
+    case <- wind_rate_cases[i, , drop = FALSE]
+    .run_hindcast_attribution_case(
+      cfg = cfg,
+      targets = targets_sub,
+      validation_cfg = validation_cfg,
+      climate = climate,
+      model_seed = model_seed,
+      wind_field_mode = case$wind_field_mode[[1]],
+      annual_rate_mode = case$annual_rate_mode[[1]],
+      sampler_mode = "legacy"
+    )$comparison
+  })
+  sampler_rows <- lapply(seq_len(nrow(sampler_cases)), function(i) {
+    case <- sampler_cases[i, , drop = FALSE]
+    .run_hindcast_attribution_case(
+      cfg = cfg,
+      targets = targets_sub,
+      validation_cfg = validation_cfg,
+      climate = climate,
+      model_seed = model_seed,
+      wind_field_mode = case$wind_field_mode[[1]],
+      annual_rate_mode = case$annual_rate_mode[[1]],
+      sampler_mode = case$sampler_mode[[1]]
+    )$comparison
+  })
+
+  wind_rate_grid <- dplyr::bind_rows(wind_rate_rows)
+  sampler_grid <- dplyr::bind_rows(sampler_rows)
+  combined <- dplyr::bind_rows(wind_rate_grid, sampler_grid)
+
+  list(
+    wind_rate_grid = wind_rate_grid,
+    sampler_grid = sampler_grid,
+    summary = .summarize_hindcast_attribution(combined),
+    metadata = combined |>
+      dplyr::distinct(
+        .data$case_id,
+        .data$wind_field_mode,
+        .data$annual_rate_mode,
+        .data$sampler_mode,
+        .data$model_seed,
+        .data$validation_seed,
+        .data$data_id,
+        .data$parameter_id,
+        .data$lambda_scaler_id
+      )
+  )
 }
 
 

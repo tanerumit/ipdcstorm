@@ -93,9 +93,92 @@ test_that("validation configs and return-level helpers expose stable public resu
 
   expect_s3_class(cfg, "validation_cfg")
   expect_output(print(cfg), "Validation configuration")
+  expect_true(cfg$advanced$hindcast_use_raw_rates)
   expect_equal(names(rl_emp), c("RL_2yr", "RL_5yr"))
   expect_true(isTRUE(gev_fit$converged))
   expect_true(all(c("return_levels", "p_zero", "n_total", "n_nonzero") %in% names(rl_gev)))
+})
+
+test_that("empirical hindcast intensity sampling can be bounded for diagnostics", {
+  fit <- ipdcstorm:::.fit_intensity_kde(c(40, 55, 63), lower = 34, upper = 64)
+
+  old_opt <- options(ipdcstorm.hindcast_sampler_mode = "bounded")
+  on.exit(options(old_opt), add = TRUE)
+
+  set.seed(42)
+  draws_a <- ipdcstorm:::.sample_intensity_kde(fit, 50)
+  set.seed(42)
+  draws_b <- ipdcstorm:::.sample_intensity_kde(fit, 50)
+
+  expect_equal(draws_a, draws_b)
+  expect_true(all(draws_a >= min(fit$pool)))
+  expect_lte(max(draws_a), max(fit$pool))
+})
+
+test_that("hindcast attribution grid records mode metadata from workspace reruns", {
+  out_stub <- validation_out_fixture()
+  hc_stub <- list(
+    comparison = tibble::tibble(
+      location = c("Saba", "Saba", "Statia", "Statia", "St_Martin", "St_Martin"),
+      return_period = c(5, 10, 5, 10, 5, 10),
+      obs_full_rl = c(80, 90, 75, 85, 95, 105),
+      obs_test_rl = c(78, 88, 72, 82, 92, 102),
+      sim_rl = c(82, 91, 79, 87, 98, 110),
+      sim_median = c(82, 91, 79, 87, 98, 110),
+      sim_ci_lo = NA_real_,
+      sim_ci_hi = NA_real_,
+      obs_ci_lo = NA_real_,
+      obs_ci_hi = NA_real_,
+      obs_ci_method = "none",
+      obs_in_ci = NA,
+      model_in_obs_ci = NA,
+      obs_in_model_ci = NA,
+      bias_pct = c(2, 1, 5, 2, 3, 5)
+    ),
+    per_island = list(
+      Saba = list(skipped = FALSE, gev_fit = list(gev_fit = list(xi = 0.12)), obs_gev = list(gev_fit = list(xi = 0.08))),
+      Statia = list(skipped = FALSE, gev_fit = list(gev_fit = list(xi = 0.14)), obs_gev = list(gev_fit = list(xi = 0.09))),
+      St_Martin = list(skipped = FALSE, gev_fit = list(gev_fit = list(xi = 0.10)), obs_gev = list(gev_fit = list(xi = 0.07)))
+    )
+  )
+
+  local_mocked_bindings(
+    run_hazard_model = function(cfg, targets, storm_classes, climate = NULL, seed = NULL, verbose = FALSE) {
+      out_stub$run_metadata <- list(
+        seed = seed,
+        ibtracs_data_id = "ibtracs_fixture|rows=2",
+        parameter_id = "params-fixture"
+      )
+      out_stub$lambda_scaler_id <- "lambda-fixture"
+      out_stub
+    },
+    .validate_hindcast_all = function(out, ...) hc_stub,
+    .package = "ipdcstorm"
+  )
+
+  grid <- ipdcstorm:::.run_hindcast_attribution_grid(
+    cfg = make_hazard_cfg(simulation_years = 120L),
+    targets = tibble::tibble(
+      location = c("Saba", "Statia", "St_Martin"),
+      lat = c(17.6350, 17.4890, 18.0708),
+      lon = c(-63.2300, -62.9740, -63.0501)
+    ),
+    validation_cfg = make_validation_cfg(
+      holdout_years = 10L,
+      n_sim = 120L,
+      return_periods = c(5, 10),
+      seed = 99L,
+      save_plots = FALSE,
+      save_tables = FALSE
+    ),
+    model_seed = 77L
+  )
+
+  expect_true(all(c("wind_rate_grid", "sampler_grid", "summary", "metadata") %in% names(grid)))
+  expect_true(all(c("case_id", "data_id", "parameter_id", "model_seed", "validation_seed") %in% names(grid$metadata)))
+  expect_true(all(c("rl_bias_rp5", "rl_bias_rp10", "sim_xi", "obs_xi") %in% names(grid$summary)))
+  expect_equal(sort(unique(grid$wind_rate_grid$annual_rate_mode)), c("adjusted", "raw"))
+  expect_equal(sort(unique(grid$sampler_grid$sampler_mode)), c("bounded", "legacy"))
 })
 
 test_that("bootstrap and reference data helpers return expected schema", {

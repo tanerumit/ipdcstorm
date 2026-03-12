@@ -40,6 +40,20 @@ Do not add anything outside this set without explicit approval.
 
 ## Completion gates and reporting (mandatory)
 
+**Purpose:** 
+- Create an audit trail for reproducibility, accountability, and future context. Reports enable rapid onboarding to existing work, retrospective debugging, and clear communication of scope boundaries.
+
+**Report structure:**
 - Ensure `tools/codex_reports/` exists.
 - Create exactly one report file per task: `tools/codex_reports/YYYY-MM-DD__HHMM__<task-slug>.md`
-- Report must include: goal, scope, summary, files changed, commands run, test results, behavior changes, follow-ups/risks.
+
+Required sections:
+- 1. Goal: What outcome was intended (solves ambiguity on task definition)
+- 2. Scope: What was/wasn't included (prevents scope creep accusations, clarifies boundaries)
+- 3. Problem solved: Specific pain point or blocker this addresses (justifies effort, aids future triage)
+- 4. Summary: Concise overview of approach and results (quick reference for others)
+- 5. Files changed: Paths, line counts, nature of edits (locates impact, enables efficient code review)
+- 6. Commands run: Exact reproduction steps (reproducibility; critical if tests or builds are involved)
+- 7. Test results: Pass/fail status and coverage (confidence signal; documents known limitations)
+- 8. Behavior changes: User-facing or integration impacts (prevents surprises downstream)
+- 9. Follow-ups/risks: Debt, edge cases, dependencies not yet addressed (unblocks planning for next phase)

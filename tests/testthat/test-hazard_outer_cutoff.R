@@ -2,20 +2,25 @@ test_that("observed R34 uses a 1.5x Holland outer cutoff", {
   R34_km <- c(80, 120)
   R_outer_km <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_km,
-    R34_is_fallback = FALSE
+    R34_source = "observed"
   )
 
   expect_equal(R_outer_km / R34_km, c(1.5, 1.5))
 })
 
-test_that("fallback R34 uses a 1.5x Holland outer cutoff", {
+test_that("partial and climatology R34 default to the legacy 1.5x Holland outer cutoff", {
   R34_km <- c(80, 120)
-  R_outer_km <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
+  R_outer_partial <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_km,
-    R34_is_fallback = TRUE
+    R34_source = "partial"
+  )
+  R_outer_climo <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
+    R34_km = R34_km,
+    R34_source = "climo"
   )
 
-  expect_equal(R_outer_km / R34_km, c(1.5, 1.5))
+  expect_equal(R_outer_partial / R34_km, c(1.5, 1.5))
+  expect_equal(R_outer_climo / R34_km, c(1.5, 1.5))
 })
 
 test_that("observed R34 decays immediately beyond the 1.5x cutoff", {
@@ -25,7 +30,7 @@ test_that("observed R34 decays immediately beyond the 1.5x cutoff", {
   r_km <- 160
   R_outer_km <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_km,
-    R34_is_fallback = FALSE
+    R34_source = "observed"
   )
 
   wind_no_decay <- ipdcstorm:::.estimate_site_wind_holland(
@@ -48,14 +53,14 @@ test_that("observed R34 decays immediately beyond the 1.5x cutoff", {
   expect_equal(wind_with_decay, wind_no_decay * expected_decay, tolerance = 1e-10)
 })
 
-test_that("fallback R34 decays immediately beyond the 1.5x cutoff", {
+test_that("climatology R34 decays immediately beyond the legacy 1.5x cutoff", {
   Vmax_kt <- 34
   RMW_km <- 200
   lat <- 25
   R34_fallback_km <- ipdcstorm:::estimate_R34_climo(Vmax_kt, lat = lat)
   R_outer_km <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_fallback_km,
-    R34_is_fallback = TRUE
+    R34_source = "climo"
   )
   delta_km <- 3
   r0_km <- R_outer_km
