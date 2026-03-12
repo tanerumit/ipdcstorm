@@ -1409,6 +1409,65 @@ resolve_climate_inputs <- function(climate_cfg,
     .clamp_nonnegative(shifted)
   }
 
+  .clamp_scalar <- function(x, lower, upper) {
+    min(max(as.numeric(x), as.numeric(lower)), as.numeric(upper))
+  }
+
+  .resolve_rate_response_regime <- function(future_period, raw_scale) {
+    midpoint_year <- as.numeric(mean(as.integer(future_period)))
+    if (!is.finite(midpoint_year)) {
+      stop("future_period must resolve to a finite midpoint year.", call. = FALSE)
+    }
+
+    if (midpoint_year <= 2055) {
+      regime <- "near_term"
+      regime_weight <- 0
+    } else if (midpoint_year >= 2085) {
+      regime <- "late_century"
+      regime_weight <- 1
+    } else {
+      regime <- "transition"
+      regime_weight <- (midpoint_year - 2055) / (2085 - 2055)
+    }
+
+    damping <- 0.08 + regime_weight * (0.35 - 0.08)
+    rate_bounds <- c(
+      0.95 + regime_weight * (0.85 - 0.95),
+      1.08 + regime_weight * (1.30 - 1.08)
+    )
+    redistribution_strength <- 0.06 + regime_weight * (0.18 - 0.06)
+    redistribution_bounds <- c(
+      0.90 + regime_weight * (0.75 - 0.90),
+      1.10 + regime_weight * (1.25 - 1.10)
+    )
+
+    scaled <- 1 + damping * (as.numeric(raw_scale) - 1)
+    bounded <- .clamp_scalar(scaled, rate_bounds[[1]], rate_bounds[[2]])
+
+    list(
+      regime = regime,
+      midpoint_year = midpoint_year,
+      damping = damping,
+      basin_rate_bounds = rate_bounds,
+      redistribution_strength = redistribution_strength,
+      redistribution_bounds = redistribution_bounds,
+      raw_scale = as.numeric(raw_scale),
+      adjusted_scale = as.numeric(bounded),
+      guardrail = list(
+        triggered = !isTRUE(all.equal(as.numeric(raw_scale), as.numeric(bounded), tolerance = 1e-12)),
+        reason = if (as.numeric(raw_scale) > rate_bounds[[2]]) {
+          "count_inflation_bounded"
+        } else if (as.numeric(raw_scale) < rate_bounds[[1]]) {
+          "count_decline_bounded"
+        } else if (!isTRUE(all.equal(as.numeric(raw_scale), as.numeric(bounded), tolerance = 1e-12))) {
+          "rate_response_damped"
+        } else {
+          "none"
+        }
+      )
+    )
+  }
+
   baseline <- .calibrate_climate_baseline(
     climate_cfg = climate_cfg,
     annual_counts = annual_counts,
@@ -1430,6 +1489,22 @@ resolve_climate_inputs <- function(climate_cfg,
   beta_sst <- baseline$beta_0
   gamma <- baseline$gamma_0
   climate_mode <- "baseline"
+  raw_sst_scale <- 1
+  f_rate_climate <- 1
+  response_regime <- list(
+    regime = "baseline",
+    midpoint_year = NA_real_,
+    damping = 0,
+    basin_rate_bounds = c(1, 1),
+    redistribution_strength = 0,
+    redistribution_bounds = c(1, 1),
+    raw_scale = 1,
+    adjusted_scale = 1,
+    guardrail = list(
+      triggered = FALSE,
+      reason = "none"
+    )
+  )
 
   if (!identical(baseline$scenario, "stationary")) {
     delta_sst <- get_scenario_delta(
@@ -1443,23 +1518,47 @@ resolve_climate_inputs <- function(climate_cfg,
     beta_sst <- .resolve_effective_sensitivity(baseline$beta_0, baseline$k_beta, delta_sst)
     gamma <- .resolve_effective_sensitivity(baseline$gamma_0, baseline$k_gamma, delta_sst)
   }
-  sst_scale <- exp(beta_sst * delta_sst)
+  raw_sst_scale <- exp(beta_sst * delta_sst)
+  response_regime <- if (identical(climate_mode, "future")) {
+    .resolve_rate_response_regime(future_period = future_period, raw_scale = raw_sst_scale)
+  } else {
+    response_regime
+  }
+  f_rate_climate <- response_regime$adjusted_scale
+  sst_scale <- f_rate_climate
   sst_scale_guardrail <- list(
     triggered = FALSE,
     reason = "none",
     sst_scale_max = sst_scale_guardrail_max
   )
-  if (is.finite(delta_sst) && delta_sst > 0 && is.finite(sst_scale) && sst_scale > sst_scale_guardrail_max) {
+  if (is.finite(delta_sst) && delta_sst > 0 && is.finite(raw_sst_scale) && raw_sst_scale > sst_scale_guardrail_max) {
     beta_sst <- log(sst_scale_guardrail_max) / delta_sst
-    sst_scale <- exp(beta_sst * delta_sst)
+    raw_sst_scale <- exp(beta_sst * delta_sst)
+    response_regime <- if (identical(climate_mode, "future")) {
+      .resolve_rate_response_regime(future_period = future_period, raw_scale = raw_sst_scale)
+    } else {
+      response_regime
+    }
+    f_rate_climate <- response_regime$adjusted_scale
+    sst_scale <- f_rate_climate
     sst_scale_guardrail$triggered <- TRUE
     sst_scale_guardrail$reason <- "sst_scale_above_plausibility_limit"
     if (verbose) {
       message(sprintf(
-        "[climate] Guardrail: SST count multiplier exceeded %.2fx; beta_sst reduced to %.3f 1/degC.",
+        "[climate] Guardrail: raw SST count multiplier exceeded %.2fx; beta_sst reduced to %.3f 1/degC.",
         sst_scale_guardrail_max, beta_sst
       ))
     }
+  }
+  if (verbose && identical(climate_mode, "future") && isTRUE(response_regime$guardrail$triggered)) {
+    message(sprintf(
+      "[climate] Climate rate regime (%s): raw %.3fx -> applied %.3fx within [%.2f, %.2f].",
+      response_regime$regime,
+      response_regime$raw_scale,
+      response_regime$adjusted_scale,
+      response_regime$basin_rate_bounds[[1]],
+      response_regime$basin_rate_bounds[[2]]
+    ))
   }
 
   list(
@@ -1467,6 +1566,7 @@ resolve_climate_inputs <- function(climate_cfg,
     source = baseline$source,
     delta_sst = as.numeric(delta_sst),
     beta_sst = as.numeric(beta_sst),
+    beta_sst_effective = if (isTRUE(delta_sst > 0)) log(as.numeric(f_rate_climate)) / as.numeric(delta_sst) else as.numeric(beta_sst),
     gamma = as.numeric(gamma),
     p_hur_base = as.numeric(baseline$p_hur_base),
     beta_0 = as.numeric(baseline$beta_0),
@@ -1476,6 +1576,8 @@ resolve_climate_inputs <- function(climate_cfg,
     k_gamma = as.numeric(baseline$k_gamma),
     future_period = future_period,
     sst_scale = as.numeric(sst_scale),
+    raw_sst_scale = as.numeric(raw_sst_scale),
+    f_rate_climate = as.numeric(f_rate_climate),
     annual_count_series = baseline$annual_count_series,
     annual_count_source = baseline$annual_count_source,
     beta_guardrail = baseline$beta_guardrail,
@@ -1483,7 +1585,8 @@ resolve_climate_inputs <- function(climate_cfg,
     baseline_years = baseline$baseline_years,
     perturb = baseline$perturb,
     perturb_state = baseline$perturb_state,
-    climate_mode = climate_mode
+    climate_mode = climate_mode,
+    response_regime = response_regime
   )
 }
 

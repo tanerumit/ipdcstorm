@@ -3462,6 +3462,103 @@ validate_wind_field <- function(out, obs_table = NULL) {
   dplyr::bind_rows(rows)
 }
 
+.climate_response_diagnostics <- function(out) {
+  empty_summary <- tibble::tibble(
+    climate_mode = character(0),
+    climate_regime = character(0),
+    basin_count_ratio = numeric(0),
+    basin_rate_multiplier = numeric(0),
+    basin_rate_raw_multiplier = numeric(0),
+    hurricane_fraction_baseline = numeric(0),
+    hurricane_fraction_simulated = numeric(0),
+    hurricane_fraction_change_pp = numeric(0),
+    redistribution_rmse_share_pp = numeric(0),
+    redistribution_max_abs_share_pp = numeric(0)
+  )
+  empty_detail <- tibble::tibble(
+    location = character(0),
+    baseline_rate = numeric(0),
+    simulated_rate = numeric(0),
+    count_ratio = numeric(0),
+    baseline_share = numeric(0),
+    simulated_share = numeric(0),
+    redistribution_ratio = numeric(0),
+    redistribution_change_pp = numeric(0)
+  )
+
+  if (is.null(out$sim) || is.null(out$rates) || nrow(out$sim) == 0 || nrow(out$rates) == 0) {
+    return(list(summary = empty_summary, by_location = empty_detail))
+  }
+
+  rate_tbl <- out$rates
+  if (!is.null(out$lambda_scalers) && nrow(out$lambda_scalers) > 0) {
+    scaled_rates <- lapply(split(rate_tbl, rate_tbl$location), function(tbl) {
+      loc_name <- unique(tbl$location)
+      adj <- .apply_lambda_scalers_to_lambda_table(
+        lambda_table = dplyr::select(tbl, -"location"),
+        location = loc_name[[1]],
+        lambda_scalers = out$lambda_scalers
+      )
+      dplyr::mutate(adj, location = loc_name[[1]], .before = 1)
+    }) |>
+      dplyr::bind_rows()
+    rate_tbl <- scaled_rates
+  }
+  baseline_loc <- rate_tbl |>
+    dplyr::group_by(.data$location) |>
+    dplyr::summarise(
+      baseline_rate = sum(.data$lambda, na.rm = TRUE),
+      baseline_hur_rate = sum(.data$lambda[.data$storm_class == "HUR"], na.rm = TRUE),
+      .groups = "drop"
+    )
+  baseline_total <- sum(baseline_loc$baseline_rate, na.rm = TRUE)
+  if (!is.finite(baseline_total) || baseline_total <= 0) {
+    return(list(summary = empty_summary, by_location = empty_detail))
+  }
+
+  sim_loc <- out$sim |>
+    dplyr::group_by(.data$location) |>
+    dplyr::summarise(
+      simulated_rate = mean(.data$n_total, na.rm = TRUE),
+      simulated_hur_rate = mean(.data$n_hur, na.rm = TRUE),
+      .groups = "drop"
+    )
+  simulated_total <- sum(sim_loc$simulated_rate, na.rm = TRUE)
+  detail <- dplyr::left_join(baseline_loc, sim_loc, by = "location") |>
+    dplyr::mutate(
+      simulated_rate = dplyr::coalesce(.data$simulated_rate, 0),
+      simulated_hur_rate = dplyr::coalesce(.data$simulated_hur_rate, 0),
+      count_ratio = dplyr::if_else(.data$baseline_rate > 0, .data$simulated_rate / .data$baseline_rate, NA_real_),
+      baseline_share = .data$baseline_rate / sum(.data$baseline_rate, na.rm = TRUE),
+      simulated_share = if (simulated_total > 0) .data$simulated_rate / simulated_total else 0,
+      redistribution_ratio = dplyr::if_else(.data$baseline_share > 0, .data$simulated_share / .data$baseline_share, NA_real_),
+      redistribution_change_pp = 100 * (.data$simulated_share - .data$baseline_share)
+    )
+
+  climate_meta <- out$run_metadata$climate %||% list()
+  baseline_hur_fraction <- sum(detail$baseline_hur_rate, na.rm = TRUE) / baseline_total
+  simulated_hur_fraction <- if (simulated_total > 0) {
+    sum(detail$simulated_hur_rate, na.rm = TRUE) / simulated_total
+  } else {
+    NA_real_
+  }
+
+  summary <- tibble::tibble(
+    climate_mode = as.character(climate_meta$climate_mode %||% "unknown"),
+    climate_regime = as.character(climate_meta$response_regime %||% "unknown"),
+    basin_count_ratio = simulated_total / baseline_total,
+    basin_rate_multiplier = as.numeric(climate_meta$f_rate_climate %||% NA_real_),
+    basin_rate_raw_multiplier = as.numeric(climate_meta$raw_sst_scale %||% NA_real_),
+    hurricane_fraction_baseline = baseline_hur_fraction,
+    hurricane_fraction_simulated = simulated_hur_fraction,
+    hurricane_fraction_change_pp = 100 * (simulated_hur_fraction - baseline_hur_fraction),
+    redistribution_rmse_share_pp = sqrt(mean(detail$redistribution_change_pp^2, na.rm = TRUE)),
+    redistribution_max_abs_share_pp = max(abs(detail$redistribution_change_pp), na.rm = TRUE)
+  )
+
+  list(summary = summary, by_location = detail)
+}
+
 #' Run the full validation suite
 #'
 #' @description
@@ -3683,6 +3780,8 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     hc_comp_scored <- hc$comparison
   }
 
+  climate_diag <- .climate_response_diagnostics(out)
+
   n_rl_ok <- if (!is.null(hc_comp_scored)) sum(hc_comp_scored$obs_in_ci, na.rm = TRUE) else 0
   n_rl_total <- if (!is.null(hc_comp_scored)) sum(!is.na(hc_comp_scored$obs_in_ci)) else 0
 
@@ -3708,13 +3807,32 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
                   n_rate_ok, n_rate_total, rc_sym))
   message(sprintf("  Wind field       : %2d / %2d within tolerance  %s",
                   n_wf_ok, n_wf_total, wf_sym))
+  if (nrow(climate_diag$summary) > 0) {
+    cs <- climate_diag$summary[1, , drop = FALSE]
+    message(sprintf(
+      "  Climate counts   : %.3fx basin | raw %.3fx | %s",
+      cs$basin_count_ratio,
+      cs$basin_rate_raw_multiplier,
+      cs$climate_regime
+    ))
+    message(sprintf(
+      "  Hurricane share  : %+.2f pp",
+      cs$hurricane_fraction_change_pp
+    ))
+    message(sprintf(
+      "  Redistribution   : RMSE %.2f pp | max %.2f pp",
+      cs$redistribution_rmse_share_pp,
+      cs$redistribution_max_abs_share_pp
+    ))
+  }
   .val_header_close()
 
   val <- list(
     hindcast = hc,
     rate_check = rc,
     wind_field = wf,
-    summary = summary_tbl
+    summary = summary_tbl,
+    climate_response = climate_diag
   )
 
   # --- Save artifacts ---

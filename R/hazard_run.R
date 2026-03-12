@@ -625,7 +625,7 @@ run_hazard_model <- function(cfg, targets,
     verbose = verbose
   )
   delta_sst <- climate_resolved$delta_sst
-  beta_sst <- climate_resolved$beta_sst
+  beta_sst <- climate_resolved$beta_sst_effective
   gamma_intensity <- climate_resolved$gamma
   sst_scale <- climate_resolved$sst_scale
   perturb_cfg <- climate_resolved$perturb
@@ -641,9 +641,12 @@ run_hazard_model <- function(cfg, targets,
     beta_0 = climate_resolved$beta_0,
     gamma_0 = climate_resolved$gamma_0,
     beta_sst = beta_sst,
+    beta_sst_raw = climate_resolved$beta_sst,
     gamma = gamma_intensity,
     p_hur_base = climate_resolved$p_hur_base,
     sst_scale = sst_scale,
+    raw_sst_scale = climate_resolved$raw_sst_scale,
+    f_rate_climate = climate_resolved$f_rate_climate,
     annual_count_series = climate_resolved$annual_count_series,
     annual_count_source = climate_resolved$annual_count_source,
     beta_guardrail = climate_resolved$beta_guardrail,
@@ -651,8 +654,46 @@ run_hazard_model <- function(cfg, targets,
     perturb = perturb_cfg,
     perturb_state = climate_resolved$perturb_state,
     climate_mode = climate_resolved$climate_mode,
+    response_regime = climate_resolved$response_regime,
     config = climate_cfg
   )
+
+  target_names <- names(Filter(Negate(is.null), fit_list))
+  location_occurrence_scale <- stats::setNames(rep(1, length(target_names)), target_names)
+  if (identical(climate_info$climate_mode, "future") && length(target_names) > 1L) {
+    location_stats <- lapply(target_names, function(loc_name) {
+      lt <- rates_list[[loc_name]] |>
+        dplyr::select(-"location")
+      lt_sim <- .apply_lambda_scalers_to_lambda_table(
+        lambda_table = lt,
+        location = loc_name,
+        lambda_scalers = lambda_scalers
+      )
+      tibble::tibble(
+        location = loc_name,
+        lambda_total = sum(lt_sim$lambda, na.rm = TRUE),
+        p_hur_base = compute_p_hur_base(lt_sim)
+      )
+    }) |>
+      dplyr::bind_rows()
+
+    weights <- pmax(location_stats$lambda_total, 0)
+    hur_center <- location_stats$p_hur_base - stats::weighted.mean(
+      location_stats$p_hur_base,
+      w = weights,
+      na.rm = TRUE
+    )
+    scale_denom <- max(abs(hur_center), na.rm = TRUE)
+    if (is.finite(scale_denom) && scale_denom > 0 && any(weights > 0)) {
+      raw_scale <- 1 + climate_info$response_regime$redistribution_strength * (hur_center / scale_denom)
+      mean_preserving <- raw_scale / stats::weighted.mean(raw_scale, w = weights, na.rm = TRUE)
+      bounds <- climate_info$response_regime$redistribution_bounds
+      mean_preserving <- pmin(bounds[[2]], pmax(bounds[[1]], mean_preserving))
+      mean_preserving <- mean_preserving / stats::weighted.mean(mean_preserving, w = weights, na.rm = TRUE)
+      location_occurrence_scale <- stats::setNames(as.numeric(mean_preserving), location_stats$location)
+    }
+  }
+  climate_info$location_occurrence_scale <- location_occurrence_scale
 
   if (verbose) {
     .fmt_scenario_label <- function(x) {
@@ -680,7 +721,6 @@ run_hazard_model <- function(cfg, targets,
     bl_range <- climate_info$baseline_years
     scenario_label <- .fmt_scenario_label(climate_info$scenario)
     perturb_state <- climate_info$perturb_state
-    rate_pct <- 100 * (exp(beta_sst) - 1)
     intensity_pct <- 100 * gamma_intensity
     .cli_info(sprintf(
       "Climate mode      : %s",
@@ -696,12 +736,25 @@ run_hazard_model <- function(cfg, targets,
     .cli_info(sprintf("Sensitivity mode : %s", climate_info$sensitivity_mode))
     .cli_info(sprintf(
       "Rate effect      : beta_0=%.2f -> beta=%.2f (%+.0f%% per +1\u00B0C)",
-      climate_info$beta_0, beta_sst, rate_pct
+      climate_info$beta_0,
+      climate_info$beta_sst_raw,
+      100 * (exp(climate_info$beta_sst_raw) - 1)
     ))
-    .cli_info(sprintf("SST multiplier   : %.3fx", climate_info$sst_scale))
+    .cli_info(sprintf(
+      "Count regime     : %s | raw %.3fx -> basin %.3fx",
+      climate_info$response_regime$regime,
+      climate_info$raw_sst_scale,
+      climate_info$f_rate_climate
+    ))
     .cli_info(sprintf(
       "Intensity effect : gamma_0=%.3f -> gamma=%.3f (%+.0f%% per +1\u00B0C)",
       climate_info$gamma_0, gamma_intensity, intensity_pct
+    ))
+    .cli_info(sprintf(
+      "Local response   : redistribution %.3f | range %.3fx-%.3fx",
+      climate_info$response_regime$redistribution_strength,
+      min(climate_info$location_occurrence_scale, na.rm = TRUE),
+      max(climate_info$location_occurrence_scale, na.rm = TRUE)
     ))
     .cli_info(sprintf(
       "Storm perturbation: %s",
@@ -728,6 +781,8 @@ run_hazard_model <- function(cfg, targets,
       location = loc_name,
       lambda_scalers = lambda_scalers
     )
+    lt_sim <- lt_sim |>
+      dplyr::mutate(lambda = .data$lambda * location_occurrence_scale[[loc_name]])
     k <- fit_list[[loc_name]]$k_hat
 
     p_hur_island <- compute_p_hur_base(lt_sim)
@@ -752,7 +807,7 @@ run_hazard_model <- function(cfg, targets,
   # Print simulation summary
   if (verbose) {
     if (beta_sst != 0 || delta_sst != 0) {
-      rs <- exp(beta_sst * delta_sst)
+      rs <- climate_info$f_rate_climate
       .cli_info(sprintf("Rate scaling      : %.3fx", rs))
     }
     .cli_ok("Done")
@@ -798,24 +853,43 @@ run_hazard_model <- function(cfg, targets,
     lambda_scaling_mode
   )
   parameter_id <- .checksum_id_from_text(param_fields, prefix = "params")
+  parameter_hash_fields <- c(
+    param_fields,
+    climate_info$scenario,
+    climate_info$response_regime$regime,
+    climate_info$f_rate_climate,
+    climate_info$gamma
+  )
+  parameter_hash <- .checksum_id_from_text(parameter_hash_fields, prefix = "hash")
   run_metadata <- list(
     seed = seed,
     ibtracs_file = data_file,
     ibtracs_rows = as.integer(data_rows),
     ibtracs_data_id = data_id,
     parameter_id = parameter_id,
+    parameter_hash = parameter_hash,
     lambda_scaling_mode = lambda_scaling_mode,
     climate = list(
       scenario = climate_info$scenario,
       source = climate_info$source,
       future_period = climate_info$future_period,
       delta_sst = climate_info$delta_sst,
+      climate_mode = climate_info$climate_mode,
+      response_regime = climate_info$response_regime$regime,
+      response_midpoint_year = climate_info$response_regime$midpoint_year,
       beta_0 = climate_info$beta_0,
+      beta_sst_raw = climate_info$beta_sst_raw,
       beta_sst = climate_info$beta_sst,
       gamma_0 = climate_info$gamma_0,
       gamma = climate_info$gamma,
       p_hur_base = climate_info$p_hur_base,
-      sst_scale = climate_info$sst_scale
+      sst_scale = climate_info$sst_scale,
+      raw_sst_scale = climate_info$raw_sst_scale,
+      f_rate_climate = climate_info$f_rate_climate,
+      basin_rate_bounds = climate_info$response_regime$basin_rate_bounds,
+      redistribution_strength = climate_info$response_regime$redistribution_strength,
+      redistribution_bounds = climate_info$response_regime$redistribution_bounds,
+      location_occurrence_scale = climate_info$location_occurrence_scale
     )
   )
   if (verbose) {
