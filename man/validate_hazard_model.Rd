@@ -8,8 +8,7 @@ validate_hazard_model(
   cfg,
   targets,
   validation_cfg = make_validation_cfg(),
-  storm_classes = c("TS", "HUR"),
-  climate = NULL
+  storm_classes = c("TS", "HUR")
 )
 }
 \arguments{
@@ -31,10 +30,6 @@ CI with 10-year holdout and inherited synthetic years from the hazard model outp
 \item{storm_classes}{Character vector of storm classes to include
 (default: \code{c("TS", "HUR")}). Must match IBTrACS classification codes.
 Use \code{"HUR"} alone for hurricane-only analysis.}
-
-\item{climate}{Optional climate input from \code{make_climate_input()}
-for hazard-model climate conditioning. When \code{NULL}, climate conditioning
-is disabled.}
 }
 \value{
 A list with three elements:
@@ -102,11 +97,9 @@ result_95 <- validate_hazard_model(
 
 # --- With climate conditioning ---
 result_climate <- validate_hazard_model(
-  cfg     = make_hazard_cfg(),
-  targets = targets_df,
-  climate = make_climate_input(
-    make_climate_shift(delta_sst = 0.8),
-    make_climate_response(beta_sst = 0.4)
-  )
+  cfg = make_hazard_cfg(
+    climate = make_climate_cfg(scenario = "ssp245")
+  ),
+  targets = targets_df
 )
 }

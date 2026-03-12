@@ -5,7 +5,7 @@ test_that("observed R34 uses a 1.5x Holland outer cutoff", {
   R34_km <- c(80, 120)
   R_outer_km <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_km,
-    R34_source = "observed"
+    R34_is_fallback = FALSE
   )
 
   expect_equal(R_outer_km / R34_km, c(1.5, 1.5))
@@ -22,22 +22,22 @@ test_that("default ordinary runs stay on the validated legacy wind path", {
   expect_equal(ipdcstorm:::.hindcast_sampler_mode(), "legacy")
   expect_equal(
     ipdcstorm:::.holland_outer_cutoff_multipliers(),
-    list(observed = 1.5, partial = 1.5, climo = 1.5)
+    list(observed = 1.5, climo = 1.5)
   )
 })
 
-test_that("partial and climatology R34 default to the legacy 1.5x Holland outer cutoff", {
+test_that("fallback and climatology R34 default to the legacy 1.5x Holland outer cutoff", {
   R34_km <- c(80, 120)
-  R_outer_partial <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
+  R_outer_fallback <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_km,
-    R34_source = "partial"
+    R34_is_fallback = TRUE
   )
   R_outer_climo <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_km,
-    R34_source = "climo"
+    R34_is_fallback = TRUE
   )
 
-  expect_equal(R_outer_partial / R34_km, c(1.5, 1.5))
+  expect_equal(R_outer_fallback / R34_km, c(1.5, 1.5))
   expect_equal(R_outer_climo / R34_km, c(1.5, 1.5))
 })
 
@@ -48,7 +48,7 @@ test_that("observed R34 decays immediately beyond the 1.5x cutoff", {
   r_km <- 160
   R_outer_km <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_km,
-    R34_source = "observed"
+    R34_is_fallback = FALSE
   )
 
   wind_no_decay <- ipdcstorm:::.estimate_site_wind_holland(
@@ -78,7 +78,7 @@ test_that("climatology R34 decays immediately beyond the legacy 1.5x cutoff", {
   R34_fallback_km <- ipdcstorm:::estimate_R34_climo(Vmax_kt, lat = lat)
   R_outer_km <- ipdcstorm:::.resolve_holland_outer_cutoff_km(
     R34_km = R34_fallback_km,
-    R34_source = "climo"
+    R34_is_fallback = TRUE
   )
   delta_km <- 3
   r0_km <- R_outer_km

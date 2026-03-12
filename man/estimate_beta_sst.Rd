@@ -23,7 +23,10 @@ year, storm_class, n_events.}
 \item{beta_prior}{Optional numeric; if provided, shrinks the estimate toward
 this prior value using a simple Bayesian-inspired weighted average:
 beta_final = w * beta_mle + (1 - w) * beta_prior, where w = min(1, n_years/50).
-This stabilizes estimates when the historical record is short.}
+This stabilizes estimates when the historical record is short. Climate-rate
+calibration must use basin-consistent annual counts in storms/year; passing
+target-conditioned counts with a \code{location} column is rejected because that
+duplicates annual activity across targets.}
 
 \item{verbose}{Logical; print diagnostic output.}
 }
@@ -37,6 +40,12 @@ A list with:
 \item{n_years}{Number of years used in estimation.}
 \item{r_squared_dev}{Deviance-based pseudo-RA2 (proportion of deviance explained).}
 \item{aic}{AIC of the fitted model (NA for quasi-Poisson).}
+\item{annual_count_series}{Tibble of the basin-consistent annual total count
+series used for calibration, in storms/year.}
+\item{annual_count_source}{Character label describing the provenance of
+\code{annual_count_series}.}
+\item{guardrail}{List describing any regularization or fallback applied to
+keep \code{beta_sst} within documented plausibility bounds.}
 \item{fit_data}{Tibble of the joined data used for fitting.}
 \item{glm_fit}{The fitted GLM object.}
 }

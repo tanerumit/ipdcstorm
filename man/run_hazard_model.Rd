@@ -8,7 +8,6 @@ run_hazard_model(
   cfg,
   targets,
   storm_classes = c("TS", "HUR"),
-  climate = NULL,
   seed = NULL,
   verbose = TRUE
 )
@@ -34,23 +33,6 @@ stochastic simulation will be performed.}
 normalized internally and currently intended to include \code{"TS"} and
 \code{"HUR"}. Only the requested classes are carried into the annual-count
 and rate workflow.}
-
-\item{climate}{Optional climate configuration object produced by
-\code{\link{make_climate_cfg}()} and inheriting from class
-\code{"climate_cfg"}.
-
-Use a baseline climate run with \code{delta_sst = 0} when you want the
-climate resolver and its metadata to remain active but represent present-day
-conditions. Use \code{NULL} only when you explicitly want the climate
-module disabled.
-
-When \code{NULL}, the run uses:
-\itemize{
-\item \code{delta_sst = 0}
-\item \code{beta_sst = 0}
-\item \code{gamma = 0}
-\item storm perturbation disabled
-}}
 
 \item{seed}{Optional integer scalar random seed. If \code{NULL}, a seed is
 generated internally, set at function entry, and recorded in
@@ -80,12 +62,13 @@ lambda-scaler configuration.}
 \item{\code{fit}}{Tibble of fitted dispersion and summary parameters by
 location, with climate-related attributes attached.}
 \item{\code{cfg}}{Resolved hazard configuration used for the run, including
-normalized data path and climate metadata.}
+normalized data path, embedded climate config, and resolved climate metadata.}
 \item{\code{config}}{Duplicate of \code{cfg}, returned for compatibility.}
 \item{\code{run_metadata}}{List with reproducibility metadata including
 \code{seed}, \code{ibtracs_file}, \code{ibtracs_rows},
 \code{ibtracs_data_id}, \code{parameter_id}, and
-\code{lambda_scaling_mode}.}
+\code{lambda_scaling_mode}, plus a nested \code{climate} list with the
+resolved climate diagnostics used for the run.}
 }
 }
 \description{
@@ -96,8 +79,9 @@ The function reads and filters the IBTrACS archive, selects storm track points
 within a specified search radius of each target, computes location-specific
 wind exposure metrics from the passing storms, aggregates those track points
 into storm-event summaries, estimates historical annual occurrence rates by
-storm class, calibrates dispersion for annual counts, optionally applies
-climate-change adjustments, and then simulates synthetic annual storm counts
+storm class, calibrates dispersion for annual counts, applies
+climate-change adjustments defined in \code{cfg$climate}, and then simulates
+synthetic annual storm counts
 for each location over \code{cfg$n_sim} years.
 
 This is the main user-level entry point for the hazard model. It returns both
@@ -152,13 +136,16 @@ scalers from the calibrated rate table using the configured
 upscale location/class rates relative to the reference calibration target.
 The applied scalers and their identifier are returned.
 
-\item \strong{Optional climate adjustments.}
-If \code{climate} inherits from class \code{"climate_cfg"}, the climate
-inputs are resolved with \code{resolve_climate_inputs()}. This produces a
+\item \strong{Climate adjustments.}
+The embedded climate configuration \code{cfg$climate} is resolved with
+\code{resolve_climate_inputs()}. This produces a
 scalar \code{delta_sst}, a frequency sensitivity \code{beta_sst}, a
-hurricane-fraction sensitivity \code{gamma}, and optional storm
-perturbation settings. These affect the stochastic simulation but do not
-rewrite the historical event catalogue itself.
+hurricane-fraction sensitivity \code{gamma}, the implied SST-driven count
+multiplier \code{sst_scale}, and optional storm perturbation settings.
+Historical climate sensitivity is calibrated from basin-consistent annual
+counts derived from de-duplicated storm-year records, independent of the
+target set. These affect the stochastic simulation but do not rewrite the
+historical event catalogue itself.
 
 \item \strong{Simulation of synthetic annual counts.}
 For each location, the rate table is adjusted, the island-specific base
@@ -184,17 +171,16 @@ The model currently uses normalized storm-class labels such as
 at the target location, not basin-wide best-track status labels.
 
 \item \strong{Climate interpretation.}
-When \code{climate = NULL}, the climate module is fully disabled:
-\code{delta_sst = 0}, \code{beta_sst = 0}, \code{gamma = 0}, and storm
-perturbation is off. When a baseline climate configuration is supplied
-through \code{make_climate_cfg(...)} with \code{delta_sst = 0}, the
-climate resolver still runs and records climate metadata, but the climate
-shift itself is zero.
+Baseline runs are represented by
+\code{make_climate_cfg(scenario = "stationary")} embedded inside
+\code{cfg}. Baseline and future runs use the same climate-resolution
+pathway and return the same metadata structure; the stationary baseline
+simply resolves \code{delta_sst = 0}.
 
 \item \strong{Reproducibility metadata.}
 The returned object includes \code{run_metadata} with the seed, IBTrACS
-file identifier, row count, derived data identifier, parameter hash, and
-lambda-scaling mode.
+file identifier, row count, derived data identifier, parameter hash,
+lambda-scaling mode, and resolved climate scalars.
 }
 }
 \examples{
@@ -207,16 +193,15 @@ targets <- tibble::tribble(
 
 cfg <- make_hazard_cfg(
   data_path = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
-  start_year = 1980,
-  n_sim = 1000
+  historical_start_year = 1980,
+  simulation_years = 1000
 )
 
-# Historical/stationary run with climate module disabled
+# Historical/stationary baseline run through the common climate resolver
 out <- run_hazard_model(
   cfg = cfg,
   targets = targets,
   storm_classes = c("TS", "HUR"),
-  climate = NULL,
   seed = 123
 )
 
@@ -224,16 +209,17 @@ out$sim
 out$rates
 out$run_metadata
 
-# Baseline climate run with climate resolver active and delta_sst = 0
-climate_cfg <- make_climate_cfg(
-  scenario = "baseline",
-  delta_sst = 0
+# Future climate run with embedded climate config
+cfg_future <- make_hazard_cfg(
+  data_path = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
+  historical_start_year = 1980,
+  simulation_years = 1000,
+  climate = make_climate_cfg(scenario = "ssp245")
 )
 
 out_climate <- run_hazard_model(
-  cfg = cfg,
+  cfg = cfg_future,
   targets = targets,
-  climate = climate_cfg,
   seed = 123
 )
 }

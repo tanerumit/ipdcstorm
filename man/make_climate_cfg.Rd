@@ -5,7 +5,6 @@
 \title{Build a climate configuration object for the hazard model}
 \usage{
 make_climate_cfg(
-  enabled = TRUE,
   scenario = "stationary",
   sst_source = c("builtin", "csv", "ersst_nc"),
   sst_path = NULL,
@@ -18,8 +17,6 @@ make_climate_cfg(
 )
 }
 \arguments{
-\item{enabled}{Logical; whether to enable climate adjustments.}
-
 \item{scenario}{Character; climate scenario name.}
 
 \item{sst_source}{Character; one of "builtin", "csv", "ersst_nc".}
@@ -68,13 +65,12 @@ disabled unless \code{perturb} is supplied explicitly.
 \code{sst_scenario_info("all")$scenario} (for example SSP and optional KNMI
 scenarios when KNMI helpers are available).
 
-If \code{scenario = "stationary"} and \code{enabled = TRUE}, the returned config
-represents an explicit baseline climate run with \code{delta_sst = 0}.
-Set \code{enabled = FALSE} to disable the climate module entirely.
+If \code{scenario = "stationary"}, the returned config represents the canonical
+baseline hazard-model specification with \code{delta_sst = 0}. Climate is always
+resolved through this configuration; there is no disabled climate mode.
 }
 \examples{
 cfg <- make_climate_cfg(
-  enabled = TRUE,
   sst_source = "builtin",
   scenario = "ssp245"
 )

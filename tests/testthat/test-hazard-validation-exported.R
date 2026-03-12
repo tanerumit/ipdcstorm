@@ -438,7 +438,7 @@ test_that("hindcast attribution grid records mode metadata from workspace reruns
   )
 
   local_mocked_bindings(
-    run_hazard_model = function(cfg, targets, storm_classes, climate = NULL, seed = NULL, verbose = FALSE) {
+    run_hazard_model = function(cfg, targets, storm_classes, seed = NULL, verbose = FALSE) {
       out_stub$run_metadata <- list(
         seed = seed,
         ibtracs_data_id = "ibtracs_fixture|rows=2",
@@ -560,8 +560,8 @@ test_that("validation wrappers return structured outputs and normalize forwarded
   expect_true(all(c("hindcast", "rate_check", "wind_field", "summary", "artifacts") %in% names(val)))
 
   local_mocked_bindings(
-    run_hazard_model = function(cfg, targets, storm_classes, climate = NULL) {
-      list(cfg = cfg, targets = targets, storm_classes = storm_classes, climate = climate)
+    run_hazard_model = function(cfg, targets, storm_classes) {
+      list(cfg = cfg, targets = targets, storm_classes = storm_classes)
     },
     run_validation_suite = function(out, cfg) {
       list(summary = tibble::tibble(location = "Saba"), artifacts = list(plots = list(), tables = list()), out = out, cfg = cfg)
@@ -577,5 +577,6 @@ test_that("validation wrappers return structured outputs and normalize forwarded
   )
 
   expect_equal(result$out$storm_classes, "TS")
+  expect_s3_class(result$out$cfg$climate, "climate_cfg")
   expect_true("summary" %in% names(result$val))
 })

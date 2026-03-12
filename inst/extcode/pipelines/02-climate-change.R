@@ -31,12 +31,6 @@ seed <- 123L
 
 ibtracs_path <- "/inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
 
-cfg <- make_hazard_cfg(
-  data_path = ibtracs_path,
-  search_radius_km = 800,
-  historical_start_year = 1970,
-  simulation_years = 500
-)
 
 targets <- tibble::tribble(
   ~name,         ~lat,      ~lon,
@@ -53,12 +47,21 @@ targets <- tibble::tribble(
 # 2) Stationary baseline
 # =============================================================================
 
+
+hazard_cfg <- make_hazard_cfg(
+  data_path = ibtracs_path,
+  search_radius_km = 800,
+  historical_start_year = 1970,
+  simulation_years = 500,
+  climate = make_climate_cfg(scenario = "stationary")
+)
+
+
 out_baseline <- run_hazard_model(
-  cfg = cfg,
+  cfg = hazard_cfg,
   targets = targets,
-  climate = NULL,
   seed = seed,
-  verbose = TRUE
+  verbose = FALSE
 )
 
 # =============================================================================
@@ -67,21 +70,24 @@ out_baseline <- run_hazard_model(
 
 future_period <- 2035:2065
 
-scenario_table <- tibble::tibble(
-  scenario = "ssp585",
-  delta_sst = get_scenario_delta("ssp585", future_period = future_period)
-)
+delta_sst = get_scenario_delta("ssp585", future_period = future_period)
 
-clim_in <- make_climate_cfg(
-  scenario = scenario_table$scenario[[1]],
-  start_year = min(future_period),
-  sensitivity_mode = c("linear_shifted")
+
+ssp585_cfg <- make_hazard_cfg(
+  data_path = ibtracs_path,
+  search_radius_km = 800,
+  historical_start_year = 1970,
+  simulation_years = 500,
+  climate = make_climate_cfg(
+    scenario = "ssp585",
+    start_year = 2035L,
+    sensitivity_mode = "fixed"
+  )
 )
 
 out_585 <- run_hazard_model(
-  cfg = cfg,
+  cfg = ssp585_cfg,
   targets = targets,
-  climate = clim_in,
   seed = seed,
   verbose = FALSE)
 

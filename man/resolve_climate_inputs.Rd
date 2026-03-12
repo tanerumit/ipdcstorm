@@ -43,10 +43,18 @@ A list with:
 \item{k_beta}{Configured linear shift coefficient for \code{beta_0}.}
 \item{k_gamma}{Configured linear shift coefficient for \code{gamma_0}.}
 \item{future_period}{Scenario period used to resolve \code{delta_sst}.}
+\item{sst_scale}{Implied SST-driven count multiplier
+\code{exp(beta_sst * delta_sst)}.}
+\item{annual_count_series}{Basin-consistent annual total count series used
+for \code{beta_0} calibration, in storms/year.}
+\item{annual_count_source}{Character label describing the provenance of
+\code{annual_count_series}.}
+\item{beta_guardrail}{List describing any \code{beta_0} plausibility fallback.}
+\item{sst_scale_guardrail}{List describing any multiplier guardrail applied
+to \code{beta_sst} for the resolved scenario.}
 \item{baseline_years}{SST anomaly baseline years.}
 \item{perturb}{Resolved storm-perturbation parameters (or \code{NULL}).}
 \item{perturb_state}{Storm-perturbation state label.}
-\item{enabled}{Whether climate adjustments are enabled.}
 \item{source}{SST source used for calibration.}
 }
 \description{
@@ -55,7 +63,7 @@ anomalies, resolves scenario \code{delta_sst}, and returns flat simulation-ready
 climate scalars for \code{run_hazard_model()}.
 }
 \examples{
-cfg <- make_climate_cfg(enabled = TRUE, sst_source = "builtin", scenario = "stationary")
+cfg <- make_climate_cfg(sst_source = "builtin", scenario = "stationary")
 climate <- resolve_climate_inputs(cfg, verbose = FALSE)
 climate$beta_sst
 

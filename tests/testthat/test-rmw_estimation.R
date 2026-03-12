@@ -111,7 +111,7 @@ test_that("internal option can disable R34 calibration for diagnostics", {
   expect_lt(no_cal_val, default_val)
 })
 
-test_that("diagnostic wind-field mode is more conservative for partial and climatology R34", {
+test_that("missing R34 falls back to climatology and remains deterministic", {
   args <- list(
     Vmax_kt = 80,
     r_km = 280,
@@ -120,84 +120,35 @@ test_that("diagnostic wind-field mode is more conservative for partial and clima
     lat = 18
   )
 
-  observed_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "observed")))
-  partial_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "partial")))
-  climo_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "climo")))
+  observed_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, args)
+  fallback_args <- utils::modifyList(args, list(R34_km = NA_real_))
+  fallback_first <- do.call(ipdcstorm:::.estimate_site_wind_holland, fallback_args)
+  fallback_second <- do.call(ipdcstorm:::.estimate_site_wind_holland, fallback_args)
 
-  expect_equal(partial_val, observed_val)
-  expect_equal(climo_val, observed_val)
-
-  old_opt <- options(ipdcstorm.wind_field_mode = "diagnostic_new")
-  on.exit(options(old_opt), add = TRUE)
-
-  observed_diag <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "observed")))
-  partial_diag <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "partial")))
-  climo_diag <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "climo")))
-
-  expect_lt(partial_diag, observed_diag)
-  expect_lt(climo_diag, partial_diag)
+  expect_true(is.finite(fallback_first))
+  expect_identical(fallback_first, fallback_second)
+  expect_lte(fallback_first, observed_val)
 })
 
-test_that("observed-R34 adjusted mode only damps the intended moderate-radius regime", {
+test_that("climatological R34 fallback leaves near-core winds unchanged in the tested regime", {
   args <- list(
     Vmax_kt = 130,
-    r_km = 66.5,
+    r_km = 38.5,
     R34_km = 220,
     RMW_km = 35,
     lat = 18
   )
 
-  legacy_observed <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "observed")))
-  legacy_partial <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "partial")))
-  legacy_climo <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "climo")))
-  legacy_near_core <- do.call(
+  observed_val <- do.call(ipdcstorm:::.estimate_site_wind_holland, args)
+  fallback_val <- do.call(
     ipdcstorm:::.estimate_site_wind_holland,
-    c(args, list(r_km = 38.5, R34_source = "observed"))
+    utils::modifyList(args, list(R34_km = NA_real_))
   )
 
-  old_opt <- options(ipdcstorm.wind_field_mode = "observed_r34_adjusted")
-  on.exit(options(old_opt), add = TRUE)
-
-  adjusted_observed <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "observed")))
-  adjusted_partial <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "partial")))
-  adjusted_climo <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "climo")))
-  near_core_observed <- do.call(
-    ipdcstorm:::.estimate_site_wind_holland,
-    c(args, list(r_km = 38.5, R34_source = "observed"))
-  )
-
-  expect_lt(adjusted_observed, legacy_observed)
-  expect_equal(adjusted_partial, legacy_partial)
-  expect_equal(adjusted_climo, legacy_climo)
-  expect_equal(near_core_observed, legacy_near_core)
+  expect_equal(fallback_val, observed_val, tolerance = 1e-10)
 })
 
-test_that("observed-R34 calibration-adjusted mode only changes observed inflationary calibration", {
-  args <- list(
-    Vmax_kt = 80,
-    r_km = 280,
-    R34_km = 220,
-    RMW_km = 35,
-    lat = 18
-  )
-
-  legacy_observed <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "observed")))
-  legacy_partial <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "partial")))
-  legacy_climo <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "climo")))
-
-  old_opt <- options(ipdcstorm.wind_field_mode = "observed_r34_calibration_adjusted")
-  on.exit(options(old_opt), add = TRUE)
-
-  adjusted_observed <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "observed")))
-  adjusted_partial <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "partial")))
-  adjusted_climo <- do.call(ipdcstorm:::.estimate_site_wind_holland, c(args, list(R34_source = "climo")))
-
-  expect_lte(adjusted_observed, legacy_observed)
-  expect_equal(adjusted_partial, legacy_partial)
-  expect_equal(adjusted_climo, legacy_climo)
-})
-
-test_that("compute_site_winds_full records observed, partial, and climo R34 sources", {
+test_that("compute_site_winds_full records current R34 fallback diagnostics", {
   to_nm <- function(x) ifelse(is.finite(x), x / 1.852, NA_real_)
   track <- tibble::tibble(
     SID = rep("AL012020", 3),
@@ -227,8 +178,11 @@ test_that("compute_site_winds_full records observed, partial, and climo R34 sour
 
   out <- compute_site_winds_full(track, target_lat = 18.5, target_lon = -62.5)
 
-  expect_equal(out$R34_source, c("observed", "partial", "climo"))
-  expect_equal(out$RMW_provenance, rep("observed", 3))
+  expect_equal(out$R34_missing, c(FALSE, FALSE, TRUE))
+  expect_equal(out$R34_is_climo, c(FALSE, FALSE, TRUE))
   expect_true(all(is.finite(out$R34_eff_km[1:2])))
   expect_true(is.finite(out$R34_eff_km[3]))
+  expect_equal(out$R34_eff_km[1], 180, tolerance = 1e-8)
+  expect_equal(out$R34_eff_km[2], 210, tolerance = 1e-8)
+  expect_gt(out$R34_eff_km[3], 0)
 })

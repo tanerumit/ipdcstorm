@@ -3815,9 +3815,6 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #' @param storm_classes Character vector of storm classes to include
 #'   (default: `c("TS", "HUR")`). Must match IBTrACS classification codes.
 #'   Use `"HUR"` alone for hurricane-only analysis.
-#' @param climate Optional climate input from `make_climate_input()`
-#'   for hazard-model climate conditioning. When `NULL`, climate conditioning
-#'   is disabled.
 #'
 #' @return A list with three elements:
 #'   \describe{
@@ -3868,18 +3865,15 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #'
 #' # --- With climate conditioning ---
 #' result_climate <- validate_hazard_model(
-#'   cfg     = make_hazard_cfg(),
-#'   targets = targets_df,
-#'   climate = make_climate_input(
-#'     make_climate_shift(delta_sst = 0.8),
-#'     make_climate_response(beta_sst = 0.4)
-#'   )
+#'   cfg = make_hazard_cfg(
+#'     climate = make_climate_cfg(scenario = "ssp245")
+#'   ),
+#'   targets = targets_df
 #' )
 validate_hazard_model <- function(cfg,
                                   targets,
                                   validation_cfg = make_validation_cfg(),
-                                  storm_classes = c("TS", "HUR"),
-                                  climate = NULL) {
+                                  storm_classes = c("TS", "HUR")) {
   if (!inherits(validation_cfg, "validation_cfg")) {
     stop("validation_cfg must be created by make_validation_cfg().", call. = FALSE)
   }
@@ -3888,8 +3882,7 @@ validate_hazard_model <- function(cfg,
   out <- run_hazard_model(
     cfg = cfg,
     targets = targets,
-    storm_classes = storm_classes,
-    climate = climate
+    storm_classes = storm_classes
   )
 
   val <- run_validation_suite(out = out, cfg = validation_cfg)
@@ -3924,7 +3917,6 @@ validate_hazard_model <- function(cfg,
 .run_hindcast_attribution_case <- function(cfg,
                                            targets,
                                            validation_cfg,
-                                           climate,
                                            model_seed,
                                            wind_field_mode,
                                            annual_rate_mode,
@@ -3939,7 +3931,6 @@ validate_hazard_model <- function(cfg,
     cfg = cfg,
     targets = targets,
     storm_classes = c("TS", "HUR"),
-    climate = climate,
     seed = model_seed,
     verbose = FALSE
   )
@@ -4048,10 +4039,9 @@ validate_hazard_model <- function(cfg,
                                              return_periods = c(5, 10, 25, 50),
                                              conf_level = 0.90,
                                              seed = 42L,
-                                             save_plots = FALSE,
-                                             save_tables = FALSE
-                                           ),
-                                           climate = NULL,
+                                              save_plots = FALSE,
+                                              save_tables = FALSE
+                                            ),
                                            locations = c("Saba", "Statia", "St_Martin"),
                                            model_seed = 42L) {
   if (!inherits(validation_cfg, "validation_cfg")) {
@@ -4084,7 +4074,6 @@ validate_hazard_model <- function(cfg,
       cfg = cfg,
       targets = targets_sub,
       validation_cfg = validation_cfg,
-      climate = climate,
       model_seed = model_seed,
       wind_field_mode = case$wind_field_mode[[1]],
       annual_rate_mode = case$annual_rate_mode[[1]],
@@ -4097,7 +4086,6 @@ validate_hazard_model <- function(cfg,
       cfg = cfg,
       targets = targets_sub,
       validation_cfg = validation_cfg,
-      climate = climate,
       model_seed = model_seed,
       wind_field_mode = case$wind_field_mode[[1]],
       annual_rate_mode = case$annual_rate_mode[[1]],

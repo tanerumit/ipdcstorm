@@ -10,6 +10,7 @@ make_hazard_cfg(
   historical_start_year = 1970L,
   simulation_years = 1000L,
   preset = "default",
+  climate = make_climate_cfg(scenario = "stationary"),
   advanced = NULL
 )
 }
@@ -24,6 +25,10 @@ include track points.}
 \item{simulation_years}{Integer; number of synthetic years to simulate.}
 
 \item{preset}{Character; currently only \code{"default"}.}
+
+\item{climate}{Climate configuration object created by
+\code{make_climate_cfg()}. Defaults to the canonical stationary baseline
+\code{make_climate_cfg(scenario = "stationary")}.}
 
 \item{advanced}{Optional named list of expert parameters. Most users should
 leave this as \code{NULL}. Supported names:

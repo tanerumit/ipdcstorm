@@ -103,6 +103,9 @@
 #' @param historical_start_year Integer; first historical year used to fit rates.
 #' @param simulation_years Integer; number of synthetic years to simulate.
 #' @param preset Character; currently only `"default"`.
+#' @param climate Climate configuration object created by
+#'   `make_climate_cfg()`. Defaults to the canonical stationary baseline
+#'   `make_climate_cfg(scenario = "stationary")`.
 #' @param advanced Optional named list of expert parameters. Most users should
 #'   leave this as `NULL`. Supported names:
 #'   `ts_threshold_kt`, `strong_storm_threshold_kt`, `hurricane_threshold_kt`,
@@ -116,9 +119,17 @@ make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv
                             historical_start_year = 1970L,
                             simulation_years = 1000L,
                             preset = "default",
+                            climate = make_climate_cfg(scenario = "stationary"),
                             advanced = NULL) {
 
   preset <- match.arg(preset, choices = c("default"))
+  if (is.null(climate)) {
+    stop("climate must be created by make_climate_cfg(); use make_climate_cfg(scenario = \"stationary\") for baseline runs.", call. = FALSE)
+  }
+  if (!inherits(climate, "climate_cfg")) {
+    stop("climate must be created by make_climate_cfg().", call. = FALSE)
+  }
+  climate <- .normalize_climate_cfg(climate)
 
   defaults <- list(
     ts_threshold_kt = 34,
@@ -149,6 +160,7 @@ make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv
     search_radius_km = as.numeric(search_radius_km),
     start_year = as.integer(historical_start_year),
     n_sim = as.integer(simulation_years),
+    climate = climate,
     advanced = advanced,
     resampling_method = "stratified",
     copula_min_n = 30L,
@@ -190,8 +202,9 @@ print.hazard_cfg <- function(x, ...) {
 #' within a specified search radius of each target, computes location-specific
 #' wind exposure metrics from the passing storms, aggregates those track points
 #' into storm-event summaries, estimates historical annual occurrence rates by
-#' storm class, calibrates dispersion for annual counts, optionally applies
-#' climate-change adjustments, and then simulates synthetic annual storm counts
+#' storm class, calibrates dispersion for annual counts, applies
+#' climate-change adjustments defined in `cfg$climate`, and then simulates
+#' synthetic annual storm counts
 #' for each location over \code{cfg$n_sim} years.
 #'
 #' This is the main user-level entry point for the hazard model. It returns both
@@ -246,13 +259,16 @@ print.hazard_cfg <- function(x, ...) {
 #'   upscale location/class rates relative to the reference calibration target.
 #'   The applied scalers and their identifier are returned.
 #'
-#'   \item \strong{Optional climate adjustments.}
-#'   If \code{climate} inherits from class \code{"climate_cfg"}, the climate
-#'   inputs are resolved with \code{resolve_climate_inputs()}. This produces a
+#'   \item \strong{Climate adjustments.}
+#'   The embedded climate configuration \code{cfg$climate} is resolved with
+#'   \code{resolve_climate_inputs()}. This produces a
 #'   scalar \code{delta_sst}, a frequency sensitivity \code{beta_sst}, a
-#'   hurricane-fraction sensitivity \code{gamma}, and optional storm
-#'   perturbation settings. These affect the stochastic simulation but do not
-#'   rewrite the historical event catalogue itself.
+#'   hurricane-fraction sensitivity \code{gamma}, the implied SST-driven count
+#'   multiplier \code{sst_scale}, and optional storm perturbation settings.
+#'   Historical climate sensitivity is calibrated from basin-consistent annual
+#'   counts derived from de-duplicated storm-year records, independent of the
+#'   target set. These affect the stochastic simulation but do not rewrite the
+#'   historical event catalogue itself.
 #'
 #'   \item \strong{Simulation of synthetic annual counts.}
 #'   For each location, the rate table is adjusted, the island-specific base
@@ -278,17 +294,16 @@ print.hazard_cfg <- function(x, ...) {
 #'   at the target location, not basin-wide best-track status labels.
 #'
 #'   \item \strong{Climate interpretation.}
-#'   When \code{climate = NULL}, the climate module is fully disabled:
-#'   \code{delta_sst = 0}, \code{beta_sst = 0}, \code{gamma = 0}, and storm
-#'   perturbation is off. When a baseline climate configuration is supplied
-#'   through \code{make_climate_cfg(...)} with \code{delta_sst = 0}, the
-#'   climate resolver still runs and records climate metadata, but the climate
-#'   shift itself is zero.
+#'   Baseline runs are represented by
+#'   \code{make_climate_cfg(scenario = "stationary")} embedded inside
+#'   \code{cfg}. Baseline and future runs use the same climate-resolution
+#'   pathway and return the same metadata structure; the stationary baseline
+#'   simply resolves \code{delta_sst = 0}.
 #'
 #'   \item \strong{Reproducibility metadata.}
 #'   The returned object includes \code{run_metadata} with the seed, IBTrACS
-#'   file identifier, row count, derived data identifier, parameter hash, and
-#'   lambda-scaling mode.
+#'   file identifier, row count, derived data identifier, parameter hash,
+#'   lambda-scaling mode, and resolved climate scalars.
 #' }
 #'
 #' @param cfg A \code{hazard_cfg} object created by
@@ -311,23 +326,6 @@ print.hazard_cfg <- function(x, ...) {
 #'   normalized internally and currently intended to include \code{"TS"} and
 #'   \code{"HUR"}. Only the requested classes are carried into the annual-count
 #'   and rate workflow.
-#'
-#' @param climate Optional climate configuration object produced by
-#'   \code{\link{make_climate_cfg}()} and inheriting from class
-#'   \code{"climate_cfg"}.
-#'
-#'   Use a baseline climate run with \code{delta_sst = 0} when you want the
-#'   climate resolver and its metadata to remain active but represent present-day
-#'   conditions. Use \code{NULL} only when you explicitly want the climate
-#'   module disabled.
-#'
-#'   When \code{NULL}, the run uses:
-#'   \itemize{
-#'     \item \code{delta_sst = 0}
-#'     \item \code{beta_sst = 0}
-#'     \item \code{gamma = 0}
-#'     \item storm perturbation disabled
-#'   }
 #'
 #' @param seed Optional integer scalar random seed. If \code{NULL}, a seed is
 #'   generated internally, set at function entry, and recorded in
@@ -357,12 +355,13 @@ print.hazard_cfg <- function(x, ...) {
 #'   \item{\code{fit}}{Tibble of fitted dispersion and summary parameters by
 #'     location, with climate-related attributes attached.}
 #'   \item{\code{cfg}}{Resolved hazard configuration used for the run, including
-#'     normalized data path and climate metadata.}
+#'     normalized data path, embedded climate config, and resolved climate metadata.}
 #'   \item{\code{config}}{Duplicate of \code{cfg}, returned for compatibility.}
 #'   \item{\code{run_metadata}}{List with reproducibility metadata including
 #'     \code{seed}, \code{ibtracs_file}, \code{ibtracs_rows},
 #'     \code{ibtracs_data_id}, \code{parameter_id}, and
-#'     \code{lambda_scaling_mode}.}
+#'     \code{lambda_scaling_mode}, plus a nested \code{climate} list with the
+#'     resolved climate diagnostics used for the run.}
 #' }
 #'
 #' @seealso
@@ -386,16 +385,15 @@ print.hazard_cfg <- function(x, ...) {
 #'
 #' cfg <- make_hazard_cfg(
 #'   data_path = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
-#'   start_year = 1980,
-#'   n_sim = 1000
+#'   historical_start_year = 1980,
+#'   simulation_years = 1000
 #' )
 #'
-#' # Historical/stationary run with climate module disabled
+#' # Historical/stationary baseline run through the common climate resolver
 #' out <- run_hazard_model(
 #'   cfg = cfg,
 #'   targets = targets,
 #'   storm_classes = c("TS", "HUR"),
-#'   climate = NULL,
 #'   seed = 123
 #' )
 #'
@@ -403,16 +401,17 @@ print.hazard_cfg <- function(x, ...) {
 #' out$rates
 #' out$run_metadata
 #'
-#' # Baseline climate run with climate resolver active and delta_sst = 0
-#' climate_cfg <- make_climate_cfg(
-#'   scenario = "baseline",
-#'   delta_sst = 0
+#' # Future climate run with embedded climate config
+#' cfg_future <- make_hazard_cfg(
+#'   data_path = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
+#'   historical_start_year = 1980,
+#'   simulation_years = 1000,
+#'   climate = make_climate_cfg(scenario = "ssp245")
 #' )
 #'
 #' out_climate <- run_hazard_model(
-#'   cfg = cfg,
+#'   cfg = cfg_future,
 #'   targets = targets,
-#'   climate = climate_cfg,
 #'   seed = 123
 #' )
 #' }
@@ -420,17 +419,23 @@ print.hazard_cfg <- function(x, ...) {
 #' @export
 run_hazard_model <- function(cfg, targets,
                              storm_classes = c("TS", "HUR"),
-                             climate = NULL,
                              seed = NULL,
                              verbose = TRUE) {
   if (!inherits(cfg, "hazard_cfg")) {
     stop("cfg must be created by make_hazard_cfg().", call. = FALSE)
   }
+  if (is.null(cfg$climate)) {
+    stop("cfg$climate is required and must be created by make_climate_cfg(); use make_climate_cfg(scenario = \"stationary\") for baseline runs.", call. = FALSE)
+  }
+  if (!inherits(cfg$climate, "climate_cfg")) {
+    stop("cfg$climate must be created by make_climate_cfg().", call. = FALSE)
+  }
+  if ("enabled" %in% names(cfg$climate)) {
+    stop("Climate-off mode has been removed. Remove `enabled` and use make_climate_cfg(scenario = \"stationary\") for baseline runs.", call. = FALSE)
+  }
+  climate_cfg <- .normalize_climate_cfg(cfg$climate)
   storm_classes <- .normalize_storm_classes(storm_classes = storm_classes)
   targets <- .normalize_hazard_targets(targets)
-  if (!is.null(climate) && !inherits(climate, "climate_cfg")) {
-    stop("climate must be NULL or inherit from \"climate_cfg\".", call. = FALSE)
-  }
 
   ts_threshold_kt <- as.numeric(cfg$advanced$ts_threshold_kt)
   hurricane_threshold_kt <- as.numeric(cfg$advanced$hurricane_threshold_kt)
@@ -559,6 +564,11 @@ run_hazard_model <- function(cfg, targets,
 
   events_all        <- dplyr::bind_rows(Filter(Negate(is.null), events_list))
   annual_counts_all <- dplyr::bind_rows(Filter(Negate(is.null), annual_counts_list))
+  basin_annual_counts <- if (nrow(events_all) > 0) {
+    compute_annual_counts(events_all, storm_classes = storm_classes)
+  } else {
+    NULL
+  }
   rates_all         <- dplyr::bind_rows(Filter(Negate(is.null), rates_list))
   fit_all           <- dplyr::bind_rows(Filter(Negate(is.null), fit_list))
   if (verbose && nrow(events_all) > 0) {
@@ -600,54 +610,49 @@ run_hazard_model <- function(cfg, targets,
   # =========================================================================
   # CLIMATE ADJUSTMENTS
   # =========================================================================
-  climate_info <- NULL
-  climate_cfg <- NULL
-  climate_resolved <- NULL
-  delta_sst <- 0
-  beta_sst <- 0
-  gamma_intensity <- 0
-  perturb_cfg <- NULL
-  if (inherits(climate, "climate_cfg")) {
-    climate_cfg <- climate
-    future_period <- seq.int(
-      from = as.integer(climate_cfg$start_year),
-      length.out = 30L
-    )
-    climate_resolved <- resolve_climate_inputs(
-      climate_cfg = climate_cfg,
-      annual_counts = annual_counts_all,
-      lambda_table = rates_all |>
-        dplyr::group_by(.data$storm_class) |>
-        dplyr::summarise(lambda = sum(.data$lambda), .groups = "drop"),
-      min_year = cfg$start_year,
-      future_period = future_period,
-      verbose = verbose
-    )
-    delta_sst <- climate_resolved$delta_sst
-    beta_sst <- climate_resolved$beta_sst
-    gamma_intensity <- climate_resolved$gamma
-    perturb_cfg <- climate_resolved$perturb
-    climate_info <- list(
-      enabled = climate_resolved$enabled,
-      scenario = climate_resolved$scenario,
-      source = climate_resolved$source,
-      delta_sst = delta_sst,
-      baseline_years = climate_resolved$baseline_years,
-      future_period = climate_resolved$future_period,
-      sensitivity_mode = climate_resolved$sensitivity_mode,
-      k_beta = climate_resolved$k_beta,
-      k_gamma = climate_resolved$k_gamma,
-      beta_0 = climate_resolved$beta_0,
-      gamma_0 = climate_resolved$gamma_0,
-      beta_sst = beta_sst,
-      gamma = gamma_intensity,
-      p_hur_base = climate_resolved$p_hur_base,
-      perturb = perturb_cfg,
-      perturb_state = climate_resolved$perturb_state,
-      climate_mode = climate_resolved$climate_mode,
-      config = climate_cfg
-    )
-  }
+  future_period <- seq.int(
+    from = as.integer(climate_cfg$start_year),
+    length.out = 30L
+  )
+  climate_resolved <- resolve_climate_inputs(
+    climate_cfg = climate_cfg,
+    annual_counts = basin_annual_counts,
+    lambda_table = rates_all |>
+      dplyr::group_by(.data$storm_class) |>
+      dplyr::summarise(lambda = sum(.data$lambda), .groups = "drop"),
+    min_year = cfg$start_year,
+    future_period = future_period,
+    verbose = verbose
+  )
+  delta_sst <- climate_resolved$delta_sst
+  beta_sst <- climate_resolved$beta_sst
+  gamma_intensity <- climate_resolved$gamma
+  sst_scale <- climate_resolved$sst_scale
+  perturb_cfg <- climate_resolved$perturb
+  climate_info <- list(
+    scenario = climate_resolved$scenario,
+    source = climate_resolved$source,
+    delta_sst = delta_sst,
+    baseline_years = climate_resolved$baseline_years,
+    future_period = climate_resolved$future_period,
+    sensitivity_mode = climate_resolved$sensitivity_mode,
+    k_beta = climate_resolved$k_beta,
+    k_gamma = climate_resolved$k_gamma,
+    beta_0 = climate_resolved$beta_0,
+    gamma_0 = climate_resolved$gamma_0,
+    beta_sst = beta_sst,
+    gamma = gamma_intensity,
+    p_hur_base = climate_resolved$p_hur_base,
+    sst_scale = sst_scale,
+    annual_count_series = climate_resolved$annual_count_series,
+    annual_count_source = climate_resolved$annual_count_source,
+    beta_guardrail = climate_resolved$beta_guardrail,
+    sst_scale_guardrail = climate_resolved$sst_scale_guardrail,
+    perturb = perturb_cfg,
+    perturb_state = climate_resolved$perturb_state,
+    climate_mode = climate_resolved$climate_mode,
+    config = climate_cfg
+  )
 
   if (verbose) {
     .fmt_scenario_label <- function(x) {
@@ -672,43 +677,36 @@ run_hazard_model <- function(cfg, targets,
       "enabled"
     }
     .cli_h("Climate")
-    if (!is.null(climate_info)) {
-      bl_range <- climate_info$baseline_years
-      scenario_label <- .fmt_scenario_label(climate_info$scenario)
-      perturb_state <- climate_info$perturb_state
-      rate_pct <- 100 * (exp(beta_sst) - 1)
-      intensity_pct <- 100 * gamma_intensity
-      .cli_info(sprintf(
-        "Climate mode      : %s",
-        switch(
-          climate_info$climate_mode,
-          baseline = "baseline climate run (delta_sst = 0)",
-          future = sprintf("future climate run (delta_sst = %+.2f C)", delta_sst),
-          "climate run"
-        )
-      ))
-      .cli_info(sprintf("Climate scenario  : %s", scenario_label))
-      .cli_info(sprintf("SST baseline     : %d-%d", min(bl_range), max(bl_range)))
-      .cli_info(sprintf("Sensitivity mode : %s", climate_info$sensitivity_mode))
-      .cli_info(sprintf(
-        "Rate effect      : beta_0=%.2f -> beta=%.2f (%+.0f%% per +1\u00B0C)",
-        climate_info$beta_0, beta_sst, rate_pct
-      ))
-      .cli_info(sprintf(
-        "Intensity effect : gamma_0=%.3f -> gamma=%.3f (%+.0f%% per +1\u00B0C)",
-        climate_info$gamma_0, gamma_intensity, intensity_pct
-      ))
-      .cli_info(sprintf(
-        "Storm perturbation: %s",
-        .fmt_perturb_status(perturb_state, perturb_cfg)
-      ))
-    } else {
-      .cli_info("Climate mode      : off (no climate module)")
-      .cli_info("Climate scenario  : Off")
-      .cli_info("Rate effect      : +0% activity (\u03B2 = 0.00)")
-      .cli_info("Intensity effect : +0% hurricane fraction (\u03B3 = 0.000)")
-      .cli_info("Storm perturbation: disabled")
-    }
+    bl_range <- climate_info$baseline_years
+    scenario_label <- .fmt_scenario_label(climate_info$scenario)
+    perturb_state <- climate_info$perturb_state
+    rate_pct <- 100 * (exp(beta_sst) - 1)
+    intensity_pct <- 100 * gamma_intensity
+    .cli_info(sprintf(
+      "Climate mode      : %s",
+      switch(
+        climate_info$climate_mode,
+        baseline = "baseline climate run (delta_sst = 0)",
+        future = sprintf("future climate run (delta_sst = %+.2f C)", delta_sst),
+        "climate run"
+      )
+    ))
+    .cli_info(sprintf("Climate scenario  : %s", scenario_label))
+    .cli_info(sprintf("SST baseline     : %d-%d", min(bl_range), max(bl_range)))
+    .cli_info(sprintf("Sensitivity mode : %s", climate_info$sensitivity_mode))
+    .cli_info(sprintf(
+      "Rate effect      : beta_0=%.2f -> beta=%.2f (%+.0f%% per +1\u00B0C)",
+      climate_info$beta_0, beta_sst, rate_pct
+    ))
+    .cli_info(sprintf("SST multiplier   : %.3fx", climate_info$sst_scale))
+    .cli_info(sprintf(
+      "Intensity effect : gamma_0=%.3f -> gamma=%.3f (%+.0f%% per +1\u00B0C)",
+      climate_info$gamma_0, gamma_intensity, intensity_pct
+    ))
+    .cli_info(sprintf(
+      "Storm perturbation: %s",
+      .fmt_perturb_status(perturb_state, perturb_cfg)
+    ))
     .cli_info(sprintf("seed              : %s", as.character(seed)))
   }
 
@@ -769,9 +767,13 @@ run_hazard_model <- function(cfg, targets,
   attr(fit_all, "perturb") <- perturb_cfg
   attr(fit_all, "cc_params") <- perturb_cfg
   attr(fit_all, "delta_sst") <- delta_sst
-  attr(fit_all, "climate_mode") <- if (!is.null(climate_info)) climate_info$climate_mode else "off"
-  attr(fit_all, "climate_scenario") <- if (!is.null(climate_info)) climate_info$scenario else "off"
-  attr(fit_all, "climate_source") <- if (!is.null(climate_info) && !is.null(climate_info$source)) climate_info$source else "off"
+  attr(fit_all, "sst_scale") <- sst_scale
+  attr(fit_all, "beta_0") <- climate_info$beta_0
+  attr(fit_all, "gamma_0") <- climate_info$gamma_0
+  attr(fit_all, "p_hur_base") <- climate_info$p_hur_base
+  attr(fit_all, "climate_mode") <- climate_info$climate_mode
+  attr(fit_all, "climate_scenario") <- climate_info$scenario
+  attr(fit_all, "climate_source") <- climate_info$source
   attr(fit_all, "climate_cfg") <- climate_cfg
 
   cfg_out <- cfg
@@ -802,7 +804,19 @@ run_hazard_model <- function(cfg, targets,
     ibtracs_rows = as.integer(data_rows),
     ibtracs_data_id = data_id,
     parameter_id = parameter_id,
-    lambda_scaling_mode = lambda_scaling_mode
+    lambda_scaling_mode = lambda_scaling_mode,
+    climate = list(
+      scenario = climate_info$scenario,
+      source = climate_info$source,
+      future_period = climate_info$future_period,
+      delta_sst = climate_info$delta_sst,
+      beta_0 = climate_info$beta_0,
+      beta_sst = climate_info$beta_sst,
+      gamma_0 = climate_info$gamma_0,
+      gamma = climate_info$gamma,
+      p_hur_base = climate_info$p_hur_base,
+      sst_scale = climate_info$sst_scale
+    )
   )
   if (verbose) {
     meta_parts <- c(

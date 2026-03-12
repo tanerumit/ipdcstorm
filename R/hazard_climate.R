@@ -277,7 +277,10 @@ compute_sst_anomaly <- function(sst_df, baseline_years = 1991L:2020L) {
 #' @param beta_prior Optional numeric; if provided, shrinks the estimate toward
 #'   this prior value using a simple Bayesian-inspired weighted average:
 #'   beta_final = w * beta_mle + (1 - w) * beta_prior, where w = min(1, n_years/50).
-#'   This stabilizes estimates when the historical record is short.
+#'   This stabilizes estimates when the historical record is short. Climate-rate
+#'   calibration must use basin-consistent annual counts in storms/year; passing
+#'   target-conditioned counts with a `location` column is rejected because that
+#'   duplicates annual activity across targets.
 #' @param verbose Logical; print diagnostic output.
 #'
 #' @return A list with:
@@ -289,6 +292,12 @@ compute_sst_anomaly <- function(sst_df, baseline_years = 1991L:2020L) {
 #'   \item{n_years}{Number of years used in estimation.}
 #'   \item{r_squared_dev}{Deviance-based pseudo-RA2 (proportion of deviance explained).}
 #'   \item{aic}{AIC of the fitted model (NA for quasi-Poisson).}
+#'   \item{annual_count_series}{Tibble of the basin-consistent annual total count
+#'     series used for calibration, in storms/year.}
+#'   \item{annual_count_source}{Character label describing the provenance of
+#'     `annual_count_series`.}
+#'   \item{guardrail}{List describing any regularization or fallback applied to
+#'     keep `beta_sst` within documented plausibility bounds.}
 #'   \item{fit_data}{Tibble of the joined data used for fitting.}
 #'   \item{glm_fit}{The fitted GLM object.}
 #'
@@ -305,9 +314,20 @@ estimate_beta_sst <- function(annual_counts,
                               min_year = 1970L,
                               beta_prior = NULL,
                               verbose = TRUE) {
+  beta_guardrail_max <- 1.2
+  beta_guardrail_se_ref <- 0.35
+  beta_guardrail_fallback <- if (is.null(beta_prior) || !is.finite(beta_prior)) 0.6 else as.numeric(beta_prior)
+
+  if ("location" %in% names(annual_counts)) {
+    stop(
+      "annual_counts used for climate calibration must be basin-consistent and must not contain a location column. ",
+      "Pass counts from de-duplicated basin events.",
+      call. = FALSE
+    )
+  }
 
   # Aggregate to total annual counts (across severities)
-  totals <- annual_counts |>
+  annual_count_series <- annual_counts |>
     dplyr::filter(.data$year >= min_year) |>
     dplyr::group_by(.data$year) |>
     dplyr::summarise(N = sum(.data$n_events), .groups = "drop")
@@ -318,7 +338,7 @@ estimate_beta_sst <- function(annual_counts,
   }
 
   # Join
-  fit_data <- totals |>
+  fit_data <- annual_count_series |>
     dplyr::inner_join(
       sst_df |> dplyr::select("year", "sst_anomaly"),
       by = "year"
@@ -343,6 +363,14 @@ estimate_beta_sst <- function(annual_counts,
       n_years = n_years,
       r_squared_dev = NA_real_,
       aic = NA_real_,
+      annual_count_series = annual_count_series,
+      annual_count_source = "basin_unique_storm_year_counts",
+      guardrail = list(
+        triggered = TRUE,
+        reason = "insufficient_overlap",
+        beta_max = beta_guardrail_max,
+        beta_fallback = 0.6
+      ),
       fit_data = fit_data,
       glm_fit = NULL
     ))
@@ -389,12 +417,37 @@ estimate_beta_sst <- function(annual_counts,
   # Optional shrinkage toward prior
   beta_final <- beta_mle
   if (!is.null(beta_prior) && is.finite(beta_prior)) {
-    w <- min(1.0, n_years / 50)
+    w_n <- min(1.0, n_years / 50)
+    w_se <- if (is.finite(se) && se > 0) min(1.0, beta_guardrail_se_ref / se) else 0
+    w <- w_n * w_se
     beta_final <- w * beta_mle + (1 - w) * beta_prior
     if (verbose) {
       message(sprintf("[I2_SST] Shrinkage: I2_MLE=%.3f, I2_prior=%.3f, w=%.2f a?' I2_final=%.3f",
                       beta_mle, beta_prior, w, beta_final))
     }
+  }
+
+  guardrail <- list(
+    triggered = FALSE,
+    reason = "none",
+    beta_max = beta_guardrail_max,
+    beta_fallback = beta_guardrail_fallback
+  )
+  if (!is.finite(beta_final)) {
+    beta_final <- beta_guardrail_fallback
+    guardrail$triggered <- TRUE
+    guardrail$reason <- "non_finite_beta"
+  }
+  if (is.finite(beta_final) && beta_final > beta_guardrail_max) {
+    if (verbose) {
+      message(sprintf(
+        "[I2_SST] Guardrail: beta_final=%.3f exceeds max %.3f 1/degC; using fallback %.3f.",
+        beta_final, beta_guardrail_max, beta_guardrail_fallback
+      ))
+    }
+    beta_final <- beta_guardrail_fallback
+    guardrail$triggered <- TRUE
+    guardrail$reason <- "beta_above_plausibility_limit"
   }
 
   if (verbose) {
@@ -413,6 +466,9 @@ estimate_beta_sst <- function(annual_counts,
     n_years = n_years,
     r_squared_dev = r2_dev,
     aic = aic_val,
+    annual_count_series = annual_count_series,
+    annual_count_source = "basin_unique_storm_year_counts",
+    guardrail = guardrail,
     fit_data = fit_data,
     glm_fit = glm_fit
   )
@@ -1127,11 +1183,18 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
   if (!is.list(cfg)) {
     stop("climate_cfg must be a list.", call. = FALSE)
   }
-  if (!is.logical(cfg$enabled) || length(cfg$enabled) != 1L || is.na(cfg$enabled)) {
-    stop("enabled must be a single TRUE or FALSE value.", call. = FALSE)
+  if ("enabled" %in% names(cfg)) {
+    stop("Climate-off mode has been removed. Remove `enabled` and use make_climate_cfg(scenario = \"stationary\") for baseline runs.", call. = FALSE)
   }
 
-  cfg$enabled <- isTRUE(cfg$enabled)
+  cfg$scenario <- match.arg(
+    as.character(cfg$scenario[[1]]),
+    choices = c("stationary", sst_scenario_info("all")$scenario)
+  )
+  cfg$sst_source <- match.arg(
+    as.character(cfg$sst_source[[1]]),
+    choices = c("builtin", "csv", "ersst_nc")
+  )
   cfg$baseline_years <- as.integer(cfg$baseline_years)
   cfg$start_year <- as.integer(cfg$start_year[[1]])
 
@@ -1186,11 +1249,10 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 #' `sst_scenario_info("all")$scenario` (for example SSP and optional KNMI
 #' scenarios when KNMI helpers are available).
 #'
-#' If `scenario = "stationary"` and `enabled = TRUE`, the returned config
-#' represents an explicit baseline climate run with `delta_sst = 0`.
-#' Set `enabled = FALSE` to disable the climate module entirely.
+#' If `scenario = "stationary"`, the returned config represents the canonical
+#' baseline hazard-model specification with `delta_sst = 0`. Climate is always
+#' resolved through this configuration; there is no disabled climate mode.
 #'
-#' @param enabled Logical; whether to enable climate adjustments.
 #' @param scenario Character; climate scenario name.
 #' @param sst_source Character; one of "builtin", "csv", "ersst_nc".
 #' @param sst_path Optional character; path to SST data file (CSV or NetCDF).
@@ -1211,14 +1273,12 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 #'
 #' @examples
 #' cfg <- make_climate_cfg(
-#'   enabled = TRUE,
 #'   sst_source = "builtin",
 #'   scenario = "ssp245"
 #' )
 #' cfg
 #' @export
-make_climate_cfg <- function(enabled = TRUE,
-                             scenario = "stationary",
+make_climate_cfg <- function(scenario = "stationary",
                              sst_source = c("builtin", "csv", "ersst_nc"),
                              sst_path = NULL,
                              baseline_years = 1991L:2020L,
@@ -1232,7 +1292,6 @@ make_climate_cfg <- function(enabled = TRUE,
   scenario <- match.arg(scenario, choices = c("stationary", sst_scenario_info("all")$scenario))
 
   cfg <- list(
-    enabled = enabled,
     scenario = scenario,
     sst_source = sst_source,
     sst_path = sst_path,
@@ -1257,18 +1316,16 @@ print.climate_cfg <- function(x, ...) {
   cat(sprintf("  SST source        : %s\n", x$sst_source))
   cat(sprintf("  Baseline          : %d-%d\n", min(x$baseline_years), max(x$baseline_years)))
 
-  if (isTRUE(x$enabled)) {
-    if (identical(x$scenario, "stationary")) {
-      cat("  Climate mode      : baseline climate run (delta_sst = 0)\n")
-    }
-    cat(sprintf("  Sensitivity mode  : %s\n", x$sensitivity_mode))
-    if (identical(x$sensitivity_mode, "linear_shifted")) {
-      cat(sprintf("  Shift coefficients: k_beta=%.3f, k_gamma=%.3f\n", x$k_beta, x$k_gamma))
-    } else {
-      cat("  Shift coefficients: fixed historical sensitivities\n")
-    }
+  if (identical(x$scenario, "stationary")) {
+    cat("  Climate mode      : baseline climate run (delta_sst = 0)\n")
   } else {
-    cat("  Climate mode      : disabled (stationary)\n")
+    cat("  Climate mode      : future climate run\n")
+  }
+  cat(sprintf("  Sensitivity mode  : %s\n", x$sensitivity_mode))
+  if (identical(x$sensitivity_mode, "linear_shifted")) {
+    cat(sprintf("  Shift coefficients: k_beta=%.3f, k_gamma=%.3f\n", x$k_beta, x$k_gamma))
+  } else {
+    cat("  Shift coefficients: fixed historical sensitivities\n")
   }
 
   perturb_status <- switch(
@@ -1312,14 +1369,22 @@ print.climate_cfg <- function(x, ...) {
 #'   \item{k_beta}{Configured linear shift coefficient for `beta_0`.}
 #'   \item{k_gamma}{Configured linear shift coefficient for `gamma_0`.}
 #'   \item{future_period}{Scenario period used to resolve `delta_sst`.}
+#'   \item{sst_scale}{Implied SST-driven count multiplier
+#'     `exp(beta_sst * delta_sst)`.}
+#'   \item{annual_count_series}{Basin-consistent annual total count series used
+#'     for `beta_0` calibration, in storms/year.}
+#'   \item{annual_count_source}{Character label describing the provenance of
+#'     `annual_count_series`.}
+#'   \item{beta_guardrail}{List describing any `beta_0` plausibility fallback.}
+#'   \item{sst_scale_guardrail}{List describing any multiplier guardrail applied
+#'     to `beta_sst` for the resolved scenario.}
 #'   \item{baseline_years}{SST anomaly baseline years.}
 #'   \item{perturb}{Resolved storm-perturbation parameters (or `NULL`).}
 #'   \item{perturb_state}{Storm-perturbation state label.}
-#'   \item{enabled}{Whether climate adjustments are enabled.}
 #'   \item{source}{SST source used for calibration.}
 #'
 #' @examples
-#' cfg <- make_climate_cfg(enabled = TRUE, sst_source = "builtin", scenario = "stationary")
+#' cfg <- make_climate_cfg(sst_source = "builtin", scenario = "stationary")
 #' climate <- resolve_climate_inputs(cfg, verbose = FALSE)
 #' climate$beta_sst
 #'
@@ -1330,6 +1395,8 @@ resolve_climate_inputs <- function(climate_cfg,
                                    min_year = 1970L,
                                    future_period = NULL,
                                    verbose = TRUE) {
+  sst_scale_guardrail_max <- 4
+
   .clamp_nonnegative <- function(x) {
     if (!is.finite(x) || x < 0) {
       return(0)
@@ -1362,29 +1429,40 @@ resolve_climate_inputs <- function(climate_cfg,
   delta_sst <- 0
   beta_sst <- baseline$beta_0
   gamma <- baseline$gamma_0
-  climate_mode <- "off"
+  climate_mode <- "baseline"
 
-  if (isTRUE(baseline$enabled)) {
-    climate_mode <- "baseline"
-    if (!identical(baseline$scenario, "stationary")) {
-      delta_sst <- get_scenario_delta(
-        scenario = baseline$scenario,
-        future_period = future_period,
-        baseline_years = baseline$baseline_years
-      )
-      climate_mode <- "future"
+  if (!identical(baseline$scenario, "stationary")) {
+    delta_sst <- get_scenario_delta(
+      scenario = baseline$scenario,
+      future_period = future_period,
+      baseline_years = baseline$baseline_years
+    )
+    climate_mode <- "future"
+  }
+  if (identical(baseline$sensitivity_mode, "linear_shifted")) {
+    beta_sst <- .resolve_effective_sensitivity(baseline$beta_0, baseline$k_beta, delta_sst)
+    gamma <- .resolve_effective_sensitivity(baseline$gamma_0, baseline$k_gamma, delta_sst)
+  }
+  sst_scale <- exp(beta_sst * delta_sst)
+  sst_scale_guardrail <- list(
+    triggered = FALSE,
+    reason = "none",
+    sst_scale_max = sst_scale_guardrail_max
+  )
+  if (is.finite(delta_sst) && delta_sst > 0 && is.finite(sst_scale) && sst_scale > sst_scale_guardrail_max) {
+    beta_sst <- log(sst_scale_guardrail_max) / delta_sst
+    sst_scale <- exp(beta_sst * delta_sst)
+    sst_scale_guardrail$triggered <- TRUE
+    sst_scale_guardrail$reason <- "sst_scale_above_plausibility_limit"
+    if (verbose) {
+      message(sprintf(
+        "[climate] Guardrail: SST count multiplier exceeded %.2fx; beta_sst reduced to %.3f 1/degC.",
+        sst_scale_guardrail_max, beta_sst
+      ))
     }
-    if (identical(baseline$sensitivity_mode, "linear_shifted")) {
-      beta_sst <- .resolve_effective_sensitivity(baseline$beta_0, baseline$k_beta, delta_sst)
-      gamma <- .resolve_effective_sensitivity(baseline$gamma_0, baseline$k_gamma, delta_sst)
-    }
-  } else {
-    beta_sst <- 0
-    gamma <- 0
   }
 
   list(
-    enabled = baseline$enabled,
     scenario = baseline$scenario,
     source = baseline$source,
     delta_sst = as.numeric(delta_sst),
@@ -1397,6 +1475,11 @@ resolve_climate_inputs <- function(climate_cfg,
     k_beta = as.numeric(baseline$k_beta),
     k_gamma = as.numeric(baseline$k_gamma),
     future_period = future_period,
+    sst_scale = as.numeric(sst_scale),
+    annual_count_series = baseline$annual_count_series,
+    annual_count_source = baseline$annual_count_source,
+    beta_guardrail = baseline$beta_guardrail,
+    sst_scale_guardrail = sst_scale_guardrail,
     baseline_years = baseline$baseline_years,
     perturb = baseline$perturb,
     perturb_state = baseline$perturb_state,
@@ -1416,25 +1499,6 @@ resolve_climate_inputs <- function(climate_cfg,
     stop("climate_cfg must be created by make_climate_cfg().")
   }
   climate_cfg <- .normalize_climate_cfg(climate_cfg)
-
-  if (!climate_cfg$enabled) {
-    if (verbose) message("[climate] Climate adjustments disabled.")
-    return(list(
-      enabled = FALSE,
-      scenario = climate_cfg$scenario,
-      source = climate_cfg$sst_source,
-      baseline_years = climate_cfg$baseline_years,
-      start_year = climate_cfg$start_year,
-      sensitivity_mode = climate_cfg$sensitivity_mode,
-      k_beta = climate_cfg$k_beta,
-      k_gamma = climate_cfg$k_gamma,
-      beta_0 = 0,
-      gamma_0 = 0,
-      p_hur_base = NA_real_,
-      perturb = NULL,
-      perturb_state = "disabled"
-    ))
-  }
 
   # Load SST data
   sst_raw <- switch(climate_cfg$sst_source,
@@ -1459,6 +1523,14 @@ resolve_climate_inputs <- function(climate_cfg,
   }
 
   # Historical baseline rate sensitivity
+  annual_count_series <- NULL
+  annual_count_source <- "literature_fallback"
+  beta_guardrail <- list(
+    triggered = FALSE,
+    reason = "no_annual_counts",
+    beta_max = 1.2,
+    beta_fallback = beta_prior
+  )
   if (!is.null(annual_counts)) {
     beta_info <- estimate_beta_sst(
       annual_counts = annual_counts,
@@ -1468,6 +1540,9 @@ resolve_climate_inputs <- function(climate_cfg,
       verbose = verbose
     )
     beta_0 <- as.numeric(beta_info$beta_sst)
+    annual_count_series <- beta_info$annual_count_series
+    annual_count_source <- beta_info$annual_count_source
+    beta_guardrail <- beta_info$guardrail
   } else {
     beta_0 <- beta_prior
     if (verbose) message(sprintf("[climate] No annual_counts provided for beta estimation. Using prior: %.3f", beta_0))
@@ -1542,7 +1617,6 @@ resolve_climate_inputs <- function(climate_cfg,
   }
 
   list(
-    enabled = TRUE,
     scenario = climate_cfg$scenario,
     source = climate_cfg$sst_source,
     baseline_years = climate_cfg$baseline_years,
@@ -1553,6 +1627,9 @@ resolve_climate_inputs <- function(climate_cfg,
     beta_0 = beta_0,
     gamma_0 = gamma_0,
     p_hur_base = p_hur_base,
+    annual_count_series = annual_count_series,
+    annual_count_source = annual_count_source,
+    beta_guardrail = beta_guardrail,
     perturb = resolved_perturb,
     perturb_state = perturb_state
   )

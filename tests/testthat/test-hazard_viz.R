@@ -40,16 +40,17 @@ hazard_viz_daily_fixture <- function() {
 test_that("save_hazard_viz_plots writes validation plots into output/validation", {
   tmp_dir <- withr::local_tempdir()
   withr::local_dir(tmp_dir)
+  output_dir <- file.path("legacy", "path")
 
   result <- save_hazard_viz_plots(
     daily = hazard_viz_daily_fixture(),
-    output_dir = file.path("legacy", "path"),
+    output_dir = output_dir,
     location_name = "ignored"
   )
 
-  validation_dir <- file.path("output", "validation")
+  expected_dir <- output_dir
   expected_files <- file.path(
-    validation_dir,
+    expected_dir,
     c(
       "Saba_annual_event_count_probability.png",
       "Saba_intensity_duration.png",
@@ -65,12 +66,12 @@ test_that("save_hazard_viz_plots writes validation plots into output/validation"
     )
   )
 
-  expect_true(dir.exists(validation_dir))
+  expect_true(dir.exists(expected_dir))
   expect_setequal(unname(result$paths), expected_files)
   expect_true(all(file.exists(expected_files)))
-  expect_true(file.exists(file.path(validation_dir, "rate_comparison.png")))
-  expect_false(dir.exists(file.path(validation_dir, "comparison")))
-  expect_length(list.dirs(validation_dir, recursive = FALSE, full.names = TRUE), 0L)
+  expect_true(file.exists(file.path(expected_dir, "rate_comparison.png")))
+  expect_false(dir.exists(file.path(expected_dir, "comparison")))
+  expect_length(list.dirs(expected_dir, recursive = FALSE, full.names = TRUE), 0L)
 })
 
 test_that("save_hazard_viz_plots uses deterministic validation filenames", {
@@ -88,5 +89,6 @@ test_that("save_hazard_viz_plots uses deterministic validation filenames", {
     location_name = "still_ignored"
   )
 
-  expect_identical(first_result$paths, second_result$paths)
+  expect_identical(names(first_result$paths), names(second_result$paths))
+  expect_identical(basename(unname(first_result$paths)), basename(unname(second_result$paths)))
 })

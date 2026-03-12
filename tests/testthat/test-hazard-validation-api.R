@@ -2,13 +2,19 @@ test_that("hazard config maps canonical constructor names to runtime fields", {
   cfg_default <- make_hazard_cfg()
   expect_identical(cfg_default$start_year, 1970L)
   expect_identical(cfg_default$n_sim, 1000L)
+  expect_s3_class(cfg_default$climate, "climate_cfg")
+  expect_identical(cfg_default$climate$scenario, "stationary")
+  expect_identical(cfg_default$climate$sensitivity_mode, "fixed")
+  expect_no_error(ipdcstorm:::.normalize_climate_cfg(cfg_default$climate))
 
   cfg_custom <- make_hazard_cfg(
-    historical_start_year = 1985L,
-    simulation_years = 250L
+   historical_start_year = 1985L,
+    simulation_years = 250L,
+    climate = make_climate_cfg(scenario = "ssp245")
   )
   expect_identical(cfg_custom$start_year, 1985L)
   expect_identical(cfg_custom$n_sim, 250L)
+  expect_identical(cfg_custom$climate$scenario, "ssp245")
   expect_false("n_sim_years" %in% names(cfg_custom))
 })
 

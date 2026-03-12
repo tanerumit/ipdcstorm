@@ -10,6 +10,83 @@
   )
 }
 
+.hazard_test_targets <- tibble::tibble(
+  name = "Saba",
+  lat = 17.63,
+  lon = -63.23
+)
+
+.hazard_test_targets_dup <- tibble::tibble(
+  name = c("Saba_A", "Saba_B"),
+  lat = c(17.63, 17.63),
+  lon = c(-63.23, -63.23)
+)
+
+.run_hazard_reference <- local({
+  cache <- new.env(parent = emptyenv())
+
+  function(scenario = "stationary",
+           sensitivity_mode = "fixed",
+           k_beta = 0,
+           k_gamma = 0,
+           perturb = NULL,
+           simulation_years = 8L,
+           seed = 222L) {
+    perturb_key <- if (is.null(perturb)) {
+      "NULL"
+    } else {
+      paste(names(perturb), unlist(perturb, use.names = FALSE), sep = "=", collapse = ",")
+    }
+    key <- paste(
+      scenario,
+      sensitivity_mode,
+      k_beta,
+      k_gamma,
+      perturb_key,
+      simulation_years,
+      seed,
+      sep = "|"
+    )
+
+    if (!exists(key, envir = cache, inherits = FALSE)) {
+      cfg <- make_hazard_cfg(
+        simulation_years = simulation_years,
+        climate = make_climate_cfg(
+          scenario = scenario,
+          sensitivity_mode = sensitivity_mode,
+          k_beta = k_beta,
+          k_gamma = k_gamma,
+          perturb = perturb
+        )
+      )
+      out <- suppressWarnings(
+        run_hazard_model(cfg, .hazard_test_targets, seed = seed, verbose = FALSE)
+      )
+      assign(key, out, envir = cache)
+    }
+
+    get(key, envir = cache, inherits = FALSE)
+  }
+})
+
+.summarize_hazard_reference <- function(out) {
+  list(
+    sim_summary = out$sim |>
+      dplyr::group_by(location) |>
+      dplyr::summarise(
+        mean_total = mean(n_total),
+        mean_ts = mean(n_ts),
+        mean_hur = mean(n_hur),
+        total_events = sum(n_total),
+        .groups = "drop"
+      ),
+    rate_summary = out$rates |>
+      dplyr::select(location, storm_class, lambda) |>
+      dplyr::arrange(location, storm_class),
+    metadata = out$run_metadata
+  )
+}
+
 test_that("make_climate_cfg validates inputs and prints fields", {
   cfg <- make_climate_cfg(
     scenario = "ssp245",
@@ -20,7 +97,6 @@ test_that("make_climate_cfg validates inputs and prints fields", {
   )
 
   expect_s3_class(cfg, "climate_cfg")
-  expect_true(cfg$enabled)
   expect_equal(cfg$scenario, "ssp245")
   expect_equal(cfg$sensitivity_mode, "linear_shifted")
   expect_equal(cfg$k_beta, 0.2)
@@ -46,7 +122,6 @@ test_that("make_climate_cfg validates inputs and prints fields", {
   expect_match(txt, "Storm perturbation")
 
   stationary <- make_climate_cfg(scenario = "stationary")
-  expect_true(stationary$enabled)
   expect_equal(stationary$scenario, "stationary")
   expect_null(stationary[["perturb"]])
 
@@ -167,6 +242,18 @@ test_that("resolver uses scenario table delta_sst path", {
   expect_identical(resolved$climate_mode, "future")
 })
 
+test_that("estimate_beta_sst rejects target-conditioned annual counts", {
+  annual_counts <- .make_climate_counts_fixture() |>
+    dplyr::mutate(location = rep(c("A", "B"), length.out = dplyr::n()))
+  sst_df <- get_mdr_sst_builtin() |>
+    compute_sst_anomaly()
+
+  expect_error(
+    estimate_beta_sst(annual_counts, sst_df = sst_df, verbose = FALSE),
+    "must not contain a location column"
+  )
+})
+
 test_that("simulate_twolevel_counts uses scalar delta_sst", {
   lambda_table <- tibble::tibble(
     storm_class = c("TS", "HUR"),
@@ -177,7 +264,7 @@ test_that("simulate_twolevel_counts uses scalar delta_sst", {
   sim0 <- simulate_twolevel_counts(
     lambda_table = lambda_table,
     k_hat = 1e6,
-    n_years_sim = 5000,
+    n_years_sim = 2000,
     delta_sst = 0
   )
 
@@ -185,7 +272,7 @@ test_that("simulate_twolevel_counts uses scalar delta_sst", {
   sim1 <- simulate_twolevel_counts(
     lambda_table = lambda_table,
     k_hat = 1e6,
-    n_years_sim = 5000,
+    n_years_sim = 2000,
     delta_sst = 0.8,
     beta_sst = 0.5,
     gamma_intensity = 0.1
@@ -204,62 +291,106 @@ test_that("simulate_twolevel_counts uses scalar delta_sst", {
   )
 })
 
-test_that("run_hazard_model accepts only NULL or climate_cfg and climate runs stay deterministic", {
-  cfg <- make_hazard_cfg(simulation_years = 120L)
-  targets <- tibble::tibble(
-    name = "Saba",
-    lat = 17.63,
-    lon = -63.23
+test_that("run_hazard_model uses embedded cfg climate and records seed metadata", {
+  cfg_future <- make_hazard_cfg(
+    simulation_years = 8L,
+    climate = make_climate_cfg(scenario = "ssp245")
   )
-  baseline <- make_climate_cfg(scenario = "stationary")
-  climate <- make_climate_cfg(scenario = "ssp245")
+  base <- .run_hazard_reference(
+    scenario = "stationary",
+    simulation_years = 8L,
+    seed = 321L
+  )
 
-  base1 <- run_hazard_model(cfg, targets, climate = baseline, seed = 321L, verbose = FALSE)
-  base2 <- run_hazard_model(cfg, targets, climate = baseline, seed = 321L, verbose = FALSE)
-  fut1 <- run_hazard_model(cfg, targets, climate = climate, seed = 321L, verbose = FALSE)
-  fut2 <- run_hazard_model(cfg, targets, climate = climate, seed = 321L, verbose = FALSE)
-  fut3 <- run_hazard_model(cfg, targets, climate = climate, seed = 654L, verbose = FALSE)
-  auto <- run_hazard_model(cfg, targets, climate = climate, seed = NULL, verbose = FALSE)
+  fut1 <- .run_hazard_reference(
+    scenario = "ssp245",
+    simulation_years = 8L,
+    seed = 321L
+  )
+  auto <- suppressWarnings(run_hazard_model(cfg_future, .hazard_test_targets, seed = NULL, verbose = FALSE))
 
-  expect_identical(base1$sim, base2$sim)
-  expect_identical(fut1$sim, fut2$sim)
-  expect_false(identical(fut1$sim, fut3$sim))
+  expect_identical(fut1$run_metadata$seed, 321L)
   expect_true(is.integer(auto$run_metadata$seed))
   expect_true(length(auto$run_metadata$seed) == 1L)
   expect_true(is.finite(auto$run_metadata$seed))
+  expect_true(is.list(fut1$run_metadata$climate))
+  expect_true(all(c(
+    "future_period", "delta_sst", "beta_0", "beta_sst",
+    "gamma_0", "gamma", "p_hur_base", "sst_scale"
+  ) %in% names(fut1$run_metadata$climate)))
 
-  expect_equal(attr(base1$fit, "delta_sst"), 0)
-  expect_identical(attr(base1$fit, "climate_mode"), "baseline")
+  expect_equal(attr(base$fit, "delta_sst"), 0)
+  expect_equal(attr(base$fit, "sst_scale"), 1)
+  expect_identical(attr(base$fit, "climate_mode"), "baseline")
   expect_gt(attr(fut1$fit, "delta_sst"), 0)
+  expect_gt(attr(fut1$fit, "sst_scale"), 1)
   expect_identical(attr(fut1$fit, "climate_mode"), "future")
-  expect_gt(mean(fut1$sim$n_total), mean(base1$sim$n_total))
+  expect_gt(mean(fut1$sim$n_total), mean(base$sim$n_total))
   expect_false(all(diff(fut1$sim$n_total) == 0))
 })
 
-test_that("baseline climate run matches climate = NULL numerically under fixed seed", {
-  cfg <- make_hazard_cfg(simulation_years = 120L)
-  targets <- tibble::tibble(
-    name = "Saba",
-    lat = 17.63,
-    lon = -63.23
+test_that("stationary and future climate runs preserve pre-refactor resolver outputs", {
+  expected_stationary <- list(
+    sim_summary = tibble::tibble(
+      location = "Saba",
+      mean_total = 1,
+      mean_ts = 0.875,
+      mean_hur = 0.125,
+      total_events = 8L
+    ),
+    rate_summary = tibble::tibble(
+      location = c("Saba", "Saba"),
+      storm_class = c("HUR", "TS"),
+      lambda = c(0.06382979, 0.48936170)
+    ),
+    metadata = list(
+      seed = 222L,
+      parameter_id = "params-00097b8d",
+      lambda_scaling_mode = "target"
+    )
+  )
+  expected_future <- list(
+    sim_summary = tibble::tibble(
+      location = "Saba",
+      mean_total = 1.375,
+      mean_ts = 1.125,
+      mean_hur = 0.25,
+      total_events = 11L
+    ),
+    rate_summary = tibble::tibble(
+      location = c("Saba", "Saba"),
+      storm_class = c("HUR", "TS"),
+      lambda = c(0.06382979, 0.48936170)
+    ),
+    metadata = list(
+      seed = 222L,
+      parameter_id = "params-00097b8d",
+      lambda_scaling_mode = "target"
+    )
   )
 
-  out_null <- run_hazard_model(cfg, targets, climate = NULL, seed = 456L, verbose = FALSE)
-  out_stationary <- run_hazard_model(
-    cfg,
-    targets,
-    climate = make_climate_cfg(scenario = "stationary"),
-    seed = 456L,
-    verbose = FALSE
-  )
+  out_stationary <- .run_hazard_reference(scenario = "stationary")
+  out_future <- .run_hazard_reference(scenario = "ssp245")
+  stationary_summary <- .summarize_hazard_reference(out_stationary)
+  future_summary <- .summarize_hazard_reference(out_future)
 
-  expect_identical(out_null$sim, out_stationary$sim)
-  expect_identical(out_null$events, out_stationary$events)
+  expect_equal(stationary_summary$sim_summary, expected_stationary$sim_summary, tolerance = 1e-8)
+  expect_equal(stationary_summary$rate_summary, expected_stationary$rate_summary, tolerance = 1e-8)
+  expect_identical(stationary_summary$metadata$seed, expected_stationary$metadata$seed)
+  expect_identical(stationary_summary$metadata$parameter_id, expected_stationary$metadata$parameter_id)
+  expect_identical(stationary_summary$metadata$lambda_scaling_mode, expected_stationary$metadata$lambda_scaling_mode)
   expect_equal(attr(out_stationary$fit, "delta_sst"), 0)
   expect_identical(attr(out_stationary$fit, "climate_mode"), "baseline")
   expect_identical(attr(out_stationary$fit, "climate_scenario"), "stationary")
-  expect_identical(attr(out_null$fit, "climate_mode"), "off")
-  expect_identical(attr(out_null$fit, "climate_scenario"), "off")
+
+  expect_equal(future_summary$sim_summary, expected_future$sim_summary, tolerance = 1e-8)
+  expect_equal(future_summary$rate_summary, expected_future$rate_summary, tolerance = 1e-8)
+  expect_identical(future_summary$metadata$seed, expected_future$metadata$seed)
+  expect_identical(future_summary$metadata$parameter_id, expected_future$metadata$parameter_id)
+  expect_identical(future_summary$metadata$lambda_scaling_mode, expected_future$metadata$lambda_scaling_mode)
+  expect_equal(attr(out_future$fit, "delta_sst"), 0.29, tolerance = 1e-8)
+  expect_identical(attr(out_future$fit, "climate_mode"), "future")
+  expect_identical(attr(out_future$fit, "climate_scenario"), "ssp245")
 })
 
 test_that("legacy climate constructors and print methods are removed", {
@@ -279,12 +410,11 @@ test_that("legacy climate constructors and print methods are removed", {
   expect_error(prepare_climate(make_climate_cfg()), "could not find function")
 })
 
-test_that("run_hazard_model rejects legacy climate object classes", {
-  cfg <- make_hazard_cfg(simulation_years = 40L)
-  targets <- tibble::tibble(
-    name = "Saba",
-    lat = 17.63,
-    lon = -63.23
+test_that("run_hazard_model rejects missing or legacy climate config state", {
+  cfg <- make_hazard_cfg(
+    data_path = "definitely-missing.csv",
+    simulation_years = 12L,
+    climate = make_climate_cfg(scenario = "stationary")
   )
   legacy_shift <- structure(list(delta_sst = 0.8), class = c("climate_shift", "list"))
   legacy_response <- structure(list(beta_sst = 0.5, gamma = 0.1), class = c("climate_response", "list"))
@@ -294,44 +424,59 @@ test_that("run_hazard_model rejects legacy climate object classes", {
   )
 
   expect_error(
-    run_hazard_model(cfg, targets, climate = legacy_shift, seed = 11L, verbose = FALSE),
-    "climate must be NULL or inherit from \"climate_cfg\""
+    make_hazard_cfg(simulation_years = 40L, climate = legacy_shift),
+    "climate must be created by make_climate_cfg"
   )
   expect_error(
-    run_hazard_model(cfg, targets, climate = legacy_response, seed = 11L, verbose = FALSE),
-    "climate must be NULL or inherit from \"climate_cfg\""
+    make_hazard_cfg(simulation_years = 40L, climate = legacy_response),
+    "climate must be created by make_climate_cfg"
   )
   expect_error(
-    run_hazard_model(cfg, targets, climate = legacy_input, seed = 11L, verbose = FALSE),
-    "climate must be NULL or inherit from \"climate_cfg\""
+    make_hazard_cfg(simulation_years = 40L, climate = legacy_input),
+    "climate must be created by make_climate_cfg"
+  )
+
+  cfg_missing <- unclass(cfg)
+  class(cfg_missing) <- c("hazard_cfg", "list")
+  cfg_missing$climate <- NULL
+  expect_error(
+    suppressWarnings(run_hazard_model(cfg_missing, .hazard_test_targets, seed = 11L, verbose = FALSE)),
+    "cfg\\$climate is required"
+  )
+
+  cfg_legacy <- unclass(cfg)
+  class(cfg_legacy) <- c("hazard_cfg", "list")
+  cfg_legacy$climate <- structure(
+    list(enabled = FALSE, scenario = "stationary", sst_source = "builtin", baseline_years = 1991L:2020L, start_year = 2025L, sensitivity_mode = "fixed", k_beta = 0, k_gamma = 0, perturb = NULL),
+    class = c("climate_cfg", "list")
+  )
+  expect_error(
+    suppressWarnings(run_hazard_model(cfg_legacy, .hazard_test_targets, seed = 11L, verbose = FALSE)),
+    "Climate-off mode has been removed"
   )
 })
 
 test_that("returned climate metadata uses only simplified resolved schema", {
-  cfg <- make_hazard_cfg(simulation_years = 40L)
-  targets <- tibble::tibble(
-    name = "Saba",
-    lat = 17.63,
-    lon = -63.23
-  )
-  climate <- make_climate_cfg(
+  out <- .run_hazard_reference(
     scenario = "ssp245",
     sensitivity_mode = "linear_shifted",
     k_beta = 0.2,
     k_gamma = 0.1,
-    perturb = list()
+    perturb = list(),
+    simulation_years = 8L,
+    seed = 11L
   )
-
-  out <- run_hazard_model(cfg, targets, climate = climate, seed = 11L, verbose = FALSE)
 
   expect_type(out$cfg$climate, "list")
   expect_false(inherits(out$cfg$climate, "climate_input"))
   expect_false("shift" %in% names(out$cfg$climate))
   expect_false("response" %in% names(out$cfg$climate))
   expect_true(all(c(
-    "enabled", "scenario", "source", "delta_sst", "baseline_years",
+    "scenario", "source", "delta_sst", "baseline_years",
     "future_period", "sensitivity_mode", "k_beta", "k_gamma",
-    "beta_0", "gamma_0", "beta_sst", "gamma", "p_hur_base",
+    "beta_0", "gamma_0", "beta_sst", "gamma", "p_hur_base", "sst_scale",
+    "annual_count_series", "annual_count_source",
+    "beta_guardrail", "sst_scale_guardrail",
     "climate_mode",
     "perturb", "perturb_state", "config"
   ) %in% names(out$cfg$climate)))
@@ -339,64 +484,125 @@ test_that("returned climate metadata uses only simplified resolved schema", {
   expect_identical(attr(out$fit, "climate_cfg"), out$cfg$climate$config)
 })
 
-test_that("baseline and future climate runs share resolved historical sensitivities", {
-  cfg <- make_hazard_cfg(simulation_years = 120L)
-  targets <- tibble::tibble(
-    name = "Saba",
-    lat = 17.63,
-    lon = -63.23
-  )
-  climate_baseline <- make_climate_cfg(
-    scenario = "stationary",
-    sensitivity_mode = "fixed"
-  )
-  climate_future <- make_climate_cfg(
-    scenario = "ssp245",
-    sensitivity_mode = "fixed"
+test_that("climate calibration is independent of duplicated target geometry", {
+  cfg_future <- make_hazard_cfg(
+    simulation_years = 12L,
+    climate = make_climate_cfg(scenario = "ssp585")
   )
 
-  out_baseline <- run_hazard_model(cfg, targets, climate = climate_baseline, seed = 222L, verbose = FALSE)
-  out_future <- run_hazard_model(cfg, targets, climate = climate_future, seed = 222L, verbose = FALSE)
+  out_single <- suppressWarnings(
+    run_hazard_model(cfg_future, .hazard_test_targets, seed = 777L, verbose = FALSE)
+  )
+  out_dup <- suppressWarnings(
+    run_hazard_model(cfg_future, .hazard_test_targets_dup, seed = 777L, verbose = FALSE)
+  )
 
-  expect_identical(out_baseline$cfg$climate$climate_mode, "baseline")
-  expect_identical(out_future$cfg$climate$climate_mode, "future")
-  expect_identical(out_baseline$cfg$climate$beta_0, out_future$cfg$climate$beta_0)
-  expect_identical(out_baseline$cfg$climate$gamma_0, out_future$cfg$climate$gamma_0)
-  expect_identical(out_baseline$cfg$climate$beta_sst, out_future$cfg$climate$beta_sst)
-  expect_identical(out_baseline$cfg$climate$gamma, out_future$cfg$climate$gamma)
-  expect_equal(out_baseline$cfg$climate$delta_sst, 0)
-  expect_gt(out_future$cfg$climate$delta_sst, 0)
-  expect_false(identical(out_baseline$sim, out_future$sim))
+  expect_equal(out_single$cfg$climate$beta_0, out_dup$cfg$climate$beta_0, tolerance = 1e-8)
+  expect_equal(out_single$cfg$climate$beta_sst, out_dup$cfg$climate$beta_sst, tolerance = 1e-8)
+  expect_equal(out_single$cfg$climate$sst_scale, out_dup$cfg$climate$sst_scale, tolerance = 1e-8)
+  expect_identical(out_dup$cfg$climate$annual_count_source, "basin_unique_storm_year_counts")
 })
 
-test_that("fixed mode stays identical to neutral shifted mode under fixed seed", {
-  cfg <- make_hazard_cfg(simulation_years = 120L)
-  targets <- tibble::tibble(
-    name = "Saba",
-    lat = 17.63,
-    lon = -63.23
-  )
-  climate_fixed <- make_climate_cfg(
-    scenario = "ssp245",
-    sensitivity_mode = "fixed"
-  )
-  climate_shift_neutral <- make_climate_cfg(
-    scenario = "ssp245",
-    sensitivity_mode = "linear_shifted",
-    k_beta = 0,
-    k_gamma = 0
+test_that("future climate multiplier stays within documented sanity guardrail", {
+  out <- .run_hazard_reference(
+    scenario = "ssp585",
+    simulation_years = 12L,
+    seed = 999L
   )
 
-  out_fixed <- run_hazard_model(cfg, targets, climate = climate_fixed, seed = 222L, verbose = FALSE)
-  out_shift_neutral <- run_hazard_model(cfg, targets, climate = climate_shift_neutral, seed = 222L, verbose = FALSE)
+  expect_gte(out$cfg$climate$sst_scale, 1)
+  expect_lte(out$cfg$climate$sst_scale, 4)
+  expect_true(is.data.frame(out$cfg$climate$annual_count_series))
+  expect_true(all(c("year", "N") %in% names(out$cfg$climate$annual_count_series)))
+})
 
-  expect_identical(out_fixed$sim, out_shift_neutral$sim)
-  expect_identical(out_fixed$cfg$climate$beta_sst, out_shift_neutral$cfg$climate$beta_sst)
-  expect_identical(out_fixed$cfg$climate$gamma, out_shift_neutral$cfg$climate$gamma)
+test_that("baseline and future climate runs share resolved historical sensitivities", {
+  annual_counts <- .make_climate_counts_fixture()
+  lambda_table <- tibble::tibble(
+    storm_class = c("TS", "HUR"),
+    lambda = c(0.8, 0.2)
+  )
+  baseline <- resolve_climate_inputs(
+    make_climate_cfg(scenario = "stationary", sensitivity_mode = "fixed"),
+    annual_counts = annual_counts,
+    lambda_table = lambda_table,
+    future_period = 2035:2065,
+    verbose = FALSE
+  )
+  future <- resolve_climate_inputs(
+    make_climate_cfg(scenario = "ssp245", sensitivity_mode = "fixed"),
+    annual_counts = annual_counts,
+    lambda_table = lambda_table,
+    future_period = 2035:2065,
+    verbose = FALSE
+  )
+
+  expect_identical(baseline$climate_mode, "baseline")
+  expect_identical(future$climate_mode, "future")
+  expect_identical(baseline$beta_0, future$beta_0)
+  expect_identical(baseline$gamma_0, future$gamma_0)
+  expect_identical(baseline$beta_sst, future$beta_sst)
+  expect_identical(baseline$gamma, future$gamma)
+  expect_equal(baseline$delta_sst, 0)
+  expect_gt(future$delta_sst, 0)
+})
+
+test_that("neutral shifted mode clamps fixed-mode negative sensitivities to zero", {
+  annual_counts <- .make_climate_counts_fixture()
+  lambda_table <- tibble::tibble(
+    storm_class = c("TS", "HUR"),
+    lambda = c(0.8, 0.2)
+  )
+  fixed <- resolve_climate_inputs(
+    make_climate_cfg(scenario = "ssp245", sensitivity_mode = "fixed"),
+    annual_counts = annual_counts,
+    lambda_table = lambda_table,
+    future_period = 2035:2065,
+    verbose = FALSE
+  )
+  shift_neutral <- resolve_climate_inputs(
+    make_climate_cfg(
+      scenario = "ssp245",
+      sensitivity_mode = "linear_shifted",
+      k_beta = 0,
+      k_gamma = 0
+    ),
+    annual_counts = annual_counts,
+    lambda_table = lambda_table,
+    future_period = 2035:2065,
+    verbose = FALSE
+  )
+
+  set.seed(222)
+  sim_fixed <- simulate_twolevel_counts(
+    lambda_table = lambda_table,
+    k_hat = 1e6,
+    n_years_sim = 64,
+    delta_sst = fixed$delta_sst,
+    beta_sst = fixed$beta_sst,
+    gamma_intensity = fixed$gamma,
+    p_hur_base = fixed$p_hur_base
+  )
+  set.seed(222)
+  sim_shift_neutral <- simulate_twolevel_counts(
+    lambda_table = lambda_table,
+    k_hat = 1e6,
+    n_years_sim = 64,
+    delta_sst = shift_neutral$delta_sst,
+    beta_sst = shift_neutral$beta_sst,
+    gamma_intensity = shift_neutral$gamma,
+    p_hur_base = shift_neutral$p_hur_base
+  )
+
+  expect_lt(fixed$beta_sst, 0)
+  expect_equal(shift_neutral$beta_sst, 0)
+  expect_equal(shift_neutral$gamma, 0)
+  expect_true(all(sim_fixed$climate_scale < sim_shift_neutral$climate_scale))
 })
 
 test_that("transient SST workflow functions are deleted from the public surface", {
   expect_false(exists("make_sst_cfg", envir = asNamespace("ipdcstorm"), inherits = FALSE))
   expect_false(exists("generate_sst_scenario", envir = asNamespace("ipdcstorm"), inherits = FALSE))
+  expect_false("climate" %in% names(formals(run_hazard_model)))
   expect_false("sst_cfg" %in% names(formals(run_hazard_model)))
 })

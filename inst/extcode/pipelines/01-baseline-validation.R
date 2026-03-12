@@ -37,14 +37,14 @@ hazard_cfg <- make_hazard_cfg(
   data_path = ibtracs_file_path,
   search_radius_km = 600,
   historical_start_year = 1970L,
-  simulation_years = 2000L
+  simulation_years = 2000L,
+  climate = make_climate_cfg(scenario = "stationary")
 )
 
 hazard_out <- run_hazard_model(
   cfg = hazard_cfg,
   targets = targets,
-  seed = seed,
-  climate = make_climate_cfg(scenario = "stationary")
+  seed = seed
 )
 
 # ------------------------------------------------------------------------------
@@ -56,7 +56,7 @@ validation_cfg <- make_validation_cfg(
   n_sim = 2000L,
   return_periods = c(5, 10, 25, 50),
   conf_level = 0.90,
-  seed = 42L,
+  seed = seed,
   out_dir = validation_output_dir,
   save_plots = TRUE,
   save_tables = TRUE,
