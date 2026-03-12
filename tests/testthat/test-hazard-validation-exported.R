@@ -85,6 +85,36 @@ validation_plot_fixture <- function() {
   )
 }
 
+hindcast_retention_fixture <- function() {
+  list(
+    events = tibble::tibble(
+      location = rep("Saba", 4),
+      storm_id = c("s1", "s2", "s3", "s4"),
+      year = c(2001L, 2002L, 2003L, 2004L),
+      storm_class = c("TD", "TS", "HUR", "TS"),
+      peak_wind_kt = c(33, 36, 70, 45)
+    ),
+    trackpoints = tibble::tibble(
+      SID = c("s1", "s2", "s3", "s4"),
+      iso_time = as.POSIXct(
+        c("2001-08-01 00:00:00", "2002-08-01 00:00:00", "2003-08-01 00:00:00", "2004-08-01 00:00:00"),
+        tz = "UTC"
+      ),
+      site_wind_kt = c(33, 36, 70, 45),
+      R34_source = c("none", "partial", "climo", "observed"),
+      R34_eff_km = c(NA_real_, 120, 150, 180),
+      RMW_used_km = c(20, 25, 30, 35)
+    ),
+    metadata = list(
+      model_seed = 11L,
+      validation_seed = 22L,
+      data_id = "ibtracs-fixture|rows=4",
+      parameter_id = "params-fixture",
+      lambda_scaler_id = "lambda-fixture"
+    )
+  )
+}
+
 test_that("validation configs and return-level helpers expose stable public results", {
   cfg <- make_validation_cfg(n_sim = 120L, save_plots = FALSE, save_tables = FALSE)
   rl_emp <- compute_return_levels(c(0, 30, 40, 50, 60, 70), return_periods = c(2, 5))
@@ -97,6 +127,102 @@ test_that("validation configs and return-level helpers expose stable public resu
   expect_equal(names(rl_emp), c("RL_2yr", "RL_5yr"))
   expect_true(isTRUE(gev_fit$converged))
   expect_true(all(c("return_levels", "p_zero", "n_total", "n_nonzero") %in% names(rl_gev)))
+})
+
+test_that("hindcast bias decomposition exposes frequency, intensity, and metadata fields", {
+  decomp <- ipdcstorm:::.compute_hindcast_bias_decomposition(
+    obs_annual_max = c(0, 40, 60, 0),
+    sim_annual_max = c(0, 50, 70, 30),
+    location = "Saba",
+    metadata = list(
+      model_seed = 101L,
+      validation_seed = 202L,
+      data_id = "ibtracs-a",
+      parameter_id = "params-a",
+      lambda_scaler_id = "lambda-a"
+    )
+  )
+
+  expect_equal(decomp$dominant_component, "frequency")
+  expect_equal(decomp$freq_contrib_kt, 12.5, tolerance = 1e-12)
+  expect_equal(decomp$intensity_contrib_kt, 0, tolerance = 1e-12)
+  expect_equal(decomp$interaction_contrib_kt, 0, tolerance = 1e-12)
+  expect_equal(decomp$model_seed, 101L)
+  expect_equal(decomp$validation_seed, 202L)
+  expect_equal(decomp$data_id, "ibtracs-a")
+  expect_equal(decomp$parameter_id, "params-a")
+  expect_equal(decomp$lambda_scaler_id, "lambda-a")
+})
+
+test_that("hindcast retention diagnostics stratify by R34 source and summarize threshold retention", {
+  fix <- hindcast_retention_fixture()
+
+  diag <- ipdcstorm:::.summarize_hindcast_retention(
+    events_island = fix$events,
+    trackpoints_island = fix$trackpoints,
+    train_years = 2001:2002,
+    test_years = 2003:2004,
+    location = "Saba",
+    metadata = fix$metadata
+  )
+
+  expect_equal(sort(unique(diag$r34_source$peak_r34_source)), c("climo", "none", "observed", "partial"))
+
+  train_summary <- dplyr::filter(diag$summary, period == "train")
+  test_summary <- dplyr::filter(diag$summary, period == "test")
+  expect_equal(train_summary$zero_event_years, 1L)
+  expect_equal(train_summary$ts_years, 1L)
+  expect_equal(train_summary$hur_years, 0L)
+  expect_equal(train_summary$near_ts_threshold_years, 1L)
+  expect_match(train_summary$near_ts_definition, "annual_max_kt")
+  expect_equal(test_summary$zero_event_years, 0L)
+  expect_equal(test_summary$ts_years, 1L)
+  expect_equal(test_summary$hur_years, 1L)
+
+  partial_row <- dplyr::filter(diag$r34_source, period == "train", peak_r34_source == "partial")
+  none_row <- dplyr::filter(diag$r34_source, period == "train", peak_r34_source == "none")
+  climo_row <- dplyr::filter(diag$r34_source, period == "test", peak_r34_source == "climo")
+  observed_row <- dplyr::filter(diag$r34_source, period == "test", peak_r34_source == "observed")
+  expect_equal(partial_row$n_tsplus_events, 1L)
+  expect_equal(partial_row$n_annual_max_years, 1L)
+  expect_equal(none_row$n_tsplus_events, 0L)
+  expect_equal(climo_row$n_hur_events, 1L)
+  expect_equal(observed_row$n_tsplus_events, 1L)
+
+  expect_true(all(diag$summary$model_seed == 11L))
+  expect_true(all(diag$r34_source$validation_seed == 22L))
+  expect_true(all(diag$event_provenance$data_id == "ibtracs-fixture|rows=4"))
+  expect_true(all(diag$yearly$parameter_id == "params-fixture"))
+  expect_true(all(diag$yearly$lambda_scaler_id == "lambda-fixture"))
+})
+
+test_that("wind-mode retention comparison stays deterministic by source and period", {
+  fix <- hindcast_retention_fixture()
+  legacy <- ipdcstorm:::.summarize_hindcast_retention(
+    events_island = fix$events,
+    trackpoints_island = fix$trackpoints,
+    train_years = 2001:2002,
+    test_years = 2003:2004,
+    location = "Saba",
+    metadata = fix$metadata
+  )$event_provenance
+
+  diagnostic <- legacy
+  diagnostic$retained_tsplus[diagnostic$storm_id == "s1"] <- TRUE
+  diagnostic$retained_hur[diagnostic$storm_id == "s4"] <- TRUE
+
+  cmp <- ipdcstorm:::.compare_hindcast_retention_by_wind(
+    legacy_events = legacy,
+    diagnostic_events = diagnostic
+  )
+
+  none_row <- dplyr::filter(cmp, location == "Saba", period == "train", peak_r34_source == "none")
+  observed_row <- dplyr::filter(cmp, location == "Saba", period == "test", peak_r34_source == "observed")
+  expect_equal(none_row$delta_tsplus_events, 1L)
+  expect_equal(none_row$tsplus_flip_events, 1L)
+  expect_equal(observed_row$delta_hur_events, 1L)
+  expect_equal(observed_row$hur_flip_events, 1L)
+  expect_true(all(cmp$model_seed[cmp$location == "Saba"] == 11L))
 })
 
 test_that("empirical hindcast intensity sampling can be bounded for diagnostics", {
@@ -175,10 +301,12 @@ test_that("hindcast attribution grid records mode metadata from workspace reruns
   )
 
   expect_true(all(c("wind_rate_grid", "sampler_grid", "summary", "metadata") %in% names(grid)))
+  expect_true(all(c("baseline_case_id", "baseline_diagnostics", "case_diagnostics", "wind_retention_comparison") %in% names(grid)))
   expect_true(all(c("case_id", "data_id", "parameter_id", "model_seed", "validation_seed") %in% names(grid$metadata)))
   expect_true(all(c("rl_bias_rp5", "rl_bias_rp10", "sim_xi", "obs_xi") %in% names(grid$summary)))
   expect_equal(sort(unique(grid$wind_rate_grid$annual_rate_mode)), c("adjusted", "raw"))
   expect_equal(sort(unique(grid$sampler_grid$sampler_mode)), c("bounded", "legacy"))
+  expect_equal(grid$baseline_case_id, "wind=legacy|rate=raw|sampler=legacy")
 })
 
 test_that("bootstrap and reference data helpers return expected schema", {

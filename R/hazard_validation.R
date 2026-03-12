@@ -811,10 +811,421 @@ bootstrap_return_level_ci <- function(annual_max,
 # 6) HINDCAST VALIDATION (internal workers)
 # =============================================================================
 
+.hindcast_metadata_defaults <- function(metadata = NULL) {
+  list(
+    model_seed = if (!is.null(metadata$model_seed)) as.integer(metadata$model_seed) else NA_integer_,
+    validation_seed = if (!is.null(metadata$validation_seed)) as.integer(metadata$validation_seed) else NA_integer_,
+    data_id = if (!is.null(metadata$data_id)) as.character(metadata$data_id) else NA_character_,
+    parameter_id = if (!is.null(metadata$parameter_id)) as.character(metadata$parameter_id) else NA_character_,
+    lambda_scaler_id = if (!is.null(metadata$lambda_scaler_id)) as.character(metadata$lambda_scaler_id) else NA_character_
+  )
+}
+
+.append_hindcast_metadata <- function(tbl, metadata = NULL) {
+  meta <- .hindcast_metadata_defaults(metadata)
+  tibble::as_tibble(tbl) |>
+    dplyr::mutate(
+      model_seed = meta$model_seed,
+      validation_seed = meta$validation_seed,
+      data_id = meta$data_id,
+      parameter_id = meta$parameter_id,
+      lambda_scaler_id = meta$lambda_scaler_id
+    )
+}
+
+.annotate_hindcast_case_table <- function(tbl,
+                                          case_id,
+                                          wind_field_mode,
+                                          annual_rate_mode,
+                                          sampler_mode) {
+  tibble::as_tibble(tbl) |>
+    dplyr::mutate(
+      case_id = case_id,
+      wind_field_mode = wind_field_mode,
+      annual_rate_mode = annual_rate_mode,
+      sampler_mode = sampler_mode
+    )
+}
+
+.compute_hindcast_bias_decomposition <- function(obs_annual_max,
+                                                 sim_annual_max,
+                                                 location,
+                                                 metadata = NULL) {
+  obs_am <- as.numeric(obs_annual_max)
+  sim_am <- as.numeric(sim_annual_max)
+
+  obs_freq <- mean(obs_am > 0, na.rm = TRUE)
+  sim_freq <- mean(sim_am > 0, na.rm = TRUE)
+  obs_int <- if (any(obs_am > 0, na.rm = TRUE)) mean(obs_am[obs_am > 0], na.rm = TRUE) else 0
+  sim_int <- if (any(sim_am > 0, na.rm = TRUE)) mean(sim_am[sim_am > 0], na.rm = TRUE) else 0
+  obs_mean <- mean(obs_am, na.rm = TRUE)
+  sim_mean <- mean(sim_am, na.rm = TRUE)
+
+  freq_contrib <- (sim_freq - obs_freq) * obs_int
+  int_contrib <- obs_freq * (sim_int - obs_int)
+  interact_contrib <- (sim_freq - obs_freq) * (sim_int - obs_int)
+  dominant_component <- c("frequency", "intensity", "interaction")[
+    which.max(abs(c(freq_contrib, int_contrib, interact_contrib)))
+  ]
+
+  .append_hindcast_metadata(
+    tibble::tibble(
+      location = location,
+      obs_event_rate = obs_freq,
+      sim_event_rate = sim_freq,
+      obs_mean_int_kt = obs_int,
+      sim_mean_int_kt = sim_int,
+      obs_mean_annual_max_kt = obs_mean,
+      sim_mean_annual_max_kt = sim_mean,
+      total_bias_kt = sim_mean - obs_mean,
+      freq_contrib_kt = freq_contrib,
+      intensity_contrib_kt = int_contrib,
+      interaction_contrib_kt = interact_contrib,
+      dominant_component = dominant_component
+    ),
+    metadata = metadata
+  )
+}
+
+.hindcast_event_peak_provenance <- function(events_island,
+                                            trackpoints_island = NULL,
+                                            ts_threshold_kt = 34,
+                                            hurricane_threshold_kt = 64,
+                                            near_ts_band_kt = 5) {
+  ev <- tibble::as_tibble(events_island)
+  out_template <- tibble::tibble(
+    location = character(0),
+    storm_id = character(0),
+    year = integer(0),
+    storm_class = character(0),
+    peak_wind_kt = numeric(0),
+    peak_r34_source = character(0),
+    peak_r34_eff_km = numeric(0),
+    peak_rmw_used_km = numeric(0),
+    retained_tsplus = logical(0),
+    retained_hur = logical(0),
+    near_ts_threshold = logical(0)
+  )
+
+  if (nrow(ev) == 0) {
+    return(out_template)
+  }
+
+  if (is.null(trackpoints_island) || nrow(trackpoints_island) == 0) {
+    return(
+      ev |>
+        dplyr::transmute(
+          location = .data$location,
+          storm_id = .data$storm_id,
+          year = as.integer(.data$year),
+          storm_class = as.character(.data$storm_class),
+          peak_wind_kt = as.numeric(.data$peak_wind_kt),
+          peak_r34_source = "none",
+          peak_r34_eff_km = NA_real_,
+          peak_rmw_used_km = NA_real_,
+          retained_tsplus = is.finite(.data$peak_wind_kt) & (.data$peak_wind_kt >= ts_threshold_kt),
+          retained_hur = is.finite(.data$peak_wind_kt) & (.data$peak_wind_kt >= hurricane_threshold_kt),
+          near_ts_threshold = is.finite(.data$peak_wind_kt) &
+            (abs(.data$peak_wind_kt - ts_threshold_kt) <= near_ts_band_kt)
+        )
+    )
+  }
+
+  tp <- tibble::as_tibble(trackpoints_island)
+  if (!("SID" %in% names(tp)) || !("site_wind_kt" %in% names(tp))) {
+    return(out_template)
+  }
+  if (!("iso_time" %in% names(tp))) tp$iso_time <- as.POSIXct(NA, origin = "1970-01-01", tz = "UTC")
+  if (!("R34_source" %in% names(tp))) tp$R34_source <- NA_character_
+  if (!("R34_eff_km" %in% names(tp))) tp$R34_eff_km <- NA_real_
+  if (!("RMW_used_km" %in% names(tp))) tp$RMW_used_km <- NA_real_
+
+  tp <- tp |>
+    dplyr::filter(!is.na(.data$SID), is.finite(.data$site_wind_kt))
+
+  peak_tbl <- dplyr::bind_rows(lapply(split(tp, tp$SID), function(storm_tp) {
+    ord <- order(-storm_tp$site_wind_kt, storm_tp$iso_time, na.last = TRUE)
+    peak_row <- storm_tp[ord[1], , drop = FALSE]
+    tibble::tibble(
+      storm_id = as.character(peak_row$SID[1]),
+      peak_r34_source = if (is.finite(match(as.character(peak_row$R34_source[1]), c("observed", "partial", "climo", "none")))) {
+        as.character(peak_row$R34_source[1])
+      } else {
+        "none"
+      },
+      peak_r34_eff_km = as.numeric(peak_row$R34_eff_km[1]),
+      peak_rmw_used_km = as.numeric(peak_row$RMW_used_km[1])
+    )
+  }))
+
+  ev |>
+    dplyr::left_join(peak_tbl, by = "storm_id") |>
+    dplyr::mutate(
+      peak_r34_source = dplyr::if_else(
+        .data$peak_r34_source %in% c("observed", "partial", "climo", "none"),
+        .data$peak_r34_source,
+        "none"
+      ),
+      retained_tsplus = is.finite(.data$peak_wind_kt) & (.data$peak_wind_kt >= ts_threshold_kt),
+      retained_hur = is.finite(.data$peak_wind_kt) & (.data$peak_wind_kt >= hurricane_threshold_kt),
+      near_ts_threshold = is.finite(.data$peak_wind_kt) &
+        (abs(.data$peak_wind_kt - ts_threshold_kt) <= near_ts_band_kt)
+    ) |>
+    dplyr::transmute(
+      location = .data$location,
+      storm_id = .data$storm_id,
+      year = as.integer(.data$year),
+      storm_class = as.character(.data$storm_class),
+      peak_wind_kt = as.numeric(.data$peak_wind_kt),
+      peak_r34_source = .data$peak_r34_source,
+      peak_r34_eff_km = as.numeric(.data$peak_r34_eff_km),
+      peak_rmw_used_km = as.numeric(.data$peak_rmw_used_km),
+      retained_tsplus = .data$retained_tsplus,
+      retained_hur = .data$retained_hur,
+      near_ts_threshold = .data$near_ts_threshold
+    )
+}
+
+.summarize_hindcast_retention <- function(events_island,
+                                          trackpoints_island = NULL,
+                                          train_years,
+                                          test_years,
+                                          location,
+                                          metadata = NULL,
+                                          ts_threshold_kt = 34,
+                                          hurricane_threshold_kt = 64,
+                                          near_ts_band_kt = 5) {
+  event_tbl <- .hindcast_event_peak_provenance(
+    events_island = events_island,
+    trackpoints_island = trackpoints_island,
+    ts_threshold_kt = ts_threshold_kt,
+    hurricane_threshold_kt = hurricane_threshold_kt,
+    near_ts_band_kt = near_ts_band_kt
+  ) |>
+    dplyr::mutate(
+      period = dplyr::if_else(.data$year %in% test_years, "test", "train")
+    )
+
+  all_years <- sort(unique(c(as.integer(train_years), as.integer(test_years))))
+  yearly_template <- tibble::tibble(
+    year = all_years,
+    period = ifelse(all_years %in% test_years, "test", "train")
+  )
+
+  annual_max_tbl <- event_tbl |>
+    dplyr::filter(.data$retained_tsplus) |>
+    dplyr::arrange(.data$year, dplyr::desc(.data$peak_wind_kt), .data$storm_id) |>
+    dplyr::group_by(.data$year, .data$period) |>
+    dplyr::summarise(
+      annual_max_kt = dplyr::first(.data$peak_wind_kt),
+      annual_class = dplyr::first(.data$storm_class),
+      annual_max_r34_source = dplyr::first(.data$peak_r34_source),
+      annual_max_storm_id = dplyr::first(.data$storm_id),
+      near_ts_threshold = dplyr::first(.data$near_ts_threshold),
+      .groups = "drop"
+    )
+
+  yearly_tbl <- yearly_template |>
+    dplyr::left_join(annual_max_tbl, by = c("year", "period")) |>
+    dplyr::mutate(
+      location = location,
+      annual_max_kt = dplyr::if_else(is.na(.data$annual_max_kt), 0, .data$annual_max_kt),
+      annual_class = dplyr::if_else(
+        is.na(.data$annual_class),
+        "zero",
+        as.character(.data$annual_class)
+      ),
+      annual_max_r34_source = dplyr::if_else(
+        is.na(.data$annual_max_r34_source),
+        "none",
+        as.character(.data$annual_max_r34_source)
+      ),
+      annual_max_storm_id = dplyr::if_else(
+        is.na(.data$annual_max_storm_id),
+        "",
+        as.character(.data$annual_max_storm_id)
+      ),
+      near_ts_threshold = dplyr::if_else(is.na(.data$near_ts_threshold), FALSE, .data$near_ts_threshold)
+    )
+
+  annual_max_ids <- yearly_tbl$annual_max_storm_id[nzchar(yearly_tbl$annual_max_storm_id)]
+  event_tbl <- event_tbl |>
+    dplyr::mutate(
+      is_annual_max_event = .data$storm_id %in% annual_max_ids
+    )
+
+  retention_summary <- yearly_tbl |>
+    dplyr::group_by(.data$location, .data$period) |>
+    dplyr::summarise(
+      n_years = dplyr::n(),
+      zero_event_years = sum(.data$annual_max_kt < ts_threshold_kt, na.rm = TRUE),
+      ts_years = sum(.data$annual_max_kt >= ts_threshold_kt & .data$annual_max_kt < hurricane_threshold_kt, na.rm = TRUE),
+      hur_years = sum(.data$annual_max_kt >= hurricane_threshold_kt, na.rm = TRUE),
+      near_ts_threshold_years = sum(.data$near_ts_threshold, na.rm = TRUE),
+      near_ts_threshold_kt = ts_threshold_kt,
+      near_ts_band_kt = near_ts_band_kt,
+      near_ts_definition = sprintf("|annual_max_kt - %d| <= %d kt", ts_threshold_kt, near_ts_band_kt),
+      .groups = "drop"
+    ) |>
+    .append_hindcast_metadata(metadata = metadata)
+
+  r34_summary <- event_tbl |>
+    dplyr::group_by(.data$location, .data$period, .data$peak_r34_source) |>
+    dplyr::summarise(
+      n_events = dplyr::n(),
+      n_tsplus_events = sum(.data$retained_tsplus, na.rm = TRUE),
+      n_hur_events = sum(.data$retained_hur, na.rm = TRUE),
+      n_near_ts_events = sum(.data$near_ts_threshold, na.rm = TRUE),
+      n_annual_max_years = sum(.data$is_annual_max_event, na.rm = TRUE),
+      mean_peak_wind_kt = if (all(!is.finite(.data$peak_wind_kt))) NA_real_ else mean(.data$peak_wind_kt, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    tidyr::complete(
+      location = location,
+      period = c("train", "test"),
+      peak_r34_source = c("observed", "partial", "climo", "none"),
+      fill = list(
+        n_events = 0L,
+        n_tsplus_events = 0L,
+        n_hur_events = 0L,
+        n_near_ts_events = 0L,
+        n_annual_max_years = 0L,
+        mean_peak_wind_kt = NA_real_
+      )
+    ) |>
+    .append_hindcast_metadata(metadata = metadata)
+
+  list(
+    event_provenance = .append_hindcast_metadata(event_tbl, metadata = metadata),
+    yearly = .append_hindcast_metadata(yearly_tbl, metadata = metadata),
+    summary = retention_summary,
+    r34_source = r34_summary
+  )
+}
+
+.collect_hindcast_case_diagnostics <- function(hc) {
+  if (is.null(hc$per_island) || length(hc$per_island) == 0) {
+    return(list(
+      bias_decomposition = tibble::tibble(),
+      r34_source_summary = tibble::tibble(),
+      retention_summary = tibble::tibble(),
+      retention_yearly = tibble::tibble(),
+      event_provenance = tibble::tibble()
+    ))
+  }
+
+  pull_diag <- function(name) {
+    dplyr::bind_rows(lapply(hc$per_island, function(hi) {
+      if (is.null(hi) || isTRUE(hi$skipped) || is.null(hi$diagnostics[[name]])) {
+        return(NULL)
+      }
+      hi$diagnostics[[name]]
+    }))
+  }
+
+  list(
+    bias_decomposition = pull_diag("bias_decomposition"),
+    r34_source_summary = pull_diag("r34_source_summary"),
+    retention_summary = pull_diag("retention_summary"),
+    retention_yearly = pull_diag("retention_yearly"),
+    event_provenance = pull_diag("event_provenance")
+  )
+}
+
+.compare_hindcast_retention_by_wind <- function(legacy_events,
+                                                diagnostic_events) {
+  required_cols <- c(
+    "location", "storm_id", "year", "period", "peak_r34_source",
+    "retained_tsplus", "retained_hur"
+  )
+  if (!all(required_cols %in% names(legacy_events)) ||
+    !all(required_cols %in% names(diagnostic_events))) {
+    return(tibble::tibble())
+  }
+
+  joined <- dplyr::full_join(
+    tibble::as_tibble(legacy_events) |>
+      dplyr::select(
+        "location", "storm_id", "year", "period",
+        peak_r34_source = "peak_r34_source",
+        retained_tsplus_legacy = "retained_tsplus",
+        retained_hur_legacy = "retained_hur",
+        model_seed = "model_seed",
+        validation_seed = "validation_seed",
+        data_id = "data_id",
+        parameter_id = "parameter_id",
+        lambda_scaler_id = "lambda_scaler_id"
+      ),
+    tibble::as_tibble(diagnostic_events) |>
+      dplyr::select(
+        "location", "storm_id", "year", "period",
+        peak_r34_source = "peak_r34_source",
+        retained_tsplus_diagnostic = "retained_tsplus",
+        retained_hur_diagnostic = "retained_hur"
+      ),
+    by = c("location", "storm_id", "year", "period", "peak_r34_source")
+  ) |>
+    dplyr::mutate(
+      peak_r34_source = dplyr::if_else(
+        .data$peak_r34_source %in% c("observed", "partial", "climo", "none"),
+        .data$peak_r34_source,
+        "none"
+      ),
+      retained_tsplus_legacy = dplyr::if_else(is.na(.data$retained_tsplus_legacy), FALSE, .data$retained_tsplus_legacy),
+      retained_hur_legacy = dplyr::if_else(is.na(.data$retained_hur_legacy), FALSE, .data$retained_hur_legacy),
+      retained_tsplus_diagnostic = dplyr::if_else(is.na(.data$retained_tsplus_diagnostic), FALSE, .data$retained_tsplus_diagnostic),
+      retained_hur_diagnostic = dplyr::if_else(is.na(.data$retained_hur_diagnostic), FALSE, .data$retained_hur_diagnostic)
+    )
+
+  joined |>
+    dplyr::group_by(.data$location, .data$period, .data$peak_r34_source) |>
+    dplyr::summarise(
+      legacy_tsplus_events = sum(.data$retained_tsplus_legacy, na.rm = TRUE),
+      diagnostic_tsplus_events = sum(.data$retained_tsplus_diagnostic, na.rm = TRUE),
+      legacy_hur_events = sum(.data$retained_hur_legacy, na.rm = TRUE),
+      diagnostic_hur_events = sum(.data$retained_hur_diagnostic, na.rm = TRUE),
+      tsplus_flip_events = sum(.data$retained_tsplus_legacy != .data$retained_tsplus_diagnostic, na.rm = TRUE),
+      hur_flip_events = sum(.data$retained_hur_legacy != .data$retained_hur_diagnostic, na.rm = TRUE),
+      model_seed = dplyr::first(.data$model_seed),
+      validation_seed = dplyr::first(.data$validation_seed),
+      data_id = dplyr::first(.data$data_id),
+      parameter_id = dplyr::first(.data$parameter_id),
+      lambda_scaler_id = dplyr::first(.data$lambda_scaler_id),
+      .groups = "drop"
+    ) |>
+    tidyr::complete(
+      location = unique(joined$location),
+      period = c("train", "test"),
+      peak_r34_source = c("observed", "partial", "climo", "none"),
+      fill = list(
+        legacy_tsplus_events = 0L,
+        diagnostic_tsplus_events = 0L,
+        legacy_hur_events = 0L,
+        diagnostic_hur_events = 0L,
+        tsplus_flip_events = 0L,
+        hur_flip_events = 0L
+      )
+    ) |>
+    dplyr::mutate(
+      delta_tsplus_events = .data$diagnostic_tsplus_events - .data$legacy_tsplus_events,
+      delta_hur_events = .data$diagnostic_hur_events - .data$legacy_hur_events
+    ) |>
+    dplyr::group_by(.data$location) |>
+    dplyr::mutate(
+      model_seed = if (any(is.finite(.data$model_seed))) dplyr::first(.data$model_seed[is.finite(.data$model_seed)]) else NA_integer_,
+      validation_seed = if (any(is.finite(.data$validation_seed))) dplyr::first(.data$validation_seed[is.finite(.data$validation_seed)]) else NA_integer_,
+      data_id = if (any(!is.na(.data$data_id))) dplyr::first(.data$data_id[!is.na(.data$data_id)]) else NA_character_,
+      parameter_id = if (any(!is.na(.data$parameter_id))) dplyr::first(.data$parameter_id[!is.na(.data$parameter_id)]) else NA_character_,
+      lambda_scaler_id = if (any(!is.na(.data$lambda_scaler_id))) dplyr::first(.data$lambda_scaler_id[!is.na(.data$lambda_scaler_id)]) else NA_character_
+    ) |>
+    dplyr::ungroup()
+}
+
 #' Run hindcast validation for a single location
 #' @keywords internal
 .validate_hindcast <- function(events_island,
                                location,
+                               trackpoints_island = NULL,
                                holdout_years = 10,
                                n_sim = 5000,
                                return_periods = c(5, 10, 25, 50),
@@ -825,7 +1236,8 @@ bootstrap_return_level_ci <- function(annual_max,
                                gamma_intensity = 0,
                                use_raw_rates = TRUE,
                                xi_bounds = c(-0.3, 0.4),
-                               n_boot = 500) {
+                               n_boot = 500,
+                               metadata = NULL) {
 
   set.seed(seed)
   storm_classes <- .normalize_storm_classes(storm_classes = storm_classes)
@@ -1102,6 +1514,21 @@ bootstrap_return_level_ci <- function(annual_max,
   )
   attr(comparison, "conf_level") <- conf_level
 
+  bias_decomp <- .compute_hindcast_bias_decomposition(
+    obs_annual_max = obs_annual_max$V_max_kt,
+    sim_annual_max = sim_annual_max,
+    location = location,
+    metadata = metadata
+  )
+  retention_diag <- .summarize_hindcast_retention(
+    events_island = ev,
+    trackpoints_island = trackpoints_island,
+    train_years = train_years,
+    test_years = test_years,
+    location = location,
+    metadata = metadata
+  )
+
   list(
     location = location,
     train_years = train_years,
@@ -1124,7 +1551,12 @@ bootstrap_return_level_ci <- function(annual_max,
       gev_xi = sim_gev$gev_fit$xi,
       gev_sigma = sim_gev$gev_fit$sigma,
       p_zero = sim_gev$p_zero,
-      sampler_mode = .hindcast_sampler_mode()
+      sampler_mode = .hindcast_sampler_mode(),
+      bias_decomposition = bias_decomp,
+      r34_source_summary = retention_diag$r34_source,
+      retention_summary = retention_diag$summary,
+      retention_yearly = retention_diag$yearly,
+      event_provenance = retention_diag$event_provenance
     )
   )
 }
@@ -1146,10 +1578,21 @@ bootstrap_return_level_ci <- function(annual_max,
   if (is.null(out$events)) stop("out$events is required.", call. = FALSE)
   locations <- sort(unique(out$events$location))
   results <- setNames(vector("list", length(locations)), locations)
+  metadata <- .hindcast_metadata_defaults(list(
+    model_seed = out$run_metadata$seed %||% NA_integer_,
+    validation_seed = seed,
+    data_id = out$run_metadata$ibtracs_data_id %||% NA_character_,
+    parameter_id = out$run_metadata$parameter_id %||% NA_character_,
+    lambda_scaler_id = out$lambda_scaler_id %||% NA_character_
+  ))
 
   for (location in locations) {
     ev <- out$events |>
       dplyr::filter(.data$location == .env$location)
+    tp <- NULL
+    if (!is.null(out$trackpoints) && !is.null(out$trackpoints[[location]])) {
+      tp <- out$trackpoints[[location]]
+    }
     if (is.null(ev) || nrow(ev) < 20) {
       message("[Hindcast] Skipping ", location, " (too few events: ",
               if (is.null(ev)) 0 else nrow(ev), ")")
@@ -1160,6 +1603,7 @@ bootstrap_return_level_ci <- function(annual_max,
       results[[location]] <- .validate_hindcast(
         events_island = ev,
         location = location,
+        trackpoints_island = tp,
         holdout_years = holdout_years,
         n_sim = n_sim,
         return_periods = return_periods,
@@ -1169,7 +1613,8 @@ bootstrap_return_level_ci <- function(annual_max,
         gamma_intensity = gamma_intensity,
         use_raw_rates = use_raw_rates,
         xi_bounds = xi_bounds,
-        n_boot = n_boot
+        n_boot = n_boot,
+        metadata = metadata
       )
 
       if (isTRUE(results[[location]]$skipped)) next
@@ -2222,10 +2667,22 @@ validate_hazard_model <- function(cfg,
       lambda_scaler_id = out$lambda_scaler_id %||% NA_character_
     )
 
+  diagnostics <- .collect_hindcast_case_diagnostics(hc)
+  diagnostics <- lapply(diagnostics, function(tbl) {
+    .annotate_hindcast_case_table(
+      tbl = tbl,
+      case_id = case_id,
+      wind_field_mode = wind_field_mode,
+      annual_rate_mode = annual_rate_mode,
+      sampler_mode = sampler_mode
+    )
+  })
+
   list(
     out = out,
     hindcast = hc,
-    comparison = comp
+    comparison = comp,
+    diagnostics = diagnostics
   )
 }
 
@@ -2297,8 +2754,10 @@ validate_hazard_model <- function(cfg,
     annual_rate_mode = "raw",
     sampler_mode = c("legacy", "bounded")
   )
+  baseline_case_id <- "wind=legacy|rate=raw|sampler=legacy"
+  diagnostic_wind_case_id <- "wind=diagnostic_new|rate=raw|sampler=legacy"
 
-  wind_rate_rows <- lapply(seq_len(nrow(wind_rate_cases)), function(i) {
+  wind_rate_cases_out <- lapply(seq_len(nrow(wind_rate_cases)), function(i) {
     case <- wind_rate_cases[i, , drop = FALSE]
     .run_hindcast_attribution_case(
       cfg = cfg,
@@ -2309,9 +2768,9 @@ validate_hazard_model <- function(cfg,
       wind_field_mode = case$wind_field_mode[[1]],
       annual_rate_mode = case$annual_rate_mode[[1]],
       sampler_mode = "legacy"
-    )$comparison
+    )
   })
-  sampler_rows <- lapply(seq_len(nrow(sampler_cases)), function(i) {
+  sampler_cases_out <- lapply(seq_len(nrow(sampler_cases)), function(i) {
     case <- sampler_cases[i, , drop = FALSE]
     .run_hindcast_attribution_case(
       cfg = cfg,
@@ -2322,17 +2781,50 @@ validate_hazard_model <- function(cfg,
       wind_field_mode = case$wind_field_mode[[1]],
       annual_rate_mode = case$annual_rate_mode[[1]],
       sampler_mode = case$sampler_mode[[1]]
-    )$comparison
+    )
   })
+  case_results <- c(wind_rate_cases_out, sampler_cases_out)
+  names(case_results) <- vapply(case_results, function(x) x$comparison$case_id[1], character(1))
 
-  wind_rate_grid <- dplyr::bind_rows(wind_rate_rows)
-  sampler_grid <- dplyr::bind_rows(sampler_rows)
+  wind_rate_grid <- dplyr::bind_rows(lapply(wind_rate_cases_out, `[[`, "comparison"))
+  sampler_grid <- dplyr::bind_rows(lapply(sampler_cases_out, `[[`, "comparison"))
   combined <- dplyr::bind_rows(wind_rate_grid, sampler_grid)
+  case_diagnostics <- list(
+    bias_decomposition = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$bias_decomposition)),
+    r34_source_summary = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$r34_source_summary)),
+    retention_summary = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$retention_summary)),
+    retention_yearly = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$retention_yearly)),
+    event_provenance = dplyr::bind_rows(lapply(case_results, function(x) x$diagnostics$event_provenance))
+  )
+  baseline_diagnostics <- if (!is.null(case_results[[baseline_case_id]])) {
+    case_results[[baseline_case_id]]$diagnostics
+  } else {
+    list(
+      bias_decomposition = tibble::tibble(),
+      r34_source_summary = tibble::tibble(),
+      retention_summary = tibble::tibble(),
+      retention_yearly = tibble::tibble(),
+      event_provenance = tibble::tibble()
+    )
+  }
+  wind_retention_comparison <- if (!is.null(case_results[[baseline_case_id]]) &&
+    !is.null(case_results[[diagnostic_wind_case_id]])) {
+    .compare_hindcast_retention_by_wind(
+      legacy_events = case_results[[baseline_case_id]]$diagnostics$event_provenance,
+      diagnostic_events = case_results[[diagnostic_wind_case_id]]$diagnostics$event_provenance
+    )
+  } else {
+    tibble::tibble()
+  }
 
   list(
     wind_rate_grid = wind_rate_grid,
     sampler_grid = sampler_grid,
     summary = .summarize_hindcast_attribution(combined),
+    baseline_case_id = baseline_case_id,
+    baseline_diagnostics = baseline_diagnostics,
+    case_diagnostics = case_diagnostics,
+    wind_retention_comparison = wind_retention_comparison,
     metadata = combined |>
       dplyr::distinct(
         .data$case_id,
