@@ -68,16 +68,15 @@ out_baseline <- run_hazard_model(
 # 3) Climate scenario
 # =============================================================================
 
-future_period <- 2035:2065
-
-delta_sst = get_scenario_delta("ssp585", future_period = future_period)
+future_period <- 2070:2090
+simulation_years <-500
 
 
 ssp585_cfg <- make_hazard_cfg(
   data_path = ibtracs_path,
   search_radius_km = 800,
   historical_start_year = 1970,
-  simulation_years = 500,
+  simulation_years = simulation_years,
   climate = make_climate_cfg(
     scenario = "ssp585",
     start_year = 2035L,

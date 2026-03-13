@@ -24,25 +24,27 @@ historical \code{p_hur_base}.}
 
 \item{min_year}{Integer; passed to estimation functions.}
 
-\item{future_period}{Optional integer vector of scenario years used to
-resolve \code{delta_sst}. Defaults to the 30-year window starting at
-\code{climate_cfg$start_year}.}
+\item{future_period}{Deprecated optional override for scenario-helper
+\code{future_period}. When supplied, it must be consistent with any
+\code{target_year} already stored in \code{climate_cfg}.}
 
 \item{verbose}{Logical.}
 }
 \value{
 A list with:
-\item{delta_sst}{Scenario-derived SST shift in degC.}
+\item{delta_sst}{Resolved SST shift in degC.}
 \item{beta_sst}{Final rate sensitivity used in simulation.}
 \item{gamma}{Final intensity sensitivity used in simulation.}
 \item{p_hur_base}{Historical baseline hurricane fraction.}
 \item{beta_0}{Historical baseline rate sensitivity.}
 \item{gamma_0}{Historical baseline intensity sensitivity.}
 \item{scenario}{Resolved scenario name.}
+\item{input_mode}{Climate input mode: scenario helper or direct delta_sst.}
+\item{target_year}{Target year used to derive scenario-helper \code{delta_sst}, if any.}
 \item{sensitivity_mode}{Resolved sensitivity mode.}
 \item{k_beta}{Configured linear shift coefficient for \code{beta_0}.}
 \item{k_gamma}{Configured linear shift coefficient for \code{gamma_0}.}
-\item{future_period}{Scenario period used to resolve \code{delta_sst}.}
+\item{future_period}{Scenario helper period metadata, if supplied.}
 \item{sst_scale}{Implied SST-driven count multiplier
 \code{exp(beta_sst * delta_sst)}.}
 \item{annual_count_series}{Basin-consistent annual total count series used
@@ -59,8 +61,8 @@ to \code{beta_sst} for the resolved scenario.}
 }
 \description{
 Calibrates historical baseline sensitivities from annual counts and MDR SST
-anomalies, resolves scenario \code{delta_sst}, and returns flat simulation-ready
-climate scalars for \code{run_hazard_model()}.
+anomalies, resolves one canonical \code{delta_sst}, and returns flat
+simulation-ready climate scalars for \code{run_hazard_model()}.
 }
 \examples{
 cfg <- make_climate_cfg(sst_source = "builtin", scenario = "stationary")

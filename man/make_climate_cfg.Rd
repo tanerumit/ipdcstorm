@@ -10,6 +10,9 @@ make_climate_cfg(
   sst_path = NULL,
   baseline_years = 1991L:2020L,
   start_year = 2025L,
+  delta_sst = NULL,
+  target_year = NULL,
+  future_period = NULL,
   sensitivity_mode = c("fixed", "linear_shifted"),
   k_beta = 0,
   k_gamma = 0,
@@ -17,7 +20,8 @@ make_climate_cfg(
 )
 }
 \arguments{
-\item{scenario}{Character; climate scenario name.}
+\item{scenario}{Optional character; climate scenario name used for helper
+resolution and provenance metadata.}
 
 \item{sst_source}{Character; one of "builtin", "csv", "ersst_nc".}
 
@@ -26,6 +30,15 @@ make_climate_cfg(
 \item{baseline_years}{Integer vector; years for climatological baseline.}
 
 \item{start_year}{Integer; first year of the simulation scenario.}
+
+\item{delta_sst}{Optional numeric scalar explicit SST shift in degC.}
+
+\item{target_year}{Optional numeric scalar target year used to derive
+scenario-helper \code{delta_sst}.}
+
+\item{future_period}{Optional integer vector future period used to derive
+scenario-helper \code{delta_sst}; its midpoint must match \code{target_year} when
+both are supplied.}
 
 \item{sensitivity_mode}{Character scalar; one of \code{"fixed"} or
 \code{"linear_shifted"}.}
@@ -61,18 +74,30 @@ instead enable a linear sensitivity shift:
 Optional storm perturbation is available as an expert sensitivity and is
 disabled unless \code{perturb} is supplied explicitly.
 
-\code{scenario} accepts \code{"stationary"} plus any value returned by
-\code{sst_scenario_info("all")$scenario} (for example SSP and optional KNMI
-scenarios when KNMI helpers are available).
+Climate can be specified in two equivalent ways:
+\enumerate{
+\item Scenario helper mode: provide \code{scenario} plus \code{target_year} or
+\code{future_period} to derive \code{delta_sst}.
+\item Direct mode: provide \code{delta_sst} explicitly.
+}
 
-If \code{scenario = "stationary"}, the returned config represents the canonical
-baseline hazard-model specification with \code{delta_sst = 0}. Climate is always
-resolved through this configuration; there is no disabled climate mode.
+After \code{delta_sst} is resolved, downstream hazard logic depends only on the
+resolved \code{delta_sst} and fixed model settings. Scenario names and timing are
+retained only as provenance metadata. If both direct \code{delta_sst} and
+scenario-derived inputs are supplied, they must resolve to the same
+\code{delta_sst} or an error is raised.
+
+If \code{scenario = "stationary"} and \code{delta_sst} is not supplied, the returned
+config represents the canonical baseline hazard-model specification with
+\code{delta_sst = 0}. Climate is always resolved through this configuration; there
+is no disabled climate mode.
 }
 \examples{
 cfg <- make_climate_cfg(
   sst_source = "builtin",
-  scenario = "ssp245"
+  scenario = "ssp245",
+  target_year = 2050
 )
+cfg_direct <- make_climate_cfg(delta_sst = 0.5)
 cfg
 }

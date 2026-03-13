@@ -4,12 +4,19 @@
 \alias{get_scenario_delta}
 \title{Look up a time-slice scenario SST shift}
 \usage{
-get_scenario_delta(scenario, future_period, baseline_years = 1991L:2020L)
+get_scenario_delta(
+  scenario,
+  target_year = NULL,
+  future_period = NULL,
+  baseline_years = 1991L:2020L
+)
 }
 \arguments{
 \item{scenario}{Character scalar naming a scenario in \code{sst_scenario_info("all")}.}
 
-\item{future_period}{Integer vector describing the future period of interest.}
+\item{target_year}{Optional numeric scalar target year used to derive \code{delta_sst}.}
+
+\item{future_period}{Optional integer vector describing the future period of interest.}
 
 \item{baseline_years}{Integer vector of climatological reference years.}
 }
@@ -17,10 +24,12 @@ get_scenario_delta(scenario, future_period, baseline_years = 1991L:2020L)
 Numeric scalar \code{delta_sst} in degC.
 }
 \description{
-Returns a scalar \code{delta_sst} for a future time slice by interpolating the
-scenario targets in \code{sst_scenario_info("all")} at the midpoint of
-\code{future_period}.
+Returns a scalar \code{delta_sst} for a future climate target by interpolating the
+scenario targets in \code{sst_scenario_info("all")} at \code{target_year}. Users may
+supply \code{target_year} directly or provide \code{future_period}, in which case its
+midpoint is used.
 }
 \examples{
+get_scenario_delta("ssp585", target_year = 2050)
 get_scenario_delta("ssp585", future_period = 2035:2065)
 }

@@ -610,10 +610,6 @@ run_hazard_model <- function(cfg, targets,
   # =========================================================================
   # CLIMATE ADJUSTMENTS
   # =========================================================================
-  future_period <- seq.int(
-    from = as.integer(climate_cfg$start_year),
-    length.out = 30L
-  )
   climate_resolved <- resolve_climate_inputs(
     climate_cfg = climate_cfg,
     annual_counts = basin_annual_counts,
@@ -621,7 +617,6 @@ run_hazard_model <- function(cfg, targets,
       dplyr::group_by(.data$storm_class) |>
       dplyr::summarise(lambda = sum(.data$lambda), .groups = "drop"),
     min_year = cfg$start_year,
-    future_period = future_period,
     verbose = verbose
   )
   delta_sst <- climate_resolved$delta_sst
@@ -632,8 +627,10 @@ run_hazard_model <- function(cfg, targets,
   climate_info <- list(
     scenario = climate_resolved$scenario,
     source = climate_resolved$source,
+    input_mode = climate_resolved$input_mode,
     delta_sst = delta_sst,
     baseline_years = climate_resolved$baseline_years,
+    target_year = climate_resolved$target_year,
     future_period = climate_resolved$future_period,
     sensitivity_mode = climate_resolved$sensitivity_mode,
     k_beta = climate_resolved$k_beta,
@@ -697,8 +694,8 @@ run_hazard_model <- function(cfg, targets,
 
   if (verbose) {
     .fmt_scenario_label <- function(x) {
-      if (!is.character(x) || length(x) != 1L || !nzchar(x)) {
-        return("Stationary")
+      if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
+        return("<none>")
       }
       if (grepl("^ssp", x, ignore.case = TRUE)) {
         return(toupper(x))
@@ -731,7 +728,19 @@ run_hazard_model <- function(cfg, targets,
         "climate run"
       )
     ))
+    .cli_info(sprintf(
+      "Climate input     : %s",
+      switch(
+        climate_info$input_mode,
+        scenario_helper = "scenario helper",
+        direct_delta_sst = "direct delta_sst",
+        climate_info$input_mode
+      )
+    ))
     .cli_info(sprintf("Climate scenario  : %s", scenario_label))
+    if (is.finite(climate_info$target_year)) {
+      .cli_info(sprintf("Target year       : %.1f", climate_info$target_year))
+    }
     .cli_info(sprintf("SST baseline     : %d-%d", min(bl_range), max(bl_range)))
     .cli_info(sprintf("Sensitivity mode : %s", climate_info$sensitivity_mode))
     .cli_info(sprintf(
@@ -827,6 +836,7 @@ run_hazard_model <- function(cfg, targets,
   attr(fit_all, "gamma_0") <- climate_info$gamma_0
   attr(fit_all, "p_hur_base") <- climate_info$p_hur_base
   attr(fit_all, "climate_mode") <- climate_info$climate_mode
+  attr(fit_all, "climate_input_mode") <- climate_info$input_mode
   attr(fit_all, "climate_scenario") <- climate_info$scenario
   attr(fit_all, "climate_source") <- climate_info$source
   attr(fit_all, "climate_cfg") <- climate_cfg
@@ -855,10 +865,11 @@ run_hazard_model <- function(cfg, targets,
   parameter_id <- .checksum_id_from_text(param_fields, prefix = "params")
   parameter_hash_fields <- c(
     param_fields,
-    climate_info$scenario,
-    climate_info$response_regime$regime,
+    climate_info$delta_sst,
     climate_info$f_rate_climate,
-    climate_info$gamma
+    climate_info$gamma,
+    climate_info$beta_sst,
+    climate_info$response_regime$regime
   )
   parameter_hash <- .checksum_id_from_text(parameter_hash_fields, prefix = "hash")
   run_metadata <- list(
@@ -870,8 +881,10 @@ run_hazard_model <- function(cfg, targets,
     parameter_hash = parameter_hash,
     lambda_scaling_mode = lambda_scaling_mode,
     climate = list(
+      input_mode = climate_info$input_mode,
       scenario = climate_info$scenario,
       source = climate_info$source,
+      target_year = climate_info$target_year,
       future_period = climate_info$future_period,
       delta_sst = climate_info$delta_sst,
       climate_mode = climate_info$climate_mode,

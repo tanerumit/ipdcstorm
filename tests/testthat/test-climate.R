@@ -26,6 +26,9 @@
   cache <- new.env(parent = emptyenv())
 
   function(scenario = "stationary",
+           delta_sst = NULL,
+           target_year = NULL,
+           future_period = NULL,
            sensitivity_mode = "fixed",
            k_beta = 0,
            k_gamma = 0,
@@ -38,7 +41,10 @@
       paste(names(perturb), unlist(perturb, use.names = FALSE), sep = "=", collapse = ",")
     }
     key <- paste(
-      scenario,
+      if (is.null(scenario)) "NULL" else scenario,
+      if (is.null(delta_sst)) "NULL" else format(delta_sst, digits = 8),
+      if (is.null(target_year)) "NULL" else format(target_year, digits = 8),
+      if (is.null(future_period)) "NULL" else paste(future_period, collapse = ","),
       sensitivity_mode,
       k_beta,
       k_gamma,
@@ -49,15 +55,19 @@
     )
 
     if (!exists(key, envir = cache, inherits = FALSE)) {
+      climate_args <- list(
+        sensitivity_mode = sensitivity_mode,
+        k_beta = k_beta,
+        k_gamma = k_gamma,
+        perturb = perturb
+      )
+      if (!is.null(scenario)) climate_args$scenario <- scenario
+      if (!is.null(delta_sst)) climate_args$delta_sst <- delta_sst
+      if (!is.null(target_year)) climate_args$target_year <- target_year
+      if (!is.null(future_period)) climate_args$future_period <- future_period
       cfg <- make_hazard_cfg(
         simulation_years = simulation_years,
-        climate = make_climate_cfg(
-          scenario = scenario,
-          sensitivity_mode = sensitivity_mode,
-          k_beta = k_beta,
-          k_gamma = k_gamma,
-          perturb = perturb
-        )
+        climate = do.call(make_climate_cfg, climate_args)
       )
       out <- suppressWarnings(
         run_hazard_model(cfg, .hazard_test_targets, seed = seed, verbose = FALSE)
@@ -90,6 +100,7 @@
 test_that("make_climate_cfg validates inputs and prints fields", {
   cfg <- make_climate_cfg(
     scenario = "ssp245",
+    target_year = 2050,
     sensitivity_mode = "linear_shifted",
     k_beta = 0.2,
     k_gamma = 0.1,
@@ -98,6 +109,8 @@ test_that("make_climate_cfg validates inputs and prints fields", {
 
   expect_s3_class(cfg, "climate_cfg")
   expect_equal(cfg$scenario, "ssp245")
+  expect_identical(cfg$input_mode, "scenario_helper")
+  expect_equal(cfg$target_year, 2050)
   expect_equal(cfg$sensitivity_mode, "linear_shifted")
   expect_equal(cfg$k_beta, 0.2)
   expect_equal(cfg$k_gamma, 0.1)
@@ -117,6 +130,7 @@ test_that("make_climate_cfg validates inputs and prints fields", {
 
   txt <- paste(capture.output(print(cfg)), collapse = "\n")
   expect_match(txt, "Climate configuration")
+  expect_match(txt, "Input mode")
   expect_match(txt, "ssp245")
   expect_match(txt, "Sensitivity mode")
   expect_match(txt, "Storm perturbation")
@@ -124,6 +138,12 @@ test_that("make_climate_cfg validates inputs and prints fields", {
   stationary <- make_climate_cfg(scenario = "stationary")
   expect_equal(stationary$scenario, "stationary")
   expect_null(stationary[["perturb"]])
+  expect_identical(stationary$input_mode, "scenario_helper")
+
+  direct <- make_climate_cfg(delta_sst = 0.45)
+  expect_identical(direct$input_mode, "direct_delta_sst")
+  expect_true(is.na(direct$scenario))
+  expect_equal(direct$delta_sst, 0.45)
 
   expect_warning(
     expect_error(make_climate_cfg(k_beta = "abc"), "single finite numeric"),
@@ -131,6 +151,14 @@ test_that("make_climate_cfg validates inputs and prints fields", {
   )
   expect_error(make_climate_cfg(sensitivity_mode = "bad"))
   expect_error(make_climate_cfg(k_gamma = NA_real_), "single finite numeric")
+  expect_error(
+    make_climate_cfg(scenario = "ssp245", target_year = 2050, delta_sst = 0.1),
+    "Conflicting climate specification"
+  )
+  expect_error(
+    make_climate_cfg(scenario = "ssp245", target_year = 2050, future_period = 2070:2100),
+    "must resolve to the same midpoint year"
+  )
 })
 
 test_that("stationary scenario resolves baseline climate scalars through the common path", {
@@ -204,6 +232,10 @@ test_that("get_scenario_delta interpolates and clamps by future-period midpoint"
   ssp585 <- info[info$scenario == "ssp585", , drop = FALSE]
 
   expect_equal(
+    get_scenario_delta("ssp585", target_year = 2050),
+    ssp585$delta_sst_2050[[1]]
+  )
+  expect_equal(
     get_scenario_delta("ssp585", future_period = 2035:2065),
     ssp585$delta_sst_2050[[1]]
   )
@@ -222,24 +254,55 @@ test_that("get_scenario_delta interpolates and clamps by future-period midpoint"
   )
 
   expect_error(get_scenario_delta("nonexistent", future_period = 2035:2065), "Unknown SST scenario")
+  expect_error(get_scenario_delta("ssp245"), "Provide target_year or future_period")
 })
 
 test_that("resolver uses scenario table delta_sst path", {
   annual_counts <- .make_climate_counts_fixture()
-  climate <- make_climate_cfg(scenario = "ssp585")
+  climate <- make_climate_cfg(scenario = "ssp585", target_year = 2090)
 
   resolved <- resolve_climate_inputs(
     climate,
     annual_counts = annual_counts,
-    future_period = 2075:2105,
     verbose = FALSE
   )
 
   expect_equal(
     resolved$delta_sst,
-    get_scenario_delta("ssp585", future_period = 2075:2105)
+    get_scenario_delta("ssp585", target_year = 2090)
   )
+  expect_identical(resolved$input_mode, "scenario_helper")
   expect_identical(resolved$climate_mode, "future")
+})
+
+test_that("scenario helper and direct delta_sst resolve identical downstream climate adjustments", {
+  annual_counts <- .make_climate_counts_fixture()
+  lambda_table <- tibble::tibble(
+    storm_class = c("TS", "HUR"),
+    lambda = c(0.8, 0.2)
+  )
+  helper <- resolve_climate_inputs(
+    make_climate_cfg(scenario = "ssp245", target_year = 2050, sensitivity_mode = "linear_shifted", k_beta = 0.2, k_gamma = 0.1),
+    annual_counts = annual_counts,
+    lambda_table = lambda_table,
+    verbose = FALSE
+  )
+  direct <- resolve_climate_inputs(
+    make_climate_cfg(delta_sst = helper$delta_sst, sensitivity_mode = "linear_shifted", k_beta = 0.2, k_gamma = 0.1),
+    annual_counts = annual_counts,
+    lambda_table = lambda_table,
+    verbose = FALSE
+  )
+
+  expect_identical(direct$input_mode, "direct_delta_sst")
+  expect_equal(direct$delta_sst, helper$delta_sst)
+  expect_equal(direct$beta_sst, helper$beta_sst)
+  expect_equal(direct$beta_sst_effective, helper$beta_sst_effective)
+  expect_equal(direct$gamma, helper$gamma)
+  expect_equal(direct$sst_scale, helper$sst_scale)
+  expect_equal(direct$f_rate_climate, helper$f_rate_climate)
+  expect_equal(direct$response_regime$redistribution_strength, helper$response_regime$redistribution_strength)
+  expect_equal(direct$response_regime$redistribution_bounds, helper$response_regime$redistribution_bounds)
 })
 
 test_that("estimate_beta_sst rejects target-conditioned annual counts", {
@@ -294,7 +357,7 @@ test_that("simulate_twolevel_counts uses scalar delta_sst", {
 test_that("run_hazard_model uses embedded cfg climate and records seed metadata", {
   cfg_future <- make_hazard_cfg(
     simulation_years = 8L,
-    climate = make_climate_cfg(scenario = "ssp245")
+    climate = make_climate_cfg(scenario = "ssp245", target_year = 2050)
   )
   base <- .run_hazard_reference(
     scenario = "stationary",
@@ -315,21 +378,23 @@ test_that("run_hazard_model uses embedded cfg climate and records seed metadata"
   expect_true(is.finite(auto$run_metadata$seed))
   expect_true(is.list(fut1$run_metadata$climate))
   expect_true(all(c(
-    "future_period", "delta_sst", "beta_0", "beta_sst",
+    "input_mode", "target_year", "future_period", "delta_sst", "beta_0", "beta_sst",
     "gamma_0", "gamma", "p_hur_base", "sst_scale"
   ) %in% names(fut1$run_metadata$climate)))
 
   expect_equal(attr(base$fit, "delta_sst"), 0)
   expect_equal(attr(base$fit, "sst_scale"), 1)
   expect_identical(attr(base$fit, "climate_mode"), "baseline")
+  expect_identical(attr(base$fit, "climate_input_mode"), "scenario_helper")
   expect_gt(attr(fut1$fit, "delta_sst"), 0)
   expect_gt(attr(fut1$fit, "sst_scale"), 1)
   expect_identical(attr(fut1$fit, "climate_mode"), "future")
+  expect_identical(attr(fut1$fit, "climate_input_mode"), "scenario_helper")
   expect_gt(mean(fut1$sim$n_total), mean(base$sim$n_total))
   expect_false(all(diff(fut1$sim$n_total) == 0))
 })
 
-test_that("stationary and future climate runs preserve pre-refactor resolver outputs", {
+test_that("stationary and default future helper runs remain deterministic", {
   expected_stationary <- list(
     sim_summary = tibble::tibble(
       location = "Saba",
@@ -352,10 +417,10 @@ test_that("stationary and future climate runs preserve pre-refactor resolver out
   expected_future <- list(
     sim_summary = tibble::tibble(
       location = "Saba",
-      mean_total = 1.375,
-      mean_ts = 1.125,
-      mean_hur = 0.25,
-      total_events = 11L
+      mean_total = 1,
+      mean_ts = 0.875,
+      mean_hur = 0.125,
+      total_events = 8L
     ),
     rate_summary = tibble::tibble(
       location = c("Saba", "Saba"),
@@ -472,8 +537,8 @@ test_that("returned climate metadata uses only simplified resolved schema", {
   expect_false("shift" %in% names(out$cfg$climate))
   expect_false("response" %in% names(out$cfg$climate))
   expect_true(all(c(
-    "scenario", "source", "delta_sst", "baseline_years",
-    "future_period", "sensitivity_mode", "k_beta", "k_gamma",
+    "scenario", "source", "input_mode", "delta_sst", "baseline_years",
+    "target_year", "future_period", "sensitivity_mode", "k_beta", "k_gamma",
     "beta_0", "gamma_0", "beta_sst", "gamma", "p_hur_base", "sst_scale",
     "annual_count_series", "annual_count_source",
     "beta_guardrail", "sst_scale_guardrail",
@@ -482,6 +547,32 @@ test_that("returned climate metadata uses only simplified resolved schema", {
   ) %in% names(out$cfg$climate)))
   expect_s3_class(out$cfg$climate$config, "climate_cfg")
   expect_identical(attr(out$fit, "climate_cfg"), out$cfg$climate$config)
+})
+
+test_that("run_hazard_model produces equal climate-adjusted outputs for equal delta_sst", {
+  helper <- .run_hazard_reference(
+    scenario = "ssp245",
+    target_year = 2050,
+    simulation_years = 12L,
+    seed = 444L
+  )
+  direct <- .run_hazard_reference(
+    scenario = NULL,
+    delta_sst = helper$cfg$climate$delta_sst,
+    simulation_years = 12L,
+    seed = 444L
+  )
+
+  expect_identical(helper$run_metadata$climate$input_mode, "scenario_helper")
+  expect_identical(direct$run_metadata$climate$input_mode, "direct_delta_sst")
+  expect_equal(helper$cfg$climate$delta_sst, direct$cfg$climate$delta_sst)
+  expect_equal(helper$cfg$climate$beta_sst, direct$cfg$climate$beta_sst)
+  expect_equal(helper$cfg$climate$gamma, direct$cfg$climate$gamma)
+  expect_equal(helper$cfg$climate$sst_scale, direct$cfg$climate$sst_scale)
+  expect_equal(helper$run_metadata$parameter_hash, direct$run_metadata$parameter_hash)
+  expect_equal(helper$sim$n_total, direct$sim$n_total)
+  expect_equal(helper$sim$n_ts, direct$sim$n_ts)
+  expect_equal(helper$sim$n_hur, direct$sim$n_hur)
 })
 
 test_that("climate calibration is independent of duplicated target geometry", {
