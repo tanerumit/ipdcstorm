@@ -1,0 +1,303 @@
+---
+title: "Tutorial 1 - Introduction, Setup, and a First Hazard Run"
+subtitle: "Hurricane Wind Hazard Model for the Caribbean"
+author: ""
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: true
+    code-fold: false
+    code-tools: true
+    code-copy: true
+    highlight-style: github
+    smooth-scroll: true
+    self-contained: true
+execute:
+  eval: true
+  echo: true
+  warning: false
+  message: false
+editor:
+  markdown:
+    wrap: sentence
+---
+
+```{r}
+#| label: setup-hidden
+#| include: false
+knitr::opts_chunk$set(comment = "#>")
+```
+
+This tutorial shows the simplest end-to-end workflow for the hazard model. You will set up one target location, run a stationary baseline simulation, and then see how to switch to climate stress tests using the current climate API.
+
+## What This Tutorial Covers
+
+- Build a `hazard_cfg` with embedded climate settings.
+- Run `run_hazard_model()` for a single site with the current argument names.
+- Use the three supported climate patterns: stationary, direct `delta_sst`, and scenario plus `target_year`.
+- Convert annual simulated counts into a daily hazard-impact series.
+
+Estimated time: 15-20 minutes.
+
+## Overview {#sec-overview}
+
+The model workflow has three practical steps:
+
+1. Create a hazard configuration with IBTrACS input data, simulation settings, and an embedded climate configuration.
+2. Run the annual hazard model to calibrate historical rates and simulate synthetic storm counts.
+3. Downscale selected simulated years to daily wind and impact time series.
+
+The climate workflow is now intentionally simple. Every run carries a climate configuration inside `hazard_cfg`. A stationary baseline uses `make_climate_cfg(scenario = "stationary")`; a hypothetical stress test uses `make_climate_cfg(delta_sst = ...)`; and a scenario-based run uses `make_climate_cfg(scenario = "ssp585", target_year = ...)`.
+
+## Prepare the Session {#sec-prerequisites}
+
+Load the package and a few helper packages used in the examples.
+
+```{r}
+#| label: setup-packages
+library(ipdcstorm)
+library(dplyr)
+library(tibble)
+```
+
+This tutorial uses the small built-in IBTrACS example file so the code runs quickly.
+
+```{r}
+#| label: setup-data
+ibtracs_demo <- system.file("extdata", "ibtracs_demo.csv", package = "ipdcstorm")
+ibtracs_demo
+```
+
+Define one target location. A target table must contain `name`, `lat`, and `lon`.
+
+```{r}
+#| label: setup-target
+targets <- tribble(
+  ~name,   ~lat,   ~lon,
+  "Saba",  17.635, -63.230
+)
+```
+
+## Configure a Baseline Run {#sec-configure}
+
+Start with a stationary baseline. In the current API, climate is always embedded in `make_hazard_cfg()`.
+
+```{r}
+#| label: configure-baseline-climate
+climate_baseline <- make_climate_cfg(scenario = "stationary")
+climate_baseline
+```
+
+Now create the hazard configuration. The main user-facing arguments are `data_path`, `historical_start_year`, `simulation_years`, `search_radius_km`, and `climate`.
+
+```{r}
+#| label: configure-baseline-hazard
+cfg_baseline <- make_hazard_cfg(
+  data_path = ibtracs_demo,
+  historical_start_year = 1970L,
+  simulation_years = 200L,
+  search_radius_km = 800,
+  climate = climate_baseline
+)
+
+cfg_baseline
+```
+
+These settings mean:
+
+| Parameter | Description |
+|---|---|
+| `data_path` | Path to the IBTrACS CSV used for calibration. |
+| `historical_start_year` | First historical year included in the rate calibration. |
+| `simulation_years` | Number of synthetic years to generate. Use a small value for tutorials and a larger value for analysis. |
+| `search_radius_km` | Distance filter used to retain track points near the target location. |
+| `climate` | Climate configuration resolved inside the run. |
+
+## Run the Baseline Hazard Model {#sec-run}
+
+Run the model with the hazard config and target table. The climate settings are already stored in `cfg_baseline`, so you no longer pass a separate climate object to `run_hazard_model()`.
+
+```{r}
+#| label: run-baseline
+out_baseline <- run_hazard_model(
+  cfg = cfg_baseline,
+  targets = targets,
+  seed = 42,
+  verbose = FALSE
+)
+```
+
+The returned object contains the historical calibration products and the synthetic annual simulations.
+
+```{r}
+#| label: inspect-run-objects
+names(out_baseline)
+```
+
+Inspect the calibrated annual rates.
+
+```{r}
+#| label: inspect-rates
+out_baseline$rates
+```
+
+Inspect the fitted annual-count parameters. In a stationary baseline, the resolved climate metadata should show `delta_sst = 0`.
+
+```{r}
+#| label: inspect-fit
+out_baseline$fit
+out_baseline$run_metadata$climate
+```
+
+Inspect the first few simulated years. This is the main output used for downstream summaries and downscaling.
+
+```{r}
+#| label: inspect-sim
+head(out_baseline$sim)
+```
+
+## Choose a Climate Workflow {#sec-climate}
+
+The current climate interface supports two kinds of future runs.
+
+Direct `delta_sst` is the simplest way to stress-test the model. Here `delta_sst` is an additive sea-surface-temperature anomaly in degrees C relative to the baseline climate. It is not a direct storm-count multiplier. Count effects are applied downstream through the model's rate-scaling logic, while intensity effects are handled through the resolved climate scalars inside the annual simulation.
+
+```{r}
+#| label: configure-direct-delta
+climate_delta <- make_climate_cfg(delta_sst = 0.8)
+climate_delta
+```
+
+Scenario helper mode is for time-slice runs tied to a named pathway. The scenario and `target_year` are used only to resolve a canonical `delta_sst`, which is then passed through the same downstream logic as the direct mode.
+
+```{r}
+#| label: configure-scenario-helper
+climate_ssp585 <- make_climate_cfg(
+  scenario = "ssp585",
+  target_year = 2050
+)
+climate_ssp585
+```
+
+The helper is useful when you want provenance such as "SSP5-8.5 in 2050", while direct `delta_sst` is better for transparent sensitivity testing.
+
+Run short examples of both future patterns by embedding the climate config in a new hazard config.
+
+```{r}
+#| label: run-future-examples
+cfg_delta <- make_hazard_cfg(
+  data_path = ibtracs_demo,
+  historical_start_year = 1970L,
+  simulation_years = 50L,
+  search_radius_km = 800,
+  climate = climate_delta
+)
+
+cfg_ssp585 <- make_hazard_cfg(
+  data_path = ibtracs_demo,
+  historical_start_year = 1970L,
+  simulation_years = 50L,
+  search_radius_km = 800,
+  climate = climate_ssp585
+)
+
+out_delta <- run_hazard_model(
+  cfg = cfg_delta,
+  targets = targets,
+  seed = 42,
+  verbose = FALSE
+)
+
+out_ssp585 <- run_hazard_model(
+  cfg = cfg_ssp585,
+  targets = targets,
+  seed = 42,
+  verbose = FALSE
+)
+```
+
+Compare the resolved climate metadata. Notice that both future workflows end up with a resolved `delta_sst`, but only the scenario-helper run also carries scenario and target-year provenance.
+
+```{r}
+#| label: compare-climate-metadata
+climate_summary_row <- function(x, example) {
+  tibble(
+    example = example,
+    input_mode = x$input_mode,
+    scenario = x$scenario,
+    target_year = if (is.null(x$target_year)) NA_real_ else x$target_year,
+    delta_sst = x$delta_sst,
+    rate_scale = x$rate_scale,
+    gamma = x$gamma
+  )
+}
+
+bind_rows(
+  climate_summary_row(out_baseline$run_metadata$climate, "baseline"),
+  climate_summary_row(out_delta$run_metadata$climate, "direct_delta"),
+  climate_summary_row(out_ssp585$run_metadata$climate, "scenario_helper")
+)
+```
+
+## Downscale to Daily Hazard Impacts {#sec-daily}
+
+The annual simulation gives counts per synthetic year. To create a daily hazard series, use `generate_daily_hazard_impact()`. The current function returns a named list, so for one location you extract the location table from that list.
+
+```{r}
+#| label: run-daily-downscaling
+daily_list <- generate_daily_hazard_impact(
+  out = out_baseline,
+  location = "Saba",
+  sim_years = 1:20,
+  year0 = 2025,
+  gust_factor = 1.25,
+  damage = list(
+    method = "powerlaw",
+    thr = 34,
+    V_ref = 80,
+    d_ref = 0.03,
+    p = 3,
+    d_max = 0.10
+  ),
+  scenario = "baseline",
+  seed = 42
+)
+
+daily_saba <- daily_list$Saba
+head(daily_saba)
+```
+
+Summarize the daily output. This gives a quick check on how many tropical-storm and hurricane days appear in the selected simulated years.
+
+```{r}
+#| label: summarize-daily-output
+daily_saba |>
+  summarise(
+    total_days = n(),
+    tc_days = sum(wind_kt >= 34, na.rm = TRUE),
+    hur_days = sum(wind_kt >= 64, na.rm = TRUE),
+    mean_annual_damage = sum(damage_rate, na.rm = TRUE) / n_distinct(sim_year)
+  )
+```
+
+## Practical Notes {#sec-notes}
+
+Keep these points in mind when you set up your own runs:
+
+| Topic | Guidance |
+|---|---|
+| Baseline climate | Use `make_climate_cfg(scenario = "stationary")`. There is no longer a separate climate-off mode. |
+| Hypothetical warming | Use `make_climate_cfg(delta_sst = ...)` when you want a transparent stress-test input in degrees C. |
+| Scenario time slice | Use `make_climate_cfg(scenario = "ssp585", target_year = ...)` when you want named-scenario provenance and automatic `delta_sst` resolution. |
+| Hazard config | Put climate inside `make_hazard_cfg(...)`; `run_hazard_model()` reads it from `cfg`. |
+| Daily impacts | Pass a `damage` list, not legacy damage arguments, and extract the requested location from the returned named list. |
+
+## Summary {#sec-summary}
+
+You now have the current minimal workflow for the hazard model. The key pattern is that climate is always carried inside `hazard_cfg`, whether you are running a stationary baseline, a direct `delta_sst` stress test, or a scenario-based `target_year` run.
+
+From here, the usual next step is to run more targets, increase `simulation_years`, or pass the daily hazard output into downstream impact or system analyses.

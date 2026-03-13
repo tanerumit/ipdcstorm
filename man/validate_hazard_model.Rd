@@ -98,7 +98,7 @@ result_95 <- validate_hazard_model(
 # --- With climate conditioning ---
 result_climate <- validate_hazard_model(
   cfg = make_hazard_cfg(
-    climate = make_climate_cfg(scenario = "ssp245")
+    climate = make_climate_cfg(scenario = "ssp245", target_year = 2050)
   ),
   targets = targets_df
 )

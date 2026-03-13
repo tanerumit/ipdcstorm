@@ -12,7 +12,6 @@ make_climate_cfg(
   start_year = 2025L,
   delta_sst = NULL,
   target_year = NULL,
-  future_period = NULL,
   sensitivity_mode = c("fixed", "linear_shifted"),
   k_beta = 0,
   k_gamma = 0,
@@ -35,10 +34,6 @@ resolution and provenance metadata.}
 
 \item{target_year}{Optional numeric scalar target year used to derive
 scenario-helper \code{delta_sst}.}
-
-\item{future_period}{Optional integer vector future period used to derive
-scenario-helper \code{delta_sst}; its midpoint must match \code{target_year} when
-both are supplied.}
 
 \item{sensitivity_mode}{Character scalar; one of \code{"fixed"} or
 \code{"linear_shifted"}.}
@@ -76,8 +71,8 @@ disabled unless \code{perturb} is supplied explicitly.
 
 Climate can be specified in two equivalent ways:
 \enumerate{
-\item Scenario helper mode: provide \code{scenario} plus \code{target_year} or
-\code{future_period} to derive \code{delta_sst}.
+\item Scenario helper mode: provide \code{scenario} plus \code{target_year} to derive
+\code{delta_sst}.
 \item Direct mode: provide \code{delta_sst} explicitly.
 }
 

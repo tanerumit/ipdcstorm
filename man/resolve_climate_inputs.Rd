@@ -9,7 +9,6 @@ resolve_climate_inputs(
   annual_counts = NULL,
   lambda_table = NULL,
   min_year = 1970L,
-  future_period = NULL,
   verbose = TRUE
 )
 }
@@ -23,10 +22,6 @@ sensitivity estimation.}
 historical \code{p_hur_base}.}
 
 \item{min_year}{Integer; passed to estimation functions.}
-
-\item{future_period}{Deprecated optional override for scenario-helper
-\code{future_period}. When supplied, it must be consistent with any
-\code{target_year} already stored in \code{climate_cfg}.}
 
 \item{verbose}{Logical.}
 }
@@ -44,9 +39,10 @@ A list with:
 \item{sensitivity_mode}{Resolved sensitivity mode.}
 \item{k_beta}{Configured linear shift coefficient for \code{beta_0}.}
 \item{k_gamma}{Configured linear shift coefficient for \code{gamma_0}.}
-\item{future_period}{Scenario helper period metadata, if supplied.}
-\item{sst_scale}{Implied SST-driven count multiplier
-\code{exp(beta_sst * delta_sst)}.}
+\item{beta_sst_raw}{Raw rate sensitivity after any sensitivity shift, before
+basin-rate damping is applied.}
+\item{rate_scale}{Applied SST-driven count multiplier used by the run.}
+\item{raw_rate_scale}{Raw SST-driven count multiplier before damping.}
 \item{annual_count_series}{Basin-consistent annual total count series used
 for \code{beta_0} calibration, in storms/year.}
 \item{annual_count_source}{Character label describing the provenance of

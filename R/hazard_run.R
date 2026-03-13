@@ -263,8 +263,8 @@ print.hazard_cfg <- function(x, ...) {
 #'   The embedded climate configuration \code{cfg$climate} is resolved with
 #'   \code{resolve_climate_inputs()}. This produces a
 #'   scalar \code{delta_sst}, a frequency sensitivity \code{beta_sst}, a
-#'   hurricane-fraction sensitivity \code{gamma}, the implied SST-driven count
-#'   multiplier \code{sst_scale}, and optional storm perturbation settings.
+#'   hurricane-fraction sensitivity \code{gamma}, the applied SST-driven count
+#'   multiplier \code{rate_scale}, and optional storm perturbation settings.
 #'   Historical climate sensitivity is calibrated from basin-consistent annual
 #'   counts derived from de-duplicated storm-year records, independent of the
 #'   target set. These affect the stochastic simulation but do not rewrite the
@@ -406,7 +406,7 @@ print.hazard_cfg <- function(x, ...) {
 #'   data_path = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
 #'   historical_start_year = 1980,
 #'   simulation_years = 1000,
-#'   climate = make_climate_cfg(scenario = "ssp245")
+#'   climate = make_climate_cfg(scenario = "ssp245", target_year = 2050)
 #' )
 #'
 #' out_climate <- run_hazard_model(
@@ -620,9 +620,9 @@ run_hazard_model <- function(cfg, targets,
     verbose = verbose
   )
   delta_sst <- climate_resolved$delta_sst
-  beta_sst <- climate_resolved$beta_sst_effective
+  beta_sst <- climate_resolved$beta_sst
   gamma_intensity <- climate_resolved$gamma
-  sst_scale <- climate_resolved$sst_scale
+  rate_scale <- climate_resolved$rate_scale
   perturb_cfg <- climate_resolved$perturb
   climate_info <- list(
     scenario = climate_resolved$scenario,
@@ -631,19 +631,17 @@ run_hazard_model <- function(cfg, targets,
     delta_sst = delta_sst,
     baseline_years = climate_resolved$baseline_years,
     target_year = climate_resolved$target_year,
-    future_period = climate_resolved$future_period,
     sensitivity_mode = climate_resolved$sensitivity_mode,
     k_beta = climate_resolved$k_beta,
     k_gamma = climate_resolved$k_gamma,
     beta_0 = climate_resolved$beta_0,
     gamma_0 = climate_resolved$gamma_0,
     beta_sst = beta_sst,
-    beta_sst_raw = climate_resolved$beta_sst,
+    beta_sst_raw = climate_resolved$beta_sst_raw,
     gamma = gamma_intensity,
     p_hur_base = climate_resolved$p_hur_base,
-    sst_scale = sst_scale,
-    raw_sst_scale = climate_resolved$raw_sst_scale,
-    f_rate_climate = climate_resolved$f_rate_climate,
+    rate_scale = rate_scale,
+    raw_rate_scale = climate_resolved$raw_rate_scale,
     annual_count_series = climate_resolved$annual_count_series,
     annual_count_source = climate_resolved$annual_count_source,
     beta_guardrail = climate_resolved$beta_guardrail,
@@ -752,8 +750,8 @@ run_hazard_model <- function(cfg, targets,
     .cli_info(sprintf(
       "Count regime     : %s | raw %.3fx -> basin %.3fx",
       climate_info$response_regime$regime,
-      climate_info$raw_sst_scale,
-      climate_info$f_rate_climate
+      climate_info$raw_rate_scale,
+      climate_info$rate_scale
     ))
     .cli_info(sprintf(
       "Intensity effect : gamma_0=%.3f -> gamma=%.3f (%+.0f%% per +1\u00B0C)",
@@ -816,7 +814,7 @@ run_hazard_model <- function(cfg, targets,
   # Print simulation summary
   if (verbose) {
     if (beta_sst != 0 || delta_sst != 0) {
-      rs <- climate_info$f_rate_climate
+      rs <- climate_info$rate_scale
       .cli_info(sprintf("Rate scaling      : %.3fx", rs))
     }
     .cli_ok("Done")
@@ -829,9 +827,8 @@ run_hazard_model <- function(cfg, targets,
       p_hurricane_base = NA_real_
     )
   attr(fit_all, "perturb") <- perturb_cfg
-  attr(fit_all, "cc_params") <- perturb_cfg
   attr(fit_all, "delta_sst") <- delta_sst
-  attr(fit_all, "sst_scale") <- sst_scale
+  attr(fit_all, "rate_scale") <- rate_scale
   attr(fit_all, "beta_0") <- climate_info$beta_0
   attr(fit_all, "gamma_0") <- climate_info$gamma_0
   attr(fit_all, "p_hur_base") <- climate_info$p_hur_base
@@ -866,7 +863,7 @@ run_hazard_model <- function(cfg, targets,
   parameter_hash_fields <- c(
     param_fields,
     climate_info$delta_sst,
-    climate_info$f_rate_climate,
+    climate_info$rate_scale,
     climate_info$gamma,
     climate_info$beta_sst,
     climate_info$response_regime$regime
@@ -885,20 +882,17 @@ run_hazard_model <- function(cfg, targets,
       scenario = climate_info$scenario,
       source = climate_info$source,
       target_year = climate_info$target_year,
-      future_period = climate_info$future_period,
       delta_sst = climate_info$delta_sst,
       climate_mode = climate_info$climate_mode,
       response_regime = climate_info$response_regime$regime,
-      response_midpoint_year = climate_info$response_regime$midpoint_year,
       beta_0 = climate_info$beta_0,
       beta_sst_raw = climate_info$beta_sst_raw,
       beta_sst = climate_info$beta_sst,
       gamma_0 = climate_info$gamma_0,
       gamma = climate_info$gamma,
       p_hur_base = climate_info$p_hur_base,
-      sst_scale = climate_info$sst_scale,
-      raw_sst_scale = climate_info$raw_sst_scale,
-      f_rate_climate = climate_info$f_rate_climate,
+      rate_scale = climate_info$rate_scale,
+      raw_rate_scale = climate_info$raw_rate_scale,
       basin_rate_bounds = climate_info$response_regime$basin_rate_bounds,
       redistribution_strength = climate_info$response_regime$redistribution_strength,
       redistribution_bounds = climate_info$response_regime$redistribution_bounds,

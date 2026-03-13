@@ -140,8 +140,8 @@ The applied scalers and their identifier are returned.
 The embedded climate configuration \code{cfg$climate} is resolved with
 \code{resolve_climate_inputs()}. This produces a
 scalar \code{delta_sst}, a frequency sensitivity \code{beta_sst}, a
-hurricane-fraction sensitivity \code{gamma}, the implied SST-driven count
-multiplier \code{sst_scale}, and optional storm perturbation settings.
+hurricane-fraction sensitivity \code{gamma}, the applied SST-driven count
+multiplier \code{rate_scale}, and optional storm perturbation settings.
 Historical climate sensitivity is calibrated from basin-consistent annual
 counts derived from de-duplicated storm-year records, independent of the
 target set. These affect the stochastic simulation but do not rewrite the
@@ -214,7 +214,7 @@ cfg_future <- make_hazard_cfg(
   data_path = "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv",
   historical_start_year = 1980,
   simulation_years = 1000,
-  climate = make_climate_cfg(scenario = "ssp245")
+  climate = make_climate_cfg(scenario = "ssp245", target_year = 2050)
 )
 
 out_climate <- run_hazard_model(

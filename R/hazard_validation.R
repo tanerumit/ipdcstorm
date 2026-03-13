@@ -3547,8 +3547,8 @@ validate_wind_field <- function(out, obs_table = NULL) {
     climate_mode = as.character(climate_meta$climate_mode %||% "unknown"),
     climate_regime = as.character(climate_meta$response_regime %||% "unknown"),
     basin_count_ratio = simulated_total / baseline_total,
-    basin_rate_multiplier = as.numeric(climate_meta$f_rate_climate %||% NA_real_),
-    basin_rate_raw_multiplier = as.numeric(climate_meta$raw_sst_scale %||% NA_real_),
+    basin_rate_multiplier = as.numeric(climate_meta$rate_scale %||% NA_real_),
+    basin_rate_raw_multiplier = as.numeric(climate_meta$raw_rate_scale %||% NA_real_),
     hurricane_fraction_baseline = baseline_hur_fraction,
     hurricane_fraction_simulated = simulated_hur_fraction,
     hurricane_fraction_change_pp = 100 * (simulated_hur_fraction - baseline_hur_fraction),
@@ -3984,7 +3984,7 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 #' # --- With climate conditioning ---
 #' result_climate <- validate_hazard_model(
 #'   cfg = make_hazard_cfg(
-#'     climate = make_climate_cfg(scenario = "ssp245")
+#'     climate = make_climate_cfg(scenario = "ssp245", target_year = 2050)
 #'   ),
 #'   targets = targets_df
 #' )

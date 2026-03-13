@@ -1288,10 +1288,6 @@ generate_daily_hazard_impact <- function(
 
   delta_sst <- if (!is.null(out$fit)) attr(out$fit, "delta_sst") else NULL
   perturb_cfg <- if (!is.null(out$fit)) attr(out$fit, "perturb") else NULL
-  cc_params <- if (!is.null(out$fit)) attr(out$fit, "cc_params") else NULL
-  if (is.null(perturb_cfg)) {
-    perturb_cfg <- cc_params
-  }
 
   perturb_enabled <- !is.null(perturb_cfg)
 

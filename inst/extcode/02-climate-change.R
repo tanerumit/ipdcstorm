@@ -28,7 +28,7 @@ library(ipdcstorm)
 # =============================================================================
 
 seed <- 123L
-
+simulation_years <-500
 ibtracs_path <- "/inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
 
 
@@ -52,10 +52,9 @@ hazard_cfg <- make_hazard_cfg(
   data_path = ibtracs_path,
   search_radius_km = 800,
   historical_start_year = 1970,
-  simulation_years = 500,
+  simulation_years = simulation_years,
   climate = make_climate_cfg(scenario = "stationary")
 )
-
 
 out_baseline <- run_hazard_model(
   cfg = hazard_cfg,
@@ -68,24 +67,24 @@ out_baseline <- run_hazard_model(
 # 3) Climate scenario
 # =============================================================================
 
-future_period <- 2070:2090
-simulation_years <-500
+# 1) Set hypothetical delta_sst directly
+delta_sst_value <- 0.1
 
+climate_hyp <- make_climate_cfg(
+  delta_sst = delta_sst_value,
+  sensitivity_mode = "fixed")
 
-ssp585_cfg <- make_hazard_cfg(
+print(climate_hyp)
+
+scenario_cfg <- make_hazard_cfg(
   data_path = ibtracs_path,
   search_radius_km = 800,
   historical_start_year = 1970,
   simulation_years = simulation_years,
-  climate = make_climate_cfg(
-    scenario = "ssp585",
-    start_year = 2035L,
-    sensitivity_mode = "fixed"
-  )
-)
+  climate = climate_hyp)
 
-out_585 <- run_hazard_model(
-  cfg = ssp585_cfg,
+out_scenario <- run_hazard_model(
+  cfg = scenario_cfg,
   targets = targets,
   seed = seed,
   verbose = FALSE)
@@ -96,7 +95,7 @@ out_585 <- run_hazard_model(
 
 sim_compare <- bind_rows(
   out_baseline$sim |> mutate(scenario = "Baseline"),
-  out_585$sim |> mutate(scenario = "SSP5-8.5"))
+  out_scenario$sim |> mutate(scenario = "future_scenario"))
 
 activity_summary <- sim_compare |>
   group_by(scenario, location) |>

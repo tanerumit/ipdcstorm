@@ -817,10 +817,7 @@ sst_scenario_info <- function(source = c("all", "ipcc_ar6", "knmi23")) {
 }
 
 # Resolve target-year metadata for climate scenario lookup.
-.resolve_climate_target <- function(target_year = NULL,
-                                    future_period = NULL,
-                                    start_year = NULL,
-                                    allow_default = FALSE) {
+.resolve_climate_target <- function(target_year = NULL) {
   if (!is.null(target_year)) {
     target_year <- as.numeric(target_year[[1]])
     if (!is.finite(target_year)) {
@@ -828,78 +825,29 @@ sst_scenario_info <- function(source = c("all", "ipcc_ar6", "knmi23")) {
     }
   }
 
-  if (!is.null(future_period)) {
-    future_period <- as.integer(future_period)
-    if (length(future_period) == 0L || any(!is.finite(future_period))) {
-      stop("future_period must contain finite integer years.", call. = FALSE)
-    }
-  }
-
-  if (!is.null(target_year) && !is.null(future_period)) {
-    midpoint <- mean(future_period)
-    if (!isTRUE(all.equal(target_year, midpoint, tolerance = 1e-8))) {
-      stop("target_year and future_period must resolve to the same midpoint year.", call. = FALSE)
-    }
-    return(list(
-      target_year = as.numeric(target_year),
-      future_period = future_period
-    ))
-  }
-
   if (!is.null(target_year)) {
-    return(list(
-      target_year = as.numeric(target_year),
-      future_period = NULL
-    ))
+    return(list(target_year = as.numeric(target_year)))
   }
 
-  if (!is.null(future_period)) {
-    return(list(
-      target_year = as.numeric(mean(future_period)),
-      future_period = future_period
-    ))
-  }
-
-  if (!isTRUE(allow_default)) {
-    return(list(
-      target_year = NULL,
-      future_period = NULL
-    ))
-  }
-
-  start_year <- as.integer(start_year[[1]])
-  if (!is.finite(start_year)) {
-    stop("start_year must be a single finite integer year.", call. = FALSE)
-  }
-
-  default_period <- seq.int(from = start_year, length.out = 30L)
-  list(
-    target_year = as.numeric(mean(default_period)),
-    future_period = default_period
-  )
+  list(target_year = NULL)
 }
 
 #' Look up a time-slice scenario SST shift
 #'
 #' @description
 #' Returns a scalar `delta_sst` for a future climate target by interpolating the
-#' scenario targets in `sst_scenario_info("all")` at `target_year`. Users may
-#' supply `target_year` directly or provide `future_period`, in which case its
-#' midpoint is used.
+#' scenario targets in `sst_scenario_info("all")` at `target_year`.
 #'
 #' @param scenario Character scalar naming a scenario in `sst_scenario_info("all")`.
-#' @param target_year Optional numeric scalar target year used to derive `delta_sst`.
-#' @param future_period Optional integer vector describing the future period of interest.
+#' @param target_year Numeric scalar target year used to derive `delta_sst`.
 #' @param baseline_years Integer vector of climatological reference years.
 #'
 #' @return Numeric scalar `delta_sst` in degC.
 #' @examples
 #' get_scenario_delta("ssp585", target_year = 2050)
-#' get_scenario_delta("ssp585", future_period = 2035:2065)
 #' @export
 get_scenario_delta <- function(scenario,
-                               target_year = NULL,
-                               future_period = NULL,
+                               target_year,
                                baseline_years = 1991L:2020L) {
 
   .validate_baseline_years(baseline_years)
@@ -908,13 +856,9 @@ get_scenario_delta <- function(scenario,
     stop("scenario must be a single non-empty character value.", call. = FALSE)
   }
 
-  target_info <- .resolve_climate_target(
-    target_year = target_year,
-    future_period = future_period,
-    allow_default = FALSE
-  )
+  target_info <- .resolve_climate_target(target_year = target_year)
   if (is.null(target_info$target_year)) {
-    stop("Provide target_year or future_period to resolve scenario delta_sst.", call. = FALSE)
+    stop("Provide target_year to resolve scenario delta_sst.", call. = FALSE)
   }
 
   info <- sst_scenario_info("all")
@@ -1296,14 +1240,8 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
     stop("k_gamma must be a single finite numeric value.", call. = FALSE)
   }
 
-  target_info <- .resolve_climate_target(
-    target_year = cfg[["target_year"]],
-    future_period = cfg[["future_period"]],
-    start_year = cfg[["start_year"]],
-    allow_default = is.null(cfg[["delta_sst"]]) && !isTRUE(identical(cfg[["scenario"]], "stationary"))
-  )
+  target_info <- .resolve_climate_target(target_year = cfg[["target_year"]])
   cfg[["target_year"]] <- target_info$target_year
-  cfg[["future_period"]] <- target_info$future_period
 
   if (is.null(cfg[["delta_sst"]])) {
     cfg[["input_mode"]] <- "scenario_helper"
@@ -1311,7 +1249,7 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
       stop("scenario must be provided when delta_sst is not supplied.", call. = FALSE)
     }
     if (!identical(cfg[["scenario"]], "stationary") && is.null(cfg[["target_year"]])) {
-      stop("Scenario helper mode requires target_year or future_period.", call. = FALSE)
+      stop("Scenario helper mode requires target_year.", call. = FALSE)
     }
   } else {
     cfg[["input_mode"]] <- "direct_delta_sst"
@@ -1322,7 +1260,6 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
         get_scenario_delta(
           scenario = cfg[["scenario"]],
           target_year = cfg[["target_year"]],
-          future_period = cfg[["future_period"]],
           baseline_years = cfg[["baseline_years"]]
         )
       } else {
@@ -1340,8 +1277,6 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
   )
   cfg[["perturb"]] <- perturb_info$params
   cfg[["perturb_state"]] <- perturb_info$state
-  cfg[["cc_params"]] <- perturb_info$params
-  cfg[["scenario_start_year"]] <- cfg[["start_year"]]
   cfg
 }
 
@@ -1363,8 +1298,8 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 #' disabled unless `perturb` is supplied explicitly.
 #'
 #' Climate can be specified in two equivalent ways:
-#' 1. Scenario helper mode: provide `scenario` plus `target_year` or
-#'    `future_period` to derive `delta_sst`.
+#' 1. Scenario helper mode: provide `scenario` plus `target_year` to derive
+#'    `delta_sst`.
 #' 2. Direct mode: provide `delta_sst` explicitly.
 #'
 #' After `delta_sst` is resolved, downstream hazard logic depends only on the
@@ -1387,9 +1322,6 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 #' @param delta_sst Optional numeric scalar explicit SST shift in degC.
 #' @param target_year Optional numeric scalar target year used to derive
 #'   scenario-helper `delta_sst`.
-#' @param future_period Optional integer vector future period used to derive
-#'   scenario-helper `delta_sst`; its midpoint must match `target_year` when
-#'   both are supplied.
 #' @param sensitivity_mode Character scalar; one of `"fixed"` or
 #'   `"linear_shifted"`.
 #' @param k_beta Numeric scalar; linear sensitivity-shift coefficient applied
@@ -1419,7 +1351,6 @@ make_climate_cfg <- function(scenario = "stationary",
                              start_year = 2025L,
                              delta_sst = NULL,
                              target_year = NULL,
-                             future_period = NULL,
                              sensitivity_mode = c("fixed", "linear_shifted"),
                              k_beta = 0,
                              k_gamma = 0,
@@ -1441,7 +1372,6 @@ make_climate_cfg <- function(scenario = "stationary",
     start_year = start_year,
     delta_sst = delta_sst,
     target_year = target_year,
-    future_period = future_period,
     sensitivity_mode = sensitivity_mode,
     k_beta = k_beta,
     k_gamma = k_gamma,
@@ -1509,9 +1439,6 @@ print.climate_cfg <- function(x, ...) {
 #' @param lambda_table Optional tibble from `compute_lambda_table()` for
 #'   historical `p_hur_base`.
 #' @param min_year Integer; passed to estimation functions.
-#' @param future_period Deprecated optional override for scenario-helper
-#'   `future_period`. When supplied, it must be consistent with any
-#'   `target_year` already stored in `climate_cfg`.
 #' @param verbose Logical.
 #'
 #' @return A list with:
@@ -1527,9 +1454,10 @@ print.climate_cfg <- function(x, ...) {
 #'   \item{sensitivity_mode}{Resolved sensitivity mode.}
 #'   \item{k_beta}{Configured linear shift coefficient for `beta_0`.}
 #'   \item{k_gamma}{Configured linear shift coefficient for `gamma_0`.}
-#'   \item{future_period}{Scenario helper period metadata, if supplied.}
-#'   \item{sst_scale}{Implied SST-driven count multiplier
-#'     `exp(beta_sst * delta_sst)`.}
+#'   \item{beta_sst_raw}{Raw rate sensitivity after any sensitivity shift, before
+#'     basin-rate damping is applied.}
+#'   \item{rate_scale}{Applied SST-driven count multiplier used by the run.}
+#'   \item{raw_rate_scale}{Raw SST-driven count multiplier before damping.}
 #'   \item{annual_count_series}{Basin-consistent annual total count series used
 #'     for `beta_0` calibration, in storms/year.}
 #'   \item{annual_count_source}{Character label describing the provenance of
@@ -1552,7 +1480,6 @@ resolve_climate_inputs <- function(climate_cfg,
                                    annual_counts = NULL,
                                    lambda_table = NULL,
                                    min_year = 1970L,
-                                   future_period = NULL,
                                    verbose = TRUE) {
   sst_scale_guardrail_max <- 4
 
@@ -1583,7 +1510,6 @@ resolve_climate_inputs <- function(climate_cfg,
 
     list(
       regime = if (isTRUE(as.numeric(delta_sst) == 0)) "baseline" else "delta_only_fixed_guardrail",
-      midpoint_year = NA_real_,
       damping = damping,
       basin_rate_bounds = rate_bounds,
       redistribution_strength = redistribution_strength,
@@ -1613,24 +1539,14 @@ resolve_climate_inputs <- function(climate_cfg,
     verbose = verbose
   )
 
-  if (!is.null(future_period)) {
-    override_target <- .resolve_climate_target(
-      future_period = future_period,
-      allow_default = FALSE
-    )
-    baseline$target_year <- override_target$target_year
-    baseline$future_period <- override_target$future_period
-  }
-
   delta_sst <- 0
-  beta_sst <- baseline$beta_0
+  beta_sst_raw <- baseline$beta_0
   gamma <- baseline$gamma_0
   climate_mode <- "baseline"
-  raw_sst_scale <- 1
-  f_rate_climate <- 1
+  raw_rate_scale <- 1
+  rate_scale <- 1
   response_regime <- list(
     regime = "baseline",
-    midpoint_year = NA_real_,
     damping = 0,
     basin_rate_bounds = c(1, 1),
     redistribution_strength = 0,
@@ -1650,44 +1566,41 @@ resolve_climate_inputs <- function(climate_cfg,
     delta_sst <- get_scenario_delta(
       scenario = baseline$scenario,
       target_year = baseline$target_year,
-      future_period = baseline$future_period,
       baseline_years = baseline$baseline_years
     )
     climate_mode <- if (isTRUE(all.equal(delta_sst, 0, tolerance = 1e-12))) "baseline" else "future"
   }
   if (identical(baseline$sensitivity_mode, "linear_shifted")) {
-    beta_sst <- .resolve_effective_sensitivity(baseline$beta_0, baseline$k_beta, delta_sst)
+    beta_sst_raw <- .resolve_effective_sensitivity(baseline$beta_0, baseline$k_beta, delta_sst)
     gamma <- .resolve_effective_sensitivity(baseline$gamma_0, baseline$k_gamma, delta_sst)
   }
-  raw_sst_scale <- exp(beta_sst * delta_sst)
+  raw_rate_scale <- exp(beta_sst_raw * delta_sst)
   response_regime <- if (identical(climate_mode, "future")) {
-    .resolve_rate_response_regime(delta_sst = delta_sst, raw_scale = raw_sst_scale)
+    .resolve_rate_response_regime(delta_sst = delta_sst, raw_scale = raw_rate_scale)
   } else {
     response_regime
   }
-  f_rate_climate <- response_regime$adjusted_scale
-  sst_scale <- f_rate_climate
+  rate_scale <- response_regime$adjusted_scale
   sst_scale_guardrail <- list(
     triggered = FALSE,
     reason = "none",
     sst_scale_max = sst_scale_guardrail_max
   )
-  if (is.finite(delta_sst) && delta_sst > 0 && is.finite(raw_sst_scale) && raw_sst_scale > sst_scale_guardrail_max) {
-    beta_sst <- log(sst_scale_guardrail_max) / delta_sst
-    raw_sst_scale <- exp(beta_sst * delta_sst)
+  if (is.finite(delta_sst) && delta_sst > 0 && is.finite(raw_rate_scale) && raw_rate_scale > sst_scale_guardrail_max) {
+    beta_sst_raw <- log(sst_scale_guardrail_max) / delta_sst
+    raw_rate_scale <- exp(beta_sst_raw * delta_sst)
     response_regime <- if (identical(climate_mode, "future")) {
-      .resolve_rate_response_regime(delta_sst = delta_sst, raw_scale = raw_sst_scale)
+      .resolve_rate_response_regime(delta_sst = delta_sst, raw_scale = raw_rate_scale)
     } else {
       response_regime
     }
-    f_rate_climate <- response_regime$adjusted_scale
-    sst_scale <- f_rate_climate
+    rate_scale <- response_regime$adjusted_scale
     sst_scale_guardrail$triggered <- TRUE
     sst_scale_guardrail$reason <- "sst_scale_above_plausibility_limit"
     if (verbose) {
       message(sprintf(
         "[climate] Guardrail: raw SST count multiplier exceeded %.2fx; beta_sst reduced to %.3f 1/degC.",
-        sst_scale_guardrail_max, beta_sst
+        sst_scale_guardrail_max, beta_sst_raw
       ))
     }
   }
@@ -1701,6 +1614,7 @@ resolve_climate_inputs <- function(climate_cfg,
       response_regime$basin_rate_bounds[[2]]
     ))
   }
+  beta_sst <- if (isTRUE(delta_sst > 0)) log(as.numeric(rate_scale)) / as.numeric(delta_sst) else as.numeric(beta_sst_raw)
 
   list(
     scenario = baseline$scenario,
@@ -1708,7 +1622,7 @@ resolve_climate_inputs <- function(climate_cfg,
     input_mode = baseline$input_mode,
     delta_sst = as.numeric(delta_sst),
     beta_sst = as.numeric(beta_sst),
-    beta_sst_effective = if (isTRUE(delta_sst > 0)) log(as.numeric(f_rate_climate)) / as.numeric(delta_sst) else as.numeric(beta_sst),
+    beta_sst_raw = as.numeric(beta_sst_raw),
     gamma = as.numeric(gamma),
     p_hur_base = as.numeric(baseline$p_hur_base),
     beta_0 = as.numeric(baseline$beta_0),
@@ -1717,10 +1631,8 @@ resolve_climate_inputs <- function(climate_cfg,
     k_beta = as.numeric(baseline$k_beta),
     k_gamma = as.numeric(baseline$k_gamma),
     target_year = baseline$target_year,
-    future_period = baseline$future_period,
-    sst_scale = as.numeric(sst_scale),
-    raw_sst_scale = as.numeric(raw_sst_scale),
-    f_rate_climate = as.numeric(f_rate_climate),
+    rate_scale = as.numeric(rate_scale),
+    raw_rate_scale = as.numeric(raw_rate_scale),
     annual_count_series = baseline$annual_count_series,
     annual_count_source = baseline$annual_count_source,
     beta_guardrail = baseline$beta_guardrail,
@@ -1870,7 +1782,6 @@ resolve_climate_inputs <- function(climate_cfg,
     start_year = climate_cfg$start_year,
     delta_sst = climate_cfg$delta_sst,
     target_year = climate_cfg$target_year,
-    future_period = climate_cfg$future_period,
     sensitivity_mode = climate_cfg$sensitivity_mode,
     k_beta = climate_cfg$k_beta,
     k_gamma = climate_cfg$k_gamma,
