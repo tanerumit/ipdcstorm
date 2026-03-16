@@ -1,0 +1,61 @@
+url: https://tanerumit.github.io/ipdcstorm/
+title: ipdcstorm
+
+template:
+  bootstrap: 5
+  light-switch: true
+  bslib:
+    bootswatch: flatly
+    base_font: {google: "Inter"}
+    heading_font: {google: "Source Sans 3"}
+    code_font: {google: "JetBrains Mono"}
+
+navbar:
+  structure:
+    left: [home, intro, reference, articles, news]
+    right: [search, github]
+  components:
+    intro:
+      text: Get started
+      href: articles/tutorial_1_introduction_setup.html
+
+home:
+  sidebar:
+    structure: [links, license, community, citation, authors, dev]
+
+articles:
+  - title: Tutorials
+    navbar: Tutorials
+    contents:
+      - tutorial_1_introduction_setup
+
+reference:
+  - title: Core hazard workflow
+    contents:
+      - make_hazard_cfg
+      - run_hazard_model
+      - validate_hazard_model
+
+  - title: Climate scenario tools
+    contents:
+      - make_climate_cfg
+      - starts_with("resolve_climate")
+      - starts_with("apply_climate")
+
+  - title: IBTrACS and storm inputs
+    contents:
+      - contains("ibtracs")
+      - contains("storm")
+
+  - title: Visualization
+    contents:
+      - starts_with("plot_")
+      - contains("viz")
+
+repo:
+  url:
+    home: https://github.com/tanerumit/ipdcstorm/
+    source: https://github.com/tanerumit/ipdcstorm/blob/main/
+    issue: https://github.com/tanerumit/ipdcstorm/issues/
+    user: https://github.com/
+  branch: main

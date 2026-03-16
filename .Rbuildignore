@@ -1,26 +1,23 @@
-^\\.Rproj\\.user$
-^\\.Rhistory$
-^\\.Rapp\\.history$
-^\\.RData$
-^\\.Ruserdata$
-^\\.DS_Store$
-^Thumbs\\.db$
+^\.Rproj\.user$
+^\.Rhistory$
+^\.Rapp\.history$
+^\.RData$
+^\.Ruserdata$
+^\.DS_Store$
+^Thumbs\.db$
 
-^\\.git$
-^\\.gitignore$
-^\\.gitattributes$
+^\.git$
+^\.gitignore$
+^\.gitattributes$
 
-^\\.agents$
-^\\.agents/
-^\\.claude$
-^\\.claude/
+^\.agents($|/.*)
+^\.claude($|/.*)
 
 ^dev$
 ^output$
-^vignettes$
 
-^.*\\.code-workspace$
-
-^README\\.Rmd$
+^.*\.code-workspace$
 ^.*\.Rproj$
-^\.Rproj\.user$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
