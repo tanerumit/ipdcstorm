@@ -21,7 +21,7 @@ seed <- 2026
 # ------------------------------------------------------------------------------
 
 targets <- tibble::tribble(
-  ~location,      ~lat,     ~lon,
+  ~name,          ~lat,     ~lon,
   "St_Martin",    18.0708, -63.0501,
   "Saba",         17.6350, -63.2300,
   "Statia",       17.4890, -62.9740,
@@ -38,7 +38,11 @@ hazard_cfg <- make_hazard_cfg(
   search_radius_km = 600,
   historical_start_year = 1970L,
   simulation_years = 2000L,
-  climate = make_climate_cfg(scenario = "stationary")
+  climate = make_climate_cfg(
+    scenario = "stationary",
+    delta_sst = 0,
+    target_year = 2025
+  )
 )
 
 hazard_out <- run_hazard_model(
@@ -75,7 +79,7 @@ validation_out <- run_validation_suite(
 
 daily_by_location <- generate_daily_hazard_impact(
   out = hazard_out,
-  location = targets$location,
+  location = targets$name,
   sim_years = seq_len(hazard_cfg$n_sim),
   year0 = hazard_cfg$start_year,
   gust_factor = 1.3,

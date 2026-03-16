@@ -65,6 +65,10 @@ Do not add anything outside this set without explicit approval.
 - One logical change per commit. Do not bundle unrelated fixes.
 - Merge to `master` is manual (by the user), never by the agent.
 
+## Pipeline compatibility after refactors 
+- Any refactor that may affect downstream usage must be checked against inst/extcode/pipelines/. 
+- If pipeline scripts are broken by changes to functions, configs, return objects, column names, or workflow resolution, patch the affected scripts within scope using minimal-diff edits. 
+- Do not broaden changes to unrelated scripts.
 
 ## Completion gates and reporting (mandatory)
 
