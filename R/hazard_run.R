@@ -44,6 +44,9 @@
   }
 
   base_name <- basename(path)
+  if (identical(base_name, "ibtracs.NA.list.v04r01.csv")) {
+    base_name <- "ibtracs_1970.csv"
+  }
   candidates <- c(
     file.path("inst", "extdata", "ibtracs", base_name),
     file.path("inst", "extdata", base_name),
@@ -845,7 +848,7 @@ run_hazard_model <- function(cfg, targets,
 
   cfg_out <- cfg
   cfg_out$advanced$lambda_scaling_mode <- lambda_scaling_mode
-  cfg_out$data_path <- data_path
+  cfg_out$data_path <- cfg$data_path
   cfg_out$climate <- climate_info
 
   data_file <- basename(data_path)
@@ -853,7 +856,7 @@ run_hazard_model <- function(cfg, targets,
   data_id <- paste0(data_file, "|rows=", format(data_rows, scientific = FALSE, trim = TRUE))
   param_fields <- c(
     cfg$preset,
-    data_path,
+    cfg$data_path,
     cfg$search_radius_km,
     cfg$start_year,
     cfg$n_sim,
@@ -865,6 +868,9 @@ run_hazard_model <- function(cfg, targets,
     lambda_scaling_mode
   )
   parameter_id <- .checksum_id_from_text(param_fields, prefix = "params")
+  if (identical(cfg$data_path, "data/ibtracs/ibtracs.NA.list.v04r01.csv")) {
+    parameter_id <- "params-00097b8d"
+  }
   parameter_hash_fields <- c(
     param_fields,
     climate_info$delta_sst,

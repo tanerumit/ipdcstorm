@@ -10,15 +10,14 @@
 ^\\.gitignore$
 ^\\.gitattributes$
 
-# AI agents
 ^\\.agents$
-^AGENTS\\.md$
-^CLAUDE\\.md$
-^\\.agents$
+^\\.agents/
 ^\\.claude$
+^\\.claude/
 
 ^dev$
 ^output$
+^vignettes$
 
 ^.*\\.code-workspace$
 

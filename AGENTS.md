@@ -37,7 +37,7 @@ At the start of every task, print the following to the console:
 ```
 
 Rules:
-- `r-coding` is **always** loaded — it is not optional.
+- r-coding is loaded only when R code is being read, modified, reviewed, debugged, refactored, or created. It is not loaded for non-R files or general discussion unless the task directly involves R code.
 - A skill is **loaded** if its `SKILL.md` "When to Use" criteria match the current task. Read the skill's `references/` files as well.
 - A skill is **skipped** if it exists in `.agents/skills/` but its activation criteria do not match.
 - If no additional skills match beyond `r-coding`, print `loaded: (none)`.
@@ -54,6 +54,11 @@ Rules:
 
 Core (already used throughout): `dplyr`, `tidyr`, `ggplot2`, `patchwork`, `data.table`, `sf`.
 Do not add anything outside this set without explicit approval.
+
+## Permissions
+
+- Running `devtools::check()`, `devtools::test()`, `devtools::document()`, `R CMD check`, and `R CMD build` is always allowed without confirmation.
+- Spawning subprocesses (Rcmd.exe, R --vanilla, etc.) required by these tools is pre-approved.
 
 ## Branch and commit conventions
 

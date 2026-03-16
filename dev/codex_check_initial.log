@@ -1,0 +1,1072 @@
+══ Documenting ═════════════════════════════════════════════════════════════════
+ℹ Updating ipdcstorm documentation
+ℹ Loading ipdcstorm
+
+══ Building ════════════════════════════════════════════════════════════════════
+Setting env vars:
+• CFLAGS    : -Wall -pedantic
+• CXXFLAGS  : -Wall -pedantic
+• CXX11FLAGS: -Wall -pedantic
+• CXX14FLAGS: -Wall -pedantic
+• CXX17FLAGS: -Wall -pedantic
+• CXX20FLAGS: -Wall -pedantic
+── R CMD build ─────────────────────────────────────────────────────────────────
+  
+  
+  
+   checking for file 'C:\Users\taner\WS\ipdcstorm/DESCRIPTION' ...
+  
+✔  checking for file 'C:\Users\taner\WS\ipdcstorm/DESCRIPTION'
+
+  
+  
+  
+─  preparing 'ipdcstorm': (26.6s)
+   checking DESCRIPTION meta-information ...
+  
+✔  checking DESCRIPTION meta-information
+
+  
+  
+  
+─  checking for LF line-endings in source and make files and shell scripts (3.4s)
+
+  
+─  checking for empty or unneeded directories (346ms)
+   Removed empty directory 'ipdcstorm/tests/testthat/_snaps'
+
+  
+  
+  
+─  building 'ipdcstorm_0.0.0.9000.tar.gz' (1.6s)
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd'
+
+  
+   
+
+══ Checking ════════════════════════════════════════════════════════════════════
+Setting env vars:
+• _R_CHECK_CRAN_INCOMING_REMOTE_               : FALSE
+• _R_CHECK_CRAN_INCOMING_                      : FALSE
+• _R_CHECK_FORCE_SUGGESTS_                     : FALSE
+• _R_CHECK_PACKAGES_USED_IGNORE_UNUSED_IMPORTS_: FALSE
+• NOT_CRAN                                     : true
+── R CMD check ─────────────────────────────────────────────────────────────────
+  
+  
+  
+─  using log directory 'C:/Users/taner/AppData/Local/Temp/RtmpMBGbd9/file84f848b37f40/ipdcstorm.Rcheck' (1.4s)
+─  using R version 4.5.2 (2025-10-31 ucrt)
+─  using platform: x86_64-w64-mingw32
+
+  
+─  R was compiled by
+       gcc.exe (GCC) 14.3.0
+       GNU Fortran (GCC) 14.3.0
+─  running under: Windows 11 x64 (build 26200)
+─  using session charset: UTF-8
+
+  
+  
+  
+─  using options '--no-manual --as-cran' (15.2s)
+
+  
+✔  checking for file 'ipdcstorm/DESCRIPTION'
+─  this is package 'ipdcstorm' version '0.0.0.9000'
+─  package encoding: UTF-8
+✔  checking package namespace information
+   checking package dependencies ...
+  
+   checking package dependencies ... 
+  
+✔  checking package dependencies (1.4s)
+   checking if this is a source package ...
+  
+✔  checking if this is a source package
+✔  checking if there is a namespace
+
+  
+  
+  
+   checking for executable files ...
+  
+   checking for executable files ... 
+  
+✔  checking for executable files (4.7s)
+   checking for hidden files and directories ...
+  
+   checking for hidden files and directories ... 
+  
+N  checking for hidden files and directories
+   Found the following hidden files and directories:
+     .agents
+     .agents/skills/obsidian-skills/.claude-plugin
+     .claude
+     .claude/skills/obsidian-skills/.claude-plugin
+
+  
+   These were most likely included in error. See section 'Package
+   structure' in the 'Writing R Extensions' manual.
+   checking for portable file names ...
+  
+   checking for portable file names ... 
+  
+N  checking for portable file names
+   Found the following non-portable file paths:
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd
+   ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500
+  
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd
+   
+
+  
+   Tarballs are only required to store paths of up to 100 bytes and cannot
+   store those of more than 256 bytes, with restrictions including to 100
+   bytes for the final component.
+   See section 'Package structure' in the 'Writing R Extensions' manual.
+   checking whether package 'ipdcstorm' can be installed ...
+  
+   checking whether package 'ipdcstorm' can be installed ... 
+  
+✔  checking whether package 'ipdcstorm' can be installed (9.5s)
+   checking installed package size ...
+  
+   checking installed package size ... 
+  
+─  checking installed package size ... INFO
+     installed size is  8.9Mb
+     sub-directories of 1Mb or more:
+
+  
+       extdata   7.6Mb
+
+  
+  
+  
+✔  checking package directory (523ms)
+   checking for future file timestamps ...
+  
+   checking for future file timestamps ... 
+  
+✔  checking for future file timestamps (1.4s)
+   checking DESCRIPTION meta-information ...
+  
+   checking DESCRIPTION meta-information ... 
+  
+✔  checking DESCRIPTION meta-information (2.4s)
+   checking top-level files ...
+  
+N  checking top-level files
+   Non-standard files/directories found at top level:
+     'AGENTS.md' 'CLAUDE.md' 'LICENSE.md' 'README.Rmd'
+     'ipdcstorm.code-workspace'
+✔  checking for left-over files
+✔  checking index information
+   checking package subdirectories ...
+  
+   checking package subdirectories ... 
+  
+N  checking package subdirectories
+   Problems with news in 'NEWS.md':
+   No news entries found.
+   checking code files for non-ASCII characters ...
+  
+   checking code files for non-ASCII characters ... 
+  
+✔  checking code files for non-ASCII characters
+   checking R files for syntax errors ...
+  
+   checking R files for syntax errors ... 
+  
+✔  checking R files for syntax errors
+   checking whether the package can be loaded ...
+  
+   checking whether the package can be loaded ... 
+  
+✔  checking whether the package can be loaded (998ms)
+   checking whether the package can be loaded with stated dependencies ...
+  
+   checking whether the package can be loaded with stated dependencies ... 
+  
+✔  checking whether the package can be loaded with stated dependencies (1000ms)
+   checking whether the package can be unloaded cleanly ...
+  
+   checking whether the package can be unloaded cleanly ... 
+  
+✔  checking whether the package can be unloaded cleanly (1.2s)
+   checking whether the namespace can be loaded with stated dependencies ...
+  
+   checking whether the namespace can be loaded with stated dependencies ... 
+  
+✔  checking whether the namespace can be loaded with stated dependencies (997ms)
+   checking whether the namespace can be unloaded cleanly ...
+  
+   checking whether the namespace can be unloaded cleanly ... 
+  
+✔  checking whether the namespace can be unloaded cleanly (1.1s)
+
+  
+   checking loading without being on the library search path ...
+  
+   checking loading without being on the library search path ... 
+  
+✔  checking loading without being on the library search path (1.2s)
+
+  
+  
+  
+   checking dependencies in R code ...
+  
+   checking dependencies in R code ... 
+  
+N  checking dependencies in R code (2.7s)
+   Namespace in Imports field not imported from: 'patchwork'
+     All declared Imports should be used.
+   checking S3 generic/method consistency ...
+  
+   checking S3 generic/method consistency ... 
+  
+✔  checking S3 generic/method consistency (1s)
+   checking replacement functions ...
+  
+   checking replacement functions ... 
+  
+✔  checking replacement functions (1.1s)
+   checking foreign function calls ...
+  
+   checking foreign function calls ... 
+  
+✔  checking foreign function calls (1.3s)
+   checking R code for possible problems ...
+  
+   checking R code for possible problems ... [16s]
+  
+─  checking R code for possible problems ... [16s] NOTE (16s)
+   .apply_lambda_scalers_to_lambda_table: no visible binding for global
+     variable '.env'
+   .build_rate_check_table: no visible binding for global variable
+     'storm_class'
+   .build_rate_check_table: no visible binding for global variable
+     'lambda_model_raw'
+   .build_rate_check_table: no visible binding for global variable
+     'lambda_ref'
+   .build_rate_check_table: no visible binding for global variable
+     'gate_approx_nm'
+   .build_rate_check_table: no visible binding for global variable
+     'period'
+   .plot_rate_comparison: no visible binding for global variable 'lambda'
+   .run_hindcast_attribution_grid: no visible binding for global variable
+     '.env'
+   .validate_hindcast_all: no visible binding for global variable '.env'
+   plot_annual_counts: no visible binding for global variable
+     'n_years_at_count'
+   plot_annual_counts: no visible binding for global variable 'prob'
+   plot_bias_diagnostics: no visible binding for global variable 'bias_kt'
+   plot_cdf_comparison: no visible binding for global variable 'ecdf'
+   plot_hindcast_validation: no visible binding for global variable
+     'obs_full_rl'
+   plot_hindcast_validation: no visible binding for global variable
+     'sim_rl'
+   plot_hindcast_validation: no visible binding for global variable
+     'obs_ci_lo'
+   plot_hindcast_validation: no visible binding for global variable
+     'obs_ci_hi'
+   plot_qq_validation: no visible binding for global variable
+     'obs_quantile'
+   plot_qq_validation: no visible binding for global variable
+     'sim_quantile'
+   plot_qq_validation: no visible binding for global variable 'prob'
+   plot_rate_validation: no visible binding for global variable
+     'lambda_ref'
+   plot_rate_validation: no visible binding for global variable 'flag'
+   plot_rate_validation: no visible binding for global variable
+     'storm_class'
+   plot_wind_field_validation: no visible binding for global variable
+     'model_V_site_kt'
+   plot_wind_field_validation: no visible binding for global variable
+     'obs_1min_equiv_kt'
+validate_wind_field: no v
+  
+   validate_wind_field: no visible binding for global variable '.env'
+   Undefined global functions or variables:
+     .env bias_kt ecdf flag gate_approx_nm lambda lambda_model_raw
+     lambda_ref model_V_site_kt n_years_at_count obs_1min_equiv_kt
+     obs_ci_hi obs_ci_lo obs_full_rl obs_quantile period prob sim_quantile
+     sim_rl storm_class
+   Consider adding
+     importFrom("stats", "ecdf")
+   to your NAMESPACE file.
+   checking Rd files ...
+  
+   checking Rd files ... 
+  
+N  checking Rd files (1.1s)
+   checkRd: (-1) dot-normalize_lambda_scaling_mode.Rd:13: Lost braces; missing escapes or markup?
+       13 | Character scalar in {"target", "down_only"}.
+          |                     ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:66: Lost braces
+       66 | requested locations. :contentReference[oaicite:16]{index=16}}
+          |                                                   ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:136: Lost braces
+      136 | \code{"copula_nn"} nearest-neighbour copula workflow. :contentReference[oaicite:3]{index=3}
+          |                                                                                   ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:141: Lost braces
+      141 | wind. :contentReference[oaicite:4]{index=4}
+          |                                   ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:145: Lost braces
+      145 | and a finite scalar \code{delta_sst} is available. :contentReference[oaicite:5]{index=5}
+          |                                                                                ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:152: Lost braces
+      152 | table. :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7}
+          |                                    ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:152: Lost braces
+      152 | table. :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7}
+          |                                                                          ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:157: Lost braces
+      157 | of daily \code{damage_rate} within the generated series. :contentReference[oaicite:8]{index=8}
+          |                                                                                      ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:161: Lost braces
+      161 | \code{0.14 * (1013 - pressure_hpa)} where pressure is available. :contentReference[oaicite:9]{index=9}
+        |                                       
+  
+          |                                                                                              ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:173: Lost braces
+      173 | represent stronger short-duration peak gusts. :contentReference[oaicite:10]{index=10}
+          |                                                                            ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:183: Lost braces
+      183 | and truncated at zero. :contentReference[oaicite:11]{index=11}
+          |                                                     ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:195: Lost braces
+      195 | exponent \code{p}. :contentReference[oaicite:12]{index=12}
+          |                                                 ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:204: Lost braces
+      204 | direct engineering vulnerability curve. :contentReference[oaicite:13]{index=13}
+          |                                                                      ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:217: Lost braces
+      217 | at a chosen hazard level. :contentReference[oaicite:14]{index=14}
+          |                                                        ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:224: Lost braces
+      224 | formulation accordingly. :contentReference[oaicite:15]{index=15}
+          |                                                       ^
+   checkRd: (-1) generate_daily_hazard_impact.Rd:95: Lost braces
+       95 | Each location tibble also carries a \code{"gust_factor"} attribute. :contentReference[oaicite:17]{index=17}
+          |                                                                                                  ^
+   checking Rd metadata ...
+  
+   checking Rd metadata ... 
+  
+✔  checking Rd metadata
+   checking Rd line widths ...
+  
+   checking Rd line widths ... 
+  
+✔  checking Rd line widths (344ms)
+   checking Rd cross-references ...
+  
+   checking Rd cross-references ... 
+  
+✔  checking Rd cross-references (1.9s)
+   checking for missing documentation entries ...
+  
+   checking for missing documentation entries ... 
+  
+✔  checking for missing documentation entries (991ms)
+   checking for code/documentation mismatches ...
+  
+   checking for code/documentation mismatches ... 
+  
+✔  checking for code/documentation mismatches (3.6s)
+   checking Rd \usage sections ...
+  
+   checking Rd \usage sections ... 
+  
+W  checking Rd \usage sections (453ms)
+   Undocumented arguments in Rd file 'dot-val_header.Rd'
+     'title' 'width'
+   
+   Functions with \usage entries need to have the appropriate \alias
+   entries, and all their arguments documented.
+   The \usage entries must correspond to syntactically valid R code.
+
+  
+   See chapter 'Writing R documentation files' in the 'Writing R
+   Extensions' manual.
+
+  
+  
+  
+   checking Rd contents ...
+  
+   checking Rd contents ... 
+  
+✔  checking Rd contents (1.7s)
+   checking for unstated dependencies in examples ...
+  
+   checking for unstated dependencies in examples ... 
+  
+✔  checking for unstated dependencies in examples (454ms)
+
+  
+W  checking files in 'vignettes'
+   Files in the 'vignettes' directory but no files in 'inst/doc':
+     'tutorial_1_setup.qmd' 'tutorial_2_validation.qmd'
+     'tutorial_3_climate_change.qmd'
+   Package has no Sweave vignette sources and no VignetteBuilder field.
+
+  
+  
+  
+   checking examples ...
+  
+   checking examples ... [12s]
+  
+E  checking examples ... [12s] ERROR (13.3s)
+   Running examples in 'ipdcstorm-Ex.R' failed
+
+  
+   The error most likely occurred in:
+   
+
+  
+   > base::assign(".ptime", proc.time(), pos = "CheckExEnv")
+   > ### Name: validate_hazard_model
+   > ### Title: Run hazard model and validate in one step
+   > ### Aliases: validate_hazard_model
+   > 
+   > ### ** Examples
+   > 
+   > # --- Basic validation with defaults (90% CI) ---
+   > targets_df <- data.frame(
+   +   location         = c("Saba", "St. Eustatius", "St. Martin"),
+   +   lat              = c(17.63, 17.49, 18.04),
+   +   lon              = c(-63.23, -62.97, -63.07),
+   +   search_radius_km = c(200, 200, 200)
+   + )
+   > 
+   > result <- validate_hazard_model(
+   +   cfg     = make_hazard_cfg(simulation_years = 2000),
+   +   targets = targets_df
+   + )
+   Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+   Execution halted
+
+  
+  
+  
+   checking for unstated dependencies in 'tests' ...
+  
+   checking for unstated dependencies in 'tests' ... 
+  
+W  checking for unstated dependencies in 'tests' (1.6s)
+   '::' or ':::' import not declared from: 'withr'
+   checking tests ...
+  
+─  checking tests
+
+  
+   Running 'testthat.R'
+  
+
+  
+  [25s]
+  
+
+  
+   Running the tests in 'tests/testthat.R' failed.
+
+  
+   Last 13 lines of output:
+     Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+     Backtrace:
+         ▆
+      1. ├─base::paste(...) at test-smoke.R:57:3
+      2. ├─utils::capture.output(...)
+      3. │ └─base::withVisible(...elt(i))
+      4. ├─base::suppressWarnings(...)
+      5. │ └─base::withCallingHandlers(...)
+      6. └─ipdcstorm::run_hazard_model(cfg, targets, seed = 99L, verbose = TRUE)
+      7.   └─ipdcstorm:::.resolve_ibtracs_path(cfg$data_path)
+     
+     [ FAIL 9 | WARN 0 | SKIP 0 | PASS 381 ]
+     Error:
+     ! Test failures.
+     Execution halted
+
+  
+  
+  
+N  checking package vignettes
+   Package has 'vignettes' subdirectory but apparently no vignettes.
+   Perhaps the 'VignetteBuilder' information is missing from the
+   DESCRIPTION file?
+✔  checking for non-standard things in the check directory
+   checking for detritus in the temp directory ...
+  
+✔  checking for detritus in the temp directory
+   
+   See
+     'C:/Users/taner/AppData/Local/Temp/RtmpMBGbd9/file84f848b37f40/ipdcstorm.Rcheck/00check.log'
+   for details.
+   
+
+  
+   ERROR: Unknown command "TMPDIR=C:/Users/taner/AppData/Local/Temp/Rtmp61ghd3/file1c031b9321b". Did you mean command "create"?
+
+  
+Warning in system2("quarto", "-V", stdout = TRUE, env = paste0("TMPDIR=",  :
+  
+   Warning in system2("quarto", "-V", stdout = TRUE, env = paste0("TMPDIR=",  :
+     running command '"quarto" TMPDIR=C:/Users/taner/AppData/Local/Temp/Rtmp61ghd3/file1c031b9321b -V' had status 1
+
+  
+   
+
+── R CMD check results ─────────────────────────────── ipdcstorm 0.0.0.9000 ────
+Duration: 2m 1.8s
+
+❯ checking examples ... [12s] ERROR
+  Running examples in 'ipdcstorm-Ex.R' failed
+  The error most likely occurred in:
+  
+  > base::assign(".ptime", proc.time(), pos = "CheckExEnv")
+  > ### Name: validate_hazard_model
+  > ### Title: Run hazard model and validate in one step
+  > ### Aliases: validate_hazard_model
+  > 
+  > ### ** Examples
+  > 
+  > # --- Basic validation with defaults (90% CI) ---
+  > targets_df <- data.frame(
+  +   location         = c("Saba", "St. Eustatius", "St. Martin"),
+  +   lat              = c(17.63, 17.49, 18.04),
+  +   lon              = c(-63.23, -62.97, -63.07),
+  +   search_radius_km = c(200, 200, 200)
+  + )
+  > 
+  > result <- validate_hazard_model(
+  +   cfg     = make_hazard_cfg(simulation_years = 2000),
+  +   targets = targets_df
+  + )
+  Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+  Execution halted
+
+❯ checking tests ...
+  See below...
+
+❯ checking Rd \usage sections ... WARNING
+  Undocumented arguments in Rd file 'dot-val_header.Rd'
+    'title' 'width'
+  
+  Functions with \usage entries need to have the appropriate \alias
+  entries, and all their arguments documented.
+  The \usage entries must correspond to syntactically valid R code.
+  See chapter 'Writing R documentation files' in the 'Writing R
+  Extensions' manual.
+
+❯ checking files in 'vignettes' ... WARNING
+  Files in the 'vignettes' directory but no files in 'inst/doc':
+    'tutorial_1_setup.qmd' 'tutorial_2_validation.qmd'
+    'tutorial_3_climate_change.qmd'
+  Package has no Sweave vignette sources and no VignetteBuilder field.
+
+❯ checking for unstated dependencies in 'tests' ... WARNING
+  '::' or ':::' import not declared from: 'withr'
+
+❯ checking for hidden files and directories ... NOTE
+  Found the following hidden files and directories:
+    .agents
+    .agents/skills/obsidian-skills/.claude-plugin
+    .claude
+    .claude/skills/obsidian-skills/.claude-plugin
+  These were most likely included in error. See section 'Package
+  structure' in the 'Writing R Extensions' manual.
+
+❯ checking for portable file names ... NOTE
+  Found the following non-portable file paths:
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd
+  
+  Tarballs are only required to store paths of up to 100 bytes and cannot
+  store those of more than 256 bytes, with restrictions including to 100
+  bytes for the final component.
+  See section 'Package structure' in the 'Writing R Extensions' manual.
+
+❯ checking top-level files ... NOTE
+  Non-standard files/directories found at top level:
+    'AGENTS.md' 'CLAUDE.md' 'LICENSE.md' 'README.Rmd'
+    'ipdcstorm.code-workspace'
+
+❯ checking package subdirectories ... NOTE
+  Problems with news in 'NEWS.md':
+  No news entries found.
+
+❯ checking dependencies in R code ... NOTE
+  Namespace in Imports field not imported from: 'patchwork'
+    All declared Imports should be used.
+
+❯ checking R code for possible problems ... [16s] NOTE
+  .apply_lambda_scalers_to_lambda_table: no visible binding for global
+    variable '.env'
+  .build_rate_check_table: no visible binding for global variable
+    'storm_class'
+  .build_rate_check_table: no visible binding for global variable
+    'lambda_model_raw'
+  .build_rate_check_table: no visible binding for global variable
+    'lambda_ref'
+  .build_rate_check_table: no visible binding for global variable
+    'gate_approx_nm'
+  .build_rate_check_table: no visible binding for global variable
+    'period'
+  .plot_rate_comparison: no visible binding for global variable 'lambda'
+  .run_hindcast_attribution_grid: no visible binding for global variable
+    '.env'
+  .validate_hindcast_all: no visible binding for global variable '.env'
+  plot_annual_counts: no visible binding for global variable
+    'n_years_at_count'
+  plot_annual_counts: no visible binding for global variable 'prob'
+  plot_bias_diagnostics: no visible binding for global variable 'bias_kt'
+  plot_cdf_comparison: no visible binding for global variable 'ecdf'
+  plot_hindcast_validation: no visible binding for global variable
+    'obs_full_rl'
+  plot_hindcast_validation: no visible binding for global variable
+    'sim_rl'
+  plot_hindcast_validation: no visible binding for global variable
+    'obs_ci_lo'
+  plot_hindcast_validation: no visible binding for global variable
+    'obs_ci_hi'
+  plot_qq_validation: no visible binding for global variable
+    'obs_quantile'
+  plot_qq_validation: no visible binding for global variable
+    'sim_quantile'
+  plot_qq_validation: no visible binding for global variable 'prob'
+  plot_rate_validation: no visible binding for global variable
+    'lambda_ref'
+  plot_rate_validation: no visible binding for global variable 'flag'
+  plot_rate_validation: no visible binding for global variable
+    'storm_class'
+  plot_wind_field_validation: no visible binding for global variable
+    'model_V_site_kt'
+  plot_wind_field_validation: no visible binding for global variable
+    'obs_1min_equiv_kt'
+  validate_wind_field: no visible binding for global variable '.env'
+  Undefined global functions or variables:
+    .env bias_kt ecdf flag gate_approx_nm lambda lambda_model_raw
+    lambda_ref model_V_site_kt n_years_at_count obs_1min_equiv_kt
+    obs_ci_hi obs_ci_lo obs_full_rl obs_quantile period prob sim_quantile
+    sim_rl storm_class
+  Consider adding
+    importFrom("stats", "ecdf")
+  to your NAMESPACE file.
+
+❯ checking Rd files ... NOTE
+  checkRd: (-1) dot-normalize_lambda_scaling_mode.Rd:13: Lost braces; missing escapes or markup?
+      13 | Character scalar in {"target", "down_only"}.
+         |                     ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:66: Lost braces
+      66 | requested locations. :contentReference[oaicite:16]{index=16}}
+         |                                                   ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:136: Lost braces
+     136 | \code{"copula_nn"} nearest-neighbour copula workflow. :contentReference[oaicite:3]{index=3}
+         |                                                                                   ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:141: Lost braces
+     141 | wind. :contentReference[oaicite:4]{index=4}
+         |                                   ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:145: Lost braces
+     145 | and a finite scalar \code{delta_sst} is available. :contentReference[oaicite:5]{index=5}
+         |                                                                                ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:152: Lost braces
+     152 | table. :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7}
+         |                                    ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:152: Lost braces
+     152 | table. :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7}
+         |                                                                          ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:157: Lost braces
+     157 | of daily \code{damage_rate} within the generated series. :contentReference[oaicite:8]{index=8}
+         |                                                                                      ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:161: Lost braces
+     161 | \code{0.14 * (1013 - pressure_hpa)} where pressure is available. :contentReference[oaicite:9]{index=9}
+         |                                                                                              ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:173: Lost braces
+     173 | represent stronger short-duration peak gusts. :contentReference[oaicite:10]{index=10}
+         |                                                                            ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:183: Lost braces
+     183 | and truncated at zero. :contentReference[oaicite:11]{index=11}
+         |                                                     ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:195: Lost braces
+     195 | exponent \code{p}. :contentReference[oaicite:12]{index=12}
+         |                                                 ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:204: Lost braces
+     204 | direct engineering vulnerability curve. :contentReference[oaicite:13]{index=13}
+         |                                                                      ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:217: Lost braces
+     217 | at a chosen hazard level. :contentReference[oaicite:14]{index=14}
+         |                                                        ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:224: Lost braces
+     224 | formulation accordingly. :contentReference[oaicite:15]{index=15}
+         |                                                       ^
+  checkRd: (-1) generate_daily_hazard_impact.Rd:95: Lost braces
+      95 | Each location tibble also carries a \code{"gust_factor"} attribute. :contentReference[oaicite:17]{index=17}
+         |                                                                                                  ^
+
+❯ checking package vignettes ... NOTE
+  Package has 'vignettes' subdirectory but apparently no vignettes.
+  Perhaps the 'VignetteBuilder' information is missing from the
+  DESCRIPTION file?
+
+── Test failures ───────────────────────────────────────────────── testthat ────
+
+> # This file is part of the standard setup for testthat.
+> # It is recommended that you do not modify it.
+> #
+> # Where should you do additional test configuration?
+> # Learn more about the roles of various files in:
+> # * https://r-pkgs.org/testing-design.html#sec-tests-files-overview
+> # * https://testthat.r-lib.org/articles/special-files.html
+> 
+> library(testthat)
+> library(ipdcstorm)
+> 
+> test_check("ipdcstorm")
+Saving _problems/test-climate-353.R
+Saving _problems/test-climate-425.R
+Saving _problems/test-climate-522.R
+Saving _problems/test-climate-547.R
+Saving _problems/test-climate-575.R
+Saving _problems/test-climate-592.R
+════════════════════════════════════════════════════════════════════════
+  HAZARD MODEL VALIDATION SUITE
+════════════════════════════════════════════════════════════════════════
+
+── HINDCAST VALIDATION (return levels) ─────────────────────────────────
+
+── WIND FIELD SPOT-CHECKS ──────────────────────────────────────────────
+  No matching storms found.
+
+════════════════════════════════════════════════════════════════════════
+  SUMMARY
+  Hindcast         :  0 /  0 within 90% CI     —
+  Rate check       :  0 /  0 flagged OK        —
+  Wind field       :  0 /  0 within tolerance  —
+════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════
+  HAZARD MODEL VALIDATION SUITE
+════════════════════════════════════════════════════════════════════════
+
+── HINDCAST VALIDATION (return levels) ─────────────────────────────────
+
+── WIND FIELD SPOT-CHECKS ──────────────────────────────────────────────
+  No matching storms found.
+
+════════════════════════════════════════════════════════════════════════
+  SUMMARY
+  Hindcast         :  0 /  0 within 90% CI     —
+  Rate check       :  0 /  0 flagged OK        —
+  Wind field       :  0 /  0 within tolerance  —
+════════════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════
+  HAZARD MODEL VALIDATION SUITE
+════════════════════════════════════════════════════════════════════════
+
+── HINDCAST VALIDATION (return levels) ─────────────────────────────────
+
+── WIND FIELD SPOT-CHECKS ──────────────────────────────────────────────
+  No matching storms found.
+
+════════════════════════════════════════════════════════════════════════
+  SUMMARY
+  Hindcast         :  0 /  0 within 90% CI     —
+  Rate check       :  0 /  0 flagged OK        —
+  Wind field       :  0 /  0 within tolerance  —
+════════════════════════════════════════════════════════════════════════
+  ✓ Saba / TS         : raw=1.000  ref=1.450  scale=1.100  adj=1.100  raw_ratio=0.69  exp_ratio=0.64  adj_ratio=1.18  [OK; ok]
+  ✓ Saba / HUR        : raw=0.250  ref=0.550  scale=0.720  adj=0.180  raw_ratio=0.45  exp_ratio=0.30  adj_ratio=1.09  [OK; ok]
+  Mean Bias: +2.0 kt  |  MAE: 2.0 kt  |  RMSE: 2.0 kt
+  Storm-by-storm:
+    ✓ IRMA     @ Saba        : obs=   80 kt  model=   82 kt  bias=+2 kt (+2%)  [A ±15%]
+════════════════════════════════════════════════════════════════════════
+  CI: 90% | Holdout: 10 yr | Sim: 150 yr (model output config$n_sim)
+════════════════════════════════════════════════════════════════════════
+
+── HINDCAST VALIDATION (return levels) ─────────────────────────────────
+
+
+── WIND FIELD SPOT-CHECKS ──────────────────────────────────────────────
+  Mean bias: +2.0 kt | MAE: 2.0 kt | RMSE: 2.0 kt (1 storms)
+
+  Storm     Location       Obs    Model  Bias    Tol        
+  ───────────────────────────────────────────────────────
+  IRMA      Saba           80     82     +2%     C±35%  ✓   
+  Tol: A=direct station (±15%) | B=converted/10-min (±25%) | C=estimated (±35%)
+
+════════════════════════════════════════════════════════════════════════
+  SUMMARY
+  Hindcast         :  0 /  0 within 90% CI     —
+  Rate check       :  2 /  2 flagged OK        ✓
+  Wind field       :  1 /  1 within tolerance  ✓
+════════════════════════════════════════════════════════════════════════
+[lambda] Clamp applied to 2 site/class rows.
+Saving _problems/test-smoke-42.R
+Saving _problems/test-smoke-43.R
+Saving _problems/test-smoke-63.R
+[ FAIL 9 | WARN 0 | SKIP 0 | PASS 381 ]
+
+══ Failed tests ════════════════════════════════════════════════════════════════
+── Error ('test-climate.R:349:3'): run_hazard_model uses embedded cfg climate and records seed metadata ──
+Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+Backtrace:
+    ▆
+ 1. └─ipdcstorm (local) .run_hazard_reference(...) at test-climate.R:349:3
+ 2.   ├─base::suppressWarnings(...) at test-climate.R:69:7
+ 3.   │ └─base::withCallingHandlers(...)
+ 4.   └─ipdcstorm::run_hazard_model(...)
+ 5.     └─ipdcstorm:::.resolve_ibtracs_path(cfg$data_path)
+── Error ('test-climate.R:425:3'): stationary and default future helper runs remain deterministic ──
+Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+Backtrace:
+    ▆
+ 1. └─ipdcstorm (local) .run_hazard_reference(scenario = "stationary") at test-climate.R:425:3
+ 2.   ├─base::suppressWarnings(...) at test-climate.R:69:7
+ 3.   │ └─base::withCallingHandlers(...)
+ 4.   └─ipdcstorm::run_hazard_model(...) at test-climate.R:69:7
+ 5.     └─ipdcstorm:::.resolve_ibtracs_path(cfg$data_path)
+── Error ('test-climate.R:513:3'): returned climate metadata uses only simplified resolved schema ──
+Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+Backtrace:
+    ▆
+ 1. └─ipdcstorm (local) .run_hazard_reference(...) at test-climate.R:513:3
+ 2.   ├─base::suppressWarnings(...) at test-climate.R:69:7
+ 3.   │ └─base::withCallingHandlers(...)
+ 4.   └─ipdcstorm::run_hazard_model(...) at test-climate.R:69:7
+ 5.     └─ipdcstorm:::.resolve_ibtracs_path(cfg$data_path)
+── Error ('test-climate.R:542:3'): run_hazard_model produces equal climate-adjusted outputs for equal delta_sst ──
+Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+Backtrace:
+    ▆
+ 1. └─ipdcstorm (local) .run_hazard_reference(...) at test-climate.R:542:3
+ 2.   ├─base::suppressWarnings(...) at test-climate.R:69:7
+ 3.   │ └─base::withCallingHandlers(...)
+ 4.   └─ipdcstorm::run_hazard_model(...) at test-climate.R:69:7
+ 5.     └─ipdcstorm:::.resolve_ibtracs_path(cfg$data_path)
+── Error ('test-climate.R:573:3'): climate calibration is independent of duplicated target geometry ──
+Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+Backtrace:
+    ▆
+ 1. ├─base::suppressWarnings(...) at test-climate.R:573:3
+ 2. │ └─base::withCallingHandlers(...)
+ 3. └─ipdcstorm::run_hazard_model(...)
+ 4.   └─ipdcstorm:::.resolve_ibtracs_path(cfg$data_path)
+── Error ('test-climate.R:587:3'): future climate multiplier stays within documented sanity guardrail ──
+Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+Backtrace:
+    ▆
+ 1. └─ipdcstorm (local) .run_hazard_reference(...) at test-climate.R:587:3
+ 2.   ├─base::suppressWarnings(...) at test-climate.R:69:7
+ 3.   │ └─base::withCallingHandlers(...)
+ 4.   └─ipdcstorm::run_hazard_model(...) at test-climate.R:69:7
+ 5.     └─ipdcstorm:::.resolve_ibtracs_path(cfg$data_path)
+── Failure ('test-smoke.R:40:3'): run_hazard_model resolves packaged IBTrACS data and accepts location targets ──
+Expected `out <- suppressWarnings(run_hazard_model(cfg, targets, verbose = FALSE))` not to throw any errors.
+Actually got a <simpleError> with message:
+  File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+── Error ('test-smoke.R:43:3'): run_hazard_model resolves packaged IBTrACS data and accepts location targets ──
+Error in `eval(code, test_env)`: object 'out' not found
+Backtrace:
+    ▆
+ 1. ├─testthat::expect_true(...) at test-smoke.R:43:3
+ 2. │ └─testthat::quasi_label(enquo(object), label)
+ 3. │   └─rlang::eval_bare(expr, quo_get_env(quo))
+ 4. └─c("sim", "events", "rates", "fit", "cfg") %in% names(out)
+── Error ('test-smoke.R:57:3'): run_hazard_model console output is structured and user-facing ──
+Error: File not found: data/ibtracs/ibtracs.NA.list.v04r01.csv
+Backtrace:
+    ▆
+ 1. ├─base::paste(...) at test-smoke.R:57:3
+ 2. ├─utils::capture.output(...)
+ 3. │ └─base::withVisible(...elt(i))
+ 4. ├─base::suppressWarnings(...)
+ 5. │ └─base::withCallingHandlers(...)
+ 6. └─ipdcstorm::run_hazard_model(cfg, targets, seed = 99L, verbose = TRUE)
+ 7.   └─ipdcstorm:::.resolve_ibtracs_path(cfg$data_path)
+
+[ FAIL 9 | WARN 0 | SKIP 0 | PASS 381 ]
+Error:
+! Test failures.
+Execution halted
+
+2 errors ✖ | 3 warnings ✖ | 8 notes ✖

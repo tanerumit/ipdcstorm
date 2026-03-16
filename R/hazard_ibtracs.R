@@ -59,6 +59,84 @@
       message("[IBTrACS] Unique BASIN (first 20): ",
               paste(utils::head(sort(unique(df$BASIN)), 20), collapse = ", "))
     }
+
+    cleaned_required_cols <- c(
+      "SID", "SEASON", "BASIN", "iso_time",
+      "lat", "lon", "wind_kt",
+      "r34_ne_nm", "r34_se_nm", "r34_sw_nm", "r34_nw_nm"
+    )
+    if (all(cleaned_required_cols %in% names(df))) {
+      if (!is.null(basin))  df <- dplyr::filter(df, .data$BASIN %in% basin)
+      if (!is.null(season)) df <- dplyr::filter(df, .data$SEASON %in% season)
+
+      if (nrow(df) == 0) {
+        present <- sort(unique(toupper(trimws(as.character(df$BASIN)))))
+        present <- present[!is.na(present)]
+        stop("After filtering, 0 rows remain. Requested basin=",
+             paste(basin, collapse = ", "),
+             ". File BASIN values include: ",
+             paste(utils::head(present, 20), collapse = ", "))
+      }
+
+      df2 <- df |>
+        dplyr::mutate(
+          iso_time = lubridate::ymd_hms(.data$iso_time, tz = "UTC", quiet = TRUE),
+          lat = .to_num_quiet(.data$lat),
+          lon = .to_num_quiet(.data$lon),
+          wind_kt = .to_num_quiet(.data$wind_kt),
+          r34_ne_nm = .to_num_quiet(.data$r34_ne_nm),
+          r34_se_nm = .to_num_quiet(.data$r34_se_nm),
+          r34_sw_nm = .to_num_quiet(.data$r34_sw_nm),
+          r34_nw_nm = .to_num_quiet(.data$r34_nw_nm),
+          pres_hpa = if ("pres_hpa" %in% names(df)) .to_num_quiet(.data$pres_hpa) else NA_real_,
+          pres_source = if ("pres_source" %in% names(df)) as.character(.data$pres_source) else NA_character_,
+          usa_pres_hpa = if ("usa_pres_hpa" %in% names(df)) .to_num_quiet(.data$usa_pres_hpa) else NA_real_,
+          wmo_pres_hpa = if ("wmo_pres_hpa" %in% names(df)) .to_num_quiet(.data$wmo_pres_hpa) else NA_real_,
+          poci_hpa = if ("poci_hpa" %in% names(df)) .to_num_quiet(.data$poci_hpa) else NA_real_,
+          roci_km = if ("roci_km" %in% names(df)) .to_num_quiet(.data$roci_km) else NA_real_,
+          rmw_km = if ("rmw_km" %in% names(df)) .to_num_quiet(.data$rmw_km) else NA_real_,
+          storm_name = if ("storm_name" %in% names(df)) as.character(.data$storm_name) else NA_character_,
+          storm_status = if ("storm_status" %in% names(df)) as.character(.data$storm_status) else NA_character_,
+          r50_ne_nm = if ("r50_ne_nm" %in% names(df)) .to_num_quiet(.data$r50_ne_nm) else NA_real_,
+          r50_se_nm = if ("r50_se_nm" %in% names(df)) .to_num_quiet(.data$r50_se_nm) else NA_real_,
+          r50_sw_nm = if ("r50_sw_nm" %in% names(df)) .to_num_quiet(.data$r50_sw_nm) else NA_real_,
+          r50_nw_nm = if ("r50_nw_nm" %in% names(df)) .to_num_quiet(.data$r50_nw_nm) else NA_real_,
+          r64_ne_nm = if ("r64_ne_nm" %in% names(df)) .to_num_quiet(.data$r64_ne_nm) else NA_real_,
+          r64_se_nm = if ("r64_se_nm" %in% names(df)) .to_num_quiet(.data$r64_se_nm) else NA_real_,
+          r64_sw_nm = if ("r64_sw_nm" %in% names(df)) .to_num_quiet(.data$r64_sw_nm) else NA_real_,
+          r64_nw_nm = if ("r64_nw_nm" %in% names(df)) .to_num_quiet(.data$r64_nw_nm) else NA_real_,
+          storm_speed_kt = if ("storm_speed_kt" %in% names(df)) .to_num_quiet(.data$storm_speed_kt) else NA_real_,
+          storm_dir_deg = if ("storm_dir_deg" %in% names(df)) .to_num_quiet(.data$storm_dir_deg) else NA_real_
+        ) |>
+        dplyr::arrange(.data$SID, .data$iso_time)
+
+      out <- if (isTRUE(keep_all)) {
+        df2
+      } else {
+        df2 |>
+          dplyr::select(
+            SID, SEASON, BASIN,
+            iso_time, storm_name, storm_status,
+            lat, lon, wind_kt,
+            pres_hpa, pres_source, usa_pres_hpa, wmo_pres_hpa,
+            poci_hpa, roci_km, rmw_km,
+            r34_ne_nm, r34_se_nm, r34_sw_nm, r34_nw_nm,
+            r50_ne_nm, r50_se_nm, r50_sw_nm, r50_nw_nm,
+            r64_ne_nm, r64_se_nm, r64_sw_nm, r64_nw_nm,
+            storm_speed_kt, storm_dir_deg
+          )
+      }
+
+      out <- tibble::as_tibble(out)
+
+      if (isTRUE(verbose)) {
+        message("[IBTrACS] Rows: ", nrow(out), " | Pc available: ", sum(is.finite(out$pres_hpa)))
+        message("[IBTrACS] Non-missing coords: lat=", sum(is.finite(out$lat)),
+                " lon=", sum(is.finite(out$lon)))
+      }
+
+      return(out)
+    }
     
     required_cols <- c("SID", "SEASON", "BASIN", "ISO_TIME",
                        "USA_LAT", "USA_LON", "USA_WIND",

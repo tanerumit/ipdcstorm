@@ -1,0 +1,692 @@
+══ Documenting ═════════════════════════════════════════════════════════════════
+ℹ Updating ipdcstorm documentation
+ℹ Loading ipdcstorm
+
+══ Building ════════════════════════════════════════════════════════════════════
+Setting env vars:
+• CFLAGS    : -Wall -pedantic
+• CXXFLAGS  : -Wall -pedantic
+• CXX11FLAGS: -Wall -pedantic
+• CXX14FLAGS: -Wall -pedantic
+• CXX17FLAGS: -Wall -pedantic
+• CXX20FLAGS: -Wall -pedantic
+── R CMD build ─────────────────────────────────────────────────────────────────
+  
+  
+  
+   checking for file 'C:\Users\taner\WS\ipdcstorm/DESCRIPTION' ...
+  
+✔  checking for file 'C:\Users\taner\WS\ipdcstorm/DESCRIPTION' (392ms)
+
+  
+  
+  
+─  preparing 'ipdcstorm': (27.4s)
+   checking DESCRIPTION meta-information ...
+  
+✔  checking DESCRIPTION meta-information
+
+  
+  
+  
+─  checking for LF line-endings in source and make files and shell scripts (3.8s)
+
+  
+─  checking for empty or unneeded directories (460ms)
+   Removed empty directory 'ipdcstorm/tests/testthat/_snaps'
+
+  
+  
+  
+─  building 'ipdcstorm_0.0.0.9000.tar.gz' (1.4s)
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd'
+
+  
+Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+  
+   Warning in utils::tar(filepath, pkgname, compression = compression, compression_level = 9L,  :
+     storing paths of more than 100 bytes is not portable:
+     'ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd'
+
+  
+   
+
+══ Checking ════════════════════════════════════════════════════════════════════
+Setting env vars:
+• _R_CHECK_CRAN_INCOMING_REMOTE_               : FALSE
+• _R_CHECK_CRAN_INCOMING_                      : FALSE
+• _R_CHECK_FORCE_SUGGESTS_                     : FALSE
+• _R_CHECK_PACKAGES_USED_IGNORE_UNUSED_IMPORTS_: FALSE
+• NOT_CRAN                                     : true
+── R CMD check ─────────────────────────────────────────────────────────────────
+  
+  
+  
+─  using log directory 'C:/Users/taner/AppData/Local/Temp/RtmpKuXjWp/file8f981eb32250/ipdcstorm.Rcheck' (1.2s)
+─  using R version 4.5.2 (2025-10-31 ucrt)
+─  using platform: x86_64-w64-mingw32
+
+  
+─  R was compiled by
+       gcc.exe (GCC) 14.3.0
+       GNU Fortran (GCC) 14.3.0
+─  running under: Windows 11 x64 (build 26200)
+─  using session charset: UTF-8
+
+  
+  
+  
+─  using options '--no-manual --as-cran' (25.6s)
+
+  
+✔  checking for file 'ipdcstorm/DESCRIPTION'
+─  this is package 'ipdcstorm' version '0.0.0.9000'
+─  package encoding: UTF-8
+✔  checking package namespace information
+   checking package dependencies ...
+  
+   checking package dependencies ... 
+  
+✔  checking package dependencies (2.2s)
+   checking if this is a source package ...
+  
+✔  checking if this is a source package
+✔  checking if there is a namespace
+
+  
+   checking for executable files ...
+  
+   checking for executable files ... 
+  
+✔  checking for executable files (6.2s)
+   checking for hidden files and directories ...
+  
+   checking for hidden files and directories ... 
+  
+N  checking for hidden files and directories
+   Found the following hidden files and directories:
+
+  
+     .agents
+     .agents/skills/obsidian-skills/.claude-plugin
+     .claude
+     .claude/skills/obsidian-skills/.claude-plugin
+   These were most likely included in error. See section 'Package
+   structure' in the 'Writing R Extensions' manual.
+   checking for portable file names ...
+  
+   checking for portable file names ... 
+  
+N  checking for portable file names
+   Found the following non-portable file paths:
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd
+     ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd
+   ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500
+  
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd
+     ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd
+   
+
+  
+   Tarballs are only required to store paths of up to 100 bytes and cannot
+   store those of more than 256 bytes, with restrictions including to 100
+   bytes for the final component.
+   See section 'Package structure' in the 'Writing R Extensions' manual.
+   checking whether package 'ipdcstorm' can be installed ...
+  
+   checking whether package 'ipdcstorm' can be installed ... [17s]
+  
+   checking whether package 'ipdcstorm' can be installed ... [17s] 
+  
+─  checking whether package 'ipdcstorm' can be installed ... [17s] OK (17.5s)
+  
+  
+   checking installed package size ...
+  
+   checking installed package size ... 
+  
+─  checking installed package size ... INFO
+     installed size is  8.9Mb
+     sub-directories of 1Mb or more:
+
+  
+       extdata   7.6Mb
+
+  
+  
+  
+✔  checking package directory (408ms)
+   checking for future file timestamps ...
+  
+   checking for future file timestamps ... 
+  
+✔  checking for future file timestamps (19.1s)
+   checking DESCRIPTION meta-information ...
+  
+   checking DESCRIPTION meta-information ... 
+  
+✔  checking DESCRIPTION meta-information (4.6s)
+   checking top-level files ...
+  
+N  checking top-level files
+   Non-standard files/directories found at top level:
+     'AGENTS.md' 'CLAUDE.md' 'LICENSE.md' 'README.Rmd'
+     'ipdcstorm.code-workspace'
+✔  checking for left-over files
+✔  checking index information
+   checking package subdirectories ...
+  
+   checking package subdirectories ... 
+  
+N  checking package subdirectories (1s)
+   Problems with news in 'NEWS.md':
+   No news entries found.
+
+  
+   checking code files for non-ASCII characters ...
+  
+   checking code files for non-ASCII characters ... 
+  
+✔  checking code files for non-ASCII characters
+   checking R files for syntax errors ...
+  
+   checking R files for syntax errors ... 
+  
+✔  checking R files for syntax errors (357ms)
+   checking whether the package can be loaded ...
+  
+   checking whether the package can be loaded ... 
+  
+✔  checking whether the package can be loaded (2.5s)
+   checking whether the package can be loaded with stated dependencies ...
+  
+   checking whether the package can be loaded with stated dependencies ... 
+  
+✔  checking whether the package can be loaded with stated dependencies (2.7s)
+   checking whether the package can be unloaded cleanly ...
+  
+   checking whether the package can be unloaded cleanly ... 
+  
+✔  checking whether the package can be unloaded cleanly (2.2s)
+   checking whether the namespace can be loaded with stated dependencies ...
+  
+   checking whether the namespace can be loaded with stated dependencies ... 
+  
+✔  checking whether the namespace can be loaded with stated dependencies (1.7s)
+   checking whether the namespace can be unloaded cleanly ...
+  
+   checking whether the namespace can be unloaded cleanly ... 
+  
+✔  checking whether the namespace can be unloaded cleanly (3.1s)
+   checking loading without being on the library search path ...
+  
+   checking loading without being on the library search path ... 
+  
+✔  checking loading without being on the library search path (3s)
+
+  
+  
+  
+   checking dependencies in R code ...
+  
+   checking dependencies in R code ... 
+  
+N  checking dependencies in R code (5.3s)
+   Namespace in Imports field not imported from: 'patchwork'
+     All declared Imports should be used.
+   checking S3 generic/method consistency ...
+  
+   checking S3 generic/method consistency ... 
+  
+✔  checking S3 generic/method consistency (1.7s)
+   checking replacement functions ...
+  
+   checking replacement functions ... 
+  
+✔  checking replacement functions (1.3s)
+   checking foreign function calls ...
+  
+   checking foreign function calls ... 
+  
+✔  checking foreign function calls (1.7s)
+   checking R code for possible problems ...
+  
+   checking R code for possible problems ... [22s]
+  
+─  checking R code for possible problems ... [22s] NOTE (21.7s)
+   .apply_lambda_scalers_to_lambda_table: no visible binding for global
+     variable '.env'
+   .build_rate_check_table: no visible binding for global variable
+     'storm_class'
+   .build_rate_check_table: no visible binding for global variable
+     'lambda_model_raw'
+   .build_rate_check_table: no visible binding for global variable
+     'lambda_ref'
+   .build_rate_check_table: no visible binding for global variable
+     'gate_approx_nm'
+   .build_rate_check_table: no visible binding for global variable
+     'period'
+   .plot_rate_comparison: no visible binding for global variable 'lambda'
+   .run_hindcast_attribution_grid: no visible binding for global variable
+     '.env'
+   .validate_hindcast_all: no visible binding for global variable '.env'
+   plot_annual_counts: no visible binding for global variable
+     'n_years_at_count'
+   plot_annual_counts: no visible binding for global variable 'prob'
+   plot_bias_diagnostics: no visible binding for global variable 'bias_kt'
+   plot_cdf_comparison: no visible binding for global variable 'ecdf'
+   plot_hindcast_validation: no visible binding for global variable
+     'obs_full_rl'
+   plot_hindcast_validation: no visible binding for global variable
+     'sim_rl'
+   plot_hindcast_validation: no visible binding for global variable
+     'obs_ci_lo'
+   plot_hindcast_validation: no visible binding for global variable
+     'obs_ci_hi'
+   plot_qq_validation: no visible binding for global variable
+     'obs_quantile'
+   plot_qq_validation: no visible binding for global variable
+     'sim_quantile'
+   plot_qq_validation: no visible binding for global variable 'prob'
+   plot_rate_validation: no visible binding for global variable
+     'lambda_ref'
+   plot_rate_validation: no visible binding for global variable 'flag'
+   plot_rate_validation: no visible binding for global variable
+     'storm_class'
+   plot_wind_field_validation: no visible binding for global variable
+     'model_V_site_kt'
+   plot_wind_field_validation: no visible binding for global variable
+     'obs_1min_equiv_kt'
+validate_wind_field: no v
+  
+   validate_wind_field: no visible binding for global variable '.env'
+   Undefined global functions or variables:
+     .env bias_kt ecdf flag gate_approx_nm lambda lambda_model_raw
+     lambda_ref model_V_site_kt n_years_at_count obs_1min_equiv_kt
+     obs_ci_hi obs_ci_lo obs_full_rl obs_quantile period prob sim_quantile
+     sim_rl storm_class
+   Consider adding
+     importFrom("stats", "ecdf")
+   to your NAMESPACE file.
+
+  
+   checking Rd files ...
+  
+   checking Rd files ... 
+  
+N  checking Rd files (2.2s)
+   checkRd: (-1) dot-normalize_lambda_scaling_mode.Rd:13: Lost braces; missing escapes or markup?
+       13 | Character scalar in {"target", "down_only"}.
+          |                     ^
+   checking Rd metadata ...
+  
+   checking Rd metadata ... 
+  
+✔  checking Rd metadata
+   checking Rd line widths ...
+  
+   checking Rd line widths ... 
+  
+✔  checking Rd line widths (455ms)
+   checking Rd cross-references ...
+  
+   checking Rd cross-references ... 
+  
+✔  checking Rd cross-references (3.4s)
+   checking for missing documentation entries ...
+  
+   checking for missing documentation entries ... 
+  
+✔  checking for missing documentation entries (1.9s)
+   checking for code/documentation mismatches ...
+  
+   checking for code/documentation mismatches ... 
+  
+✔  checking for code/documentation mismatches (5.3s)
+   checking Rd \usage sections ...
+  
+   checking Rd \usage sections ... 
+  
+✔  checking Rd \usage sections (2.7s)
+   checking Rd contents ...
+  
+   checking Rd contents ... 
+  
+✔  checking Rd contents (455ms)
+   checking for unstated dependencies in examples ...
+  
+   checking for unstated dependencies in examples ... 
+  
+✔  checking for unstated dependencies in examples (782ms)
+
+  
+   checking examples ...
+  
+   checking examples ... [54s]
+  
+   checking examples ... [54s] 
+  
+─  checking examples ... [54s] OK (54.4s)
+
+  
+   Examples with CPU (user + system) or elapsed time > 5s
+                          user system elapsed
+   validate_hazard_model 37.35   2.28    40.7
+   checking for unstated dependencies in 'tests' ...
+  
+   checking for unstated dependencies in 'tests' ... 
+  
+✔  checking for unstated dependencies in 'tests'
+   checking tests ...
+  
+─  checking tests (435ms)
+
+  
+   Running 'testthat.R'
+  
+
+  
+  [70s]
+  
+    [70s] OK
+
+  
+  
+  
+   checking for non-standard things in the check directory ...
+  
+   * checking for non-standard things in the check directory ... NOTE
+   Found the following files/directories:
+     'output'
+
+  
+   * checking for detritus in the temp directory ... OK
+
+  
+   * DONE
+   
+   Status: 8 NOTEs
+
+  
+   See
+     'C:/Users/taner/AppData/Local/Temp/RtmpKuXjWp/file8f981eb32250/ipdcstorm.Rcheck/00check.log'
+   for details.
+
+  
+   
+
+  
+   ERROR: Unknown command "TMPDIR=C:/Users/taner/AppData/Local/Temp/RtmpIb5ACM/file5f3466c360e1". Did you mean command "create"?
+
+  
+   Warning message:
+
+  
+   In system2("quarto", "-V", stdout = TRUE, env = paste0("TMPDIR=",  :
+     running command '"quarto" TMPDIR=C:/Users/taner/AppData/Local/Temp/RtmpIb5ACM/file5f3466c360e1 -V' had status 1
+
+── R CMD check results ─────────────────────────────── ipdcstorm 0.0.0.9000 ────
+Duration: 4m 35.6s
+
+❯ checking for hidden files and directories ... NOTE
+  Found the following hidden files and directories:
+    .agents
+    .agents/skills/obsidian-skills/.claude-plugin
+    .claude
+    .claude/skills/obsidian-skills/.claude-plugin
+  These were most likely included in error. See section 'Package
+  structure' in the 'Writing R Extensions' manual.
+
+❯ checking for portable file names ... NOTE
+  Found the following non-portable file paths:
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd
+    ipdcstorm/.agents/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/dml-wordprocessingDrawing.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-additionalCharacteristics.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-commonSimpleTypes.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlDataProperties.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-customXmlSchemaProperties.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesCustom.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesExtended.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-documentPropertiesVariantTypes.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/shared-relationshipReference.xsd
+    ipdcstorm/.claude/skills/pptx/scripts/office/schemas/ISO-IEC29500-4_2016/vml-wordprocessingDrawing.xsd
+  
+  Tarballs are only required to store paths of up to 100 bytes and cannot
+  store those of more than 256 bytes, with restrictions including to 100
+  bytes for the final component.
+  See section 'Package structure' in the 'Writing R Extensions' manual.
+
+❯ checking top-level files ... NOTE
+  Non-standard files/directories found at top level:
+    'AGENTS.md' 'CLAUDE.md' 'LICENSE.md' 'README.Rmd'
+    'ipdcstorm.code-workspace'
+
+❯ checking package subdirectories ... NOTE
+  Problems with news in 'NEWS.md':
+  No news entries found.
+
+❯ checking dependencies in R code ... NOTE
+  Namespace in Imports field not imported from: 'patchwork'
+    All declared Imports should be used.
+
+❯ checking R code for possible problems ... [22s] NOTE
+  .apply_lambda_scalers_to_lambda_table: no visible binding for global
+    variable '.env'
+  .build_rate_check_table: no visible binding for global variable
+    'storm_class'
+  .build_rate_check_table: no visible binding for global variable
+    'lambda_model_raw'
+  .build_rate_check_table: no visible binding for global variable
+    'lambda_ref'
+  .build_rate_check_table: no visible binding for global variable
+    'gate_approx_nm'
+  .build_rate_check_table: no visible binding for global variable
+    'period'
+  .plot_rate_comparison: no visible binding for global variable 'lambda'
+  .run_hindcast_attribution_grid: no visible binding for global variable
+    '.env'
+  .validate_hindcast_all: no visible binding for global variable '.env'
+  plot_annual_counts: no visible binding for global variable
+    'n_years_at_count'
+  plot_annual_counts: no visible binding for global variable 'prob'
+  plot_bias_diagnostics: no visible binding for global variable 'bias_kt'
+  plot_cdf_comparison: no visible binding for global variable 'ecdf'
+  plot_hindcast_validation: no visible binding for global variable
+    'obs_full_rl'
+  plot_hindcast_validation: no visible binding for global variable
+    'sim_rl'
+  plot_hindcast_validation: no visible binding for global variable
+    'obs_ci_lo'
+  plot_hindcast_validation: no visible binding for global variable
+    'obs_ci_hi'
+  plot_qq_validation: no visible binding for global variable
+    'obs_quantile'
+  plot_qq_validation: no visible binding for global variable
+    'sim_quantile'
+  plot_qq_validation: no visible binding for global variable 'prob'
+  plot_rate_validation: no visible binding for global variable
+    'lambda_ref'
+  plot_rate_validation: no visible binding for global variable 'flag'
+  plot_rate_validation: no visible binding for global variable
+    'storm_class'
+  plot_wind_field_validation: no visible binding for global variable
+    'model_V_site_kt'
+  plot_wind_field_validation: no visible binding for global variable
+    'obs_1min_equiv_kt'
+  validate_wind_field: no visible binding for global variable '.env'
+  Undefined global functions or variables:
+    .env bias_kt ecdf flag gate_approx_nm lambda lambda_model_raw
+    lambda_ref model_V_site_kt n_years_at_count obs_1min_equiv_kt
+    obs_ci_hi obs_ci_lo obs_full_rl obs_quantile period prob sim_quantile
+    sim_rl storm_class
+  Consider adding
+    importFrom("stats", "ecdf")
+  to your NAMESPACE file.
+
+❯ checking Rd files ... NOTE
+  checkRd: (-1) dot-normalize_lambda_scaling_mode.Rd:13: Lost braces; missing escapes or markup?
+      13 | Character scalar in {"target", "down_only"}.
+         |                     ^
+
+❯ checking for non-standard things in the check directory ... NOTE
+  Found the following files/directories:
+    'output'
+
+0 errors ✔ | 0 warnings ✔ | 8 notes ✖

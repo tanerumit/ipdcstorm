@@ -3559,20 +3559,20 @@ validate_wind_field <- function(out, obs_table = NULL) {
   list(summary = summary, by_location = detail)
 }
 
-#' Run the full validation suite
-#'
-#' @description
-#' Executes all three validation tiers (hindcast, rate check, wind field),
-#' produces a consolidated diagnostic report, and optionally saves all plots
-#' and tables to the configured output directory.
-#'
 # =============================================================================
 # CONSOLE FORMATTING HELPERS
 # =============================================================================
 
+#' Validation console header
+#'
+#' @param title Character scalar header title.
+#' @param width Integer scalar line width.
+#' @return Invisibly returns `NULL`.
+#' @keywords internal
 .val_header <- function(title, width = 72) {
   message(paste(rep("\u2550", width), collapse = ""))
   message("  ", title)
+  invisible(NULL)
 }
 
 .val_header_close <- function(width = 72) {

@@ -920,32 +920,32 @@ generate_daily_year_extended <- function(year, sampled_events,
 #'   location-specific historical event library from \code{out$trackpoints} and
 #'   \code{out$events}. Depending on configuration stored in \code{out$cfg}, the
 #'   underlying sampler can use either stratified historical resampling or the
-#'   \code{"copula_nn"} nearest-neighbour copula workflow. :contentReference[oaicite:3]{index=3}
+#'   \code{"copula_nn"} nearest-neighbour copula workflow.
 #'   \item \code{sample_events_for_year_extended()} samples the required number
 #'   of tropical storms and hurricanes for each simulation year using the
 #'   annual counts in \code{out$sim}. Sampled events carry start date, duration,
 #'   peak wind, central pressure, pressure deficit, and mean radius of maximum
-#'   wind. :contentReference[oaicite:4]{index=4}
+#'   wind.
 #'   \item If climate perturbation metadata are attached to \code{out$fit}, the
 #'   sampled event set is modified with \code{perturb_event()} before daily
 #'   downscaling. This is only applied when perturbation settings are present
-#'   and a finite scalar \code{delta_sst} is available. :contentReference[oaicite:5]{index=5}
+#'   and a finite scalar \code{delta_sst} is available.
 #'   \item \code{\link{generate_daily_year_extended}()} converts each sampled
 #'   event into a daily time series by applying \code{\link{event_pulse}()} to
 #'   the event duration and peak wind, then merges overlapping events by taking
 #'   the daily maximum wind contribution. The dominant event for each day
 #'   carries the \code{event_id}, \code{event_class}, \code{pressure_hpa},
 #'   \code{pressure_deficit_hpa}, and \code{rmw_km} fields into the final daily
-#'   table. :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7}
+#'   table.
 #'   \item Damage forcing is then added using either
 #'   \code{\link{add_damage_forcing}()} or
 #'   \code{\link{damage_rate_from_wind}()}, depending on
 #'   \code{damage$method}. \code{cum_damage} is computed as the cumulative sum
-#'   of daily \code{damage_rate} within the generated series. :contentReference[oaicite:8]{index=8}
+#'   of daily \code{damage_rate} within the generated series.
 #'   \item Finally, \code{wind_gust_kt} is derived as
 #'   \code{wind_kt * gust_factor}, and \code{surge_m} is derived from central
 #'   pressure using the simple pressure-deficit proxy
-#'   \code{0.14 * (1013 - pressure_hpa)} where pressure is available. :contentReference[oaicite:9]{index=9}
+#'   \code{0.14 * (1013 - pressure_hpa)} where pressure is available.
 #' }
 #'
 #' Scientific parameterization:
@@ -957,7 +957,7 @@ generate_daily_year_extended <- function(year, sampled_events,
 #'   \deqn{wind\_gust\_kt = wind\_kt \times gust\_factor}
 #'   No additional boundary-layer or exposure correction is applied inside this
 #'   function. A value of 1 leaves gust equal to sustained wind; values above 1
-#'   represent stronger short-duration peak gusts. :contentReference[oaicite:10]{index=10}
+#'   represent stronger short-duration peak gusts.
 #'
 #'   \item \strong{Pulse shape.}
 #'   \code{pulse_shape} controls the within-event temporal evolution of daily
@@ -967,7 +967,7 @@ generate_daily_year_extended <- function(year, sampled_events,
 #'   a smooth rise and fall with zero at the event edges. The triangle option
 #'   uses a piecewise-linear ramp up and down around the event midpoint. In both
 #'   cases the profile is scaled to the sampled event peak wind \code{V_peak}
-#'   and truncated at zero. :contentReference[oaicite:11]{index=11}
+#'   and truncated at zero.
 #'
 #'   \item \strong{Damage intensity index.}
 #'   Regardless of \code{damage$method}, the function first computes a bounded
@@ -979,7 +979,7 @@ generate_daily_year_extended <- function(year, sampled_events,
 #'   \code{damage$method = "intensity"}, these values come from the intensity
 #'   damage specification; for \code{damage$method = "powerlaw"}, the generic
 #'   index uses \code{V0 = 34} kt and \code{V1 = 120} kt with the shared
-#'   exponent \code{p}. :contentReference[oaicite:12]{index=12}
+#'   exponent \code{p}.
 #'
 #'   \item \strong{Damage method = "intensity".}
 #'   This route calls \code{\link{add_damage_forcing}()}, which maps the bounded
@@ -988,7 +988,7 @@ generate_daily_year_extended <- function(year, sampled_events,
 #'   where \code{dmax} is the maximum daily damage fraction. Defaults are
 #'   \code{V0 = 34} kt, \code{V1 = 120} kt, \code{p = 3}, and
 #'   \code{dmax = 0.02}. This is a capped intensity-index model rather than a
-#'   direct engineering vulnerability curve. :contentReference[oaicite:13]{index=13}
+#'   direct engineering vulnerability curve.
 #'
 #'   \item \strong{Damage method = "powerlaw".}
 #'   This route calls \code{\link{damage_rate_from_wind}()}, which applies a
@@ -1001,14 +1001,14 @@ generate_daily_year_extended <- function(year, sampled_events,
 #'   \code{thr = 34} kt, \code{V_ref = 80} kt, \code{d_ref = 0.03},
 #'   \code{p = 3}, and \code{d_max = 0.10}. This method exposes the reference
 #'   point explicitly and is easier to align with an external damage assumption
-#'   at a chosen hazard level. :contentReference[oaicite:14]{index=14}
+#'   at a chosen hazard level.
 #'
 #'   \item \strong{Cumulative damage.}
 #'   \code{cum_damage} is computed as the running cumulative sum of
 #'   \code{damage_rate} over the generated daily sequence for each location.
 #'   It is therefore a synthetic cumulative forcing index, not necessarily a
 #'   literal stock-loss fraction unless the user calibrates the daily damage
-#'   formulation accordingly. :contentReference[oaicite:15]{index=15}
+#'   formulation accordingly.
 #' }
 #'
 #' @param out List returned by \code{run_hazard_model()}. Must contain
@@ -1057,7 +1057,7 @@ generate_daily_year_extended <- function(year, sampled_events,
 #'
 #' @param seed Integer scalar random seed. The wrapper offsets this seed by
 #'   location index so repeated calls are deterministic but distinct across
-#'   requested locations. :contentReference[oaicite:16]{index=16}
+#'   requested locations.
 #'
 #' @return
 #' A named list of tibbles, one element per requested location. Each tibble
@@ -1086,7 +1086,7 @@ generate_daily_year_extended <- function(year, sampled_events,
 #'     damage model.}
 #'   \item{\code{cum_damage}}{Cumulative sum of \code{damage_rate}.}
 #' }
-#' Each location tibble also carries a \code{"gust_factor"} attribute. :contentReference[oaicite:17]{index=17}
+#' Each location tibble also carries a \code{"gust_factor"} attribute.
 #'
 #' @seealso
 #' \code{\link{build_event_library_from_out}},
