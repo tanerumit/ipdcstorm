@@ -26,6 +26,9 @@ R -q -e "devtools::document()"
 
 # Full package check
 R -q -e "devtools::check()"
+
+# Load package for interactive development
+R -q -e "devtools::load_all()"
 ```
 
 ## Architecture
@@ -75,7 +78,7 @@ Required sections: goal, scope, summary, files changed, commands run, test resul
 
 ## Allowed Dependencies
 
-Core (already imported): `dplyr`, `tidyr`, `ggplot2`, `patchwork`, `data.table`, `sf`, plus `readr`, `lubridate`, `geosphere`, `tibble`, `purrr`, `magrittr`, `rlang`, `MASS`, `ncdf4`, `scales`, `stringr`.
+Core (Imports in DESCRIPTION): `dplyr`, `tidyr`, `ggplot2`, `patchwork`, `readr`, `lubridate`, `geosphere`, `tibble`, `purrr`, `magrittr`, `rlang`, `MASS`, `ncdf4`, `scales`, `stringr`.
 Do not add new dependencies without explicit approval.
 
 ## Pipeline Scripts

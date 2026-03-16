@@ -1,0 +1,391 @@
+---
+title: "Tutorial 3 — Model Validation"
+subtitle: "Hurricane Wind Hazard Model for the Caribbean"
+author: ""
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: true
+    code-fold: false
+    code-tools: true
+    code-copy: true
+    highlight-style: github
+    smooth-scroll: true
+    self-contained: true
+execute:
+  eval: true
+  echo: true
+  warning: false
+  message: false
+editor:
+  markdown:
+    wrap: sentence
+---
+
+```{r}
+#| label: setup-hidden
+#| include: false
+knitr::opts_chunk$set(comment = "#>")
+```
+
+::: callout-note
+## Prerequisites
+This tutorial assumes you have already completed [Tutorial 1](tutorial_1_introduction_setup.qmd) and [Tutorial 2](tutorial_2_multisite_validation_climate.qmd).
+Those tutorials introduce the baseline model workflow and the main `out` object that we validate here.
+:::
+
+This tutorial shows how to check whether the hazard model is behaving credibly before you use it for interpretation or decision support.
+We will recreate a stationary baseline run with the demo dataset, configure the validation suite, inspect each validation tier, and review the saved plots and tables.
+
+## What This Tutorial Covers {#sec-what-this-covers}
+
+By the end, you will be able to:
+
+- create a standalone model output suitable for validation
+- run the full validation suite with `make_validation_cfg()` and `run_validation_suite()`
+- interpret the three validation tiers and the saved diagnostics they produce
+
+## Overview {#sec-overview}
+
+The validation workflow has four steps:
+
+1. Run the hazard model for a few target islands.
+2. Create a validation configuration that defines the holdout period, simulation size, confidence level, and output directory.
+3. Run the validation suite and inspect the top-level summary.
+4. Review the three validation tiers: hindcast return levels, rate sanity, and wind field spot-checks.
+
+```{r}
+#| label: setup-packages
+library(ipdcstorm)
+library(dplyr)
+library(ggplot2)
+```
+
+## Create a Model Output to Validate {#sec-create-output}
+
+Before validating, we need a model output to check.
+This tutorial recreates a small stationary baseline run so it renders on its own from a clean session.
+
+```{r}
+#| label: setup-hazard-run
+seed <- 123L
+simulation_years <- 500L
+
+ibtracs_demo <- system.file(
+  "extdata",
+  "ibtracs_demo.csv",
+  package = "ipdcstorm"
+)
+
+targets <- data.frame(
+  name = c("St_Martin", "Saba", "Statia"),
+  lat = c(18.0708, 17.6350, 17.4890),
+  lon = c(-63.0501, -63.2300, -62.9740)
+)
+
+cfg <- make_hazard_cfg(
+  data_path = ibtracs_demo,
+  historical_start_year = 1970L,
+  search_radius_km = 800,
+  simulation_years = simulation_years,
+  climate = make_climate_cfg(scenario = "stationary")
+)
+```
+
+```{r}
+#| label: run-hazard-output
+out <- run_hazard_model(
+  cfg = cfg,
+  targets = targets,
+  seed = seed,
+  verbose = FALSE
+)
+```
+
+The object `out` is the same kind of model output you would usually carry forward from your own baseline workflow.
+Here we reuse the bundled demo data so the tutorial is fully self-contained.
+
+## Why Validate? {#sec-why-validate}
+
+The hazard model combines several ingredients: a parametric wind profile, site-level event classification, annual rate estimation, and stochastic resampling of historical storms.
+Each of those choices can introduce bias, even when the code runs without error.
+
+The validation suite checks three different aspects of performance: return levels, storm rates, and wind field accuracy.
+A model can pass one tier and fail another, so looking at all three tiers together is more informative than relying on a single score.
+
+## Validation Configuration {#sec-validation-config}
+
+We control the validation workflow with `make_validation_cfg()`.
+This keeps the main choices in one place: how long the holdout period is, how many synthetic years to generate for the hindcast, which return periods to compare, and where to save outputs.
+
+```{r}
+#| label: configure-validation
+val_cfg <- make_validation_cfg(
+  holdout_years = 10L,
+  n_sim = 2000L,
+  return_periods = c(5, 10, 25, 50),
+  conf_level = 0.90,
+  seed = 123L,
+  out_dir = "output/validation",
+  save_plots = TRUE,
+  save_tables = TRUE
+)
+
+val_cfg
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `holdout_years` | Number of years held out from the end of the historical record for the train/test split. |
+| `n_sim` | Number of synthetic years simulated for the hindcast comparison. If `NULL`, this inherits from the hazard model output. |
+| `return_periods` | Return periods (years) to compare between observed and simulated annual maxima. |
+| `conf_level` | Confidence level for return-level CIs. This controls how strict the pass/fail test is. |
+| `seed` | Random seed for reproducibility. |
+| `out_dir` | Directory where plots and CSV tables are saved. |
+| `save_plots` | Whether to save PNG diagnostic figures. |
+| `save_tables` | Whether to save CSV result tables. |
+
+## Run the Validation Suite {#sec-run-validation}
+
+With the hazard run complete and the validation settings defined, we can run the full suite in one call.
+The function prints a formatted console summary while it runs and returns all tier results in one structured object.
+
+```{r}
+#| label: run-validation-suite
+val <- run_validation_suite(
+  out = out,
+  cfg = val_cfg
+)
+```
+
+```{r}
+#| label: inspect-validation-summary
+val$summary
+```
+
+```{r}
+#| label: normalize-artifact-paths
+# The current runtime may not always register the rate plot path in val$artifacts.
+# Populate the expected saved path so the tutorial can display every plot inline.
+if (is.null(val$artifacts$plots$rate_comparison)) {
+  rate_plot_path <- file.path(val_cfg$out_dir, "rate_comparison.png")
+  if (!file.exists(rate_plot_path)) {
+    plot_rate_validation(val, cfg = val_cfg)
+  }
+  if (file.exists(rate_plot_path)) {
+    val$artifacts$plots$rate_comparison <- rate_plot_path
+  }
+}
+```
+
+::: callout-note
+## Saved results
+The `val` object contains all validation results in memory, and the plots and CSV tables have been saved to `output/validation/`.
+That makes it easy to inspect the objects interactively and also keep a reproducible set of artifacts on disk.
+:::
+
+## Tier 1 — Hindcast Return Levels {#sec-tier1}
+
+Tier 1 asks a simple question: if we train the model on the earlier part of the record, does it reproduce the return levels implied by the full observed record?
+The suite holds out the last `holdout_years`, fits the model on the earlier years, simulates synthetic annual maxima, and then compares return levels across several return periods.
+
+The main pass/fail idea is straightforward: the simulated return level should fall inside the confidence interval around the observed return-level estimate.
+That gives us a check on whether the model is broadly reproducing the upper tail of the observed site-wind distribution.
+
+```{r}
+#| label: inspect-hindcast-table
+val$hindcast$comparison
+```
+
+| Column | Description |
+|--------|-------------|
+| `location` | Target island. |
+| `return_period` | Return period in years. |
+| `obs_full_rl` | Observed return level from the full historical record (kt). |
+| `sim_rl` | Simulated return level from the hindcast experiment (kt). |
+| `obs_ci_lo` | Lower confidence bound for the observed return level. |
+| `obs_ci_hi` | Upper confidence bound for the observed return level. |
+| `obs_in_ci` | Whether the simulated estimate falls within the observed CI. |
+| `bias_pct` | Percentage bias, with positive values meaning model overprediction. |
+
+```{r}
+#| label: fig-hindcast
+#| echo: false
+#| fig-cap: "Hindcast validation: simulated vs observed return levels"
+plot_path <- val$artifacts$plots$hindcast_return_levels
+if (!is.null(plot_path) && file.exists(plot_path)) {
+  knitr::include_graphics(plot_path)
+}
+```
+
+```{r}
+#| label: fig-qq
+#| echo: false
+#| fig-cap: "QQ plot of simulated versus observed annual maxima"
+plot_path <- val$artifacts$plots$qq_annual_max
+if (!is.null(plot_path) && file.exists(plot_path)) {
+  knitr::include_graphics(plot_path)
+}
+```
+
+```{r}
+#| label: fig-exceedance
+#| echo: false
+#| fig-cap: "CDF comparison of simulated and observed annual maxima"
+plot_path <- val$artifacts$plots$exceedance_comparison
+if (!is.null(plot_path) && file.exists(plot_path)) {
+  knitr::include_graphics(plot_path)
+}
+```
+
+::: callout-note
+## Why the CI is on the observed curve
+The confidence intervals are placed around the observed return levels, not the simulated ones.
+That is deliberate: uncertainty from the short observational record usually dominates over fitting uncertainty once you have a large synthetic sample.
+:::
+
+::: callout-tip
+## Start with the QQ plot
+The QQ plot is usually the fastest way to see whether the model is over- or under-predicting at different intensity levels.
+If the upper-tail points sit above the 1:1 line, the model is producing winds that are too strong in the tail.
+:::
+
+## Tier 2 — Rate Sanity Check {#sec-tier2}
+
+Tier 2 compares the model's annual storm rates against published climatological rates from NHC/NOAA.
+This is a frequency check: are we getting the long-run number of tropical-storm and hurricane impacts at each site into the right range?
+
+There is an important subtlety here.
+The model counts point exceedance at a target location, while reference climatologies often count storms whose centres pass within some radius of the site.
+The validation accounts for that mismatch through an expected ratio before applying its final flags.
+
+```{r}
+#| label: inspect-rate-check
+val$rate_check
+```
+
+| Column | Description |
+|--------|-------------|
+| `lambda_model_raw` | Raw annual rate estimated by the model before any adjustment. |
+| `lambda_ref` | Published reference annual rate for that site and storm class. |
+| `lambda_adj` | Adjusted model rate used for the comparison. |
+| `adj_ratio` | Adjusted model-to-reference ratio after accounting for the expected methodological mismatch. |
+| `flag` | Interpretation flag for the comparison result. |
+
+```{r}
+#| label: fig-rate-comparison
+#| echo: false
+#| fig-cap: "Rate sanity check: model versus published annual storm rates"
+plot_path <- val$artifacts$plots$rate_comparison
+if (!is.null(plot_path) && file.exists(plot_path)) {
+  knitr::include_graphics(plot_path)
+}
+```
+
+::: callout-note
+## Rate-check flags
+`OK` means the adjusted ratio is within the expected range.
+`elevated` and `slightly_low` are mild discrepancies.
+`HIGH` and `LOW` indicate a stronger mismatch that deserves investigation.
+:::
+
+## Tier 3 — Wind Field Spot-Checks {#sec-tier3}
+
+Tier 3 compares modelled site winds for specific historical storms against observed station winds.
+This is the most direct physical check in the suite, because it asks whether the wind profile is producing plausible local winds for well-documented events.
+
+The observations are grouped into quality classes.
+Class `A` is a direct station observation with a ±15% tolerance, `B` is a converted observation with a ±25% tolerance, and `C` is a more approximate estimate with a ±35% tolerance.
+That lets the validation use stricter expectations for higher-quality observations.
+
+```{r}
+#| label: inspect-wind-field
+val$wind_field
+```
+
+| Column | Description |
+|--------|-------------|
+| `storm_name` | Historical storm name used in the spot-check. |
+| `location` | Target location for the comparison. |
+| `obs_1min_equiv_kt` | Observed wind converted to a 1-minute sustained equivalent (kt). |
+| `model_V_site_kt` | Modelled peak site wind (kt). |
+| `bias_kt` | Model minus observed wind (kt). |
+| `bias_pct` | Percentage bias. |
+| `obs_quality` | Observation quality class (`A`, `B`, or `C`). |
+| `bias_ok` | Whether the bias falls within the class-specific tolerance. |
+
+```{r}
+#| label: fig-wind-field
+#| echo: false
+#| fig-cap: "Wind field validation: modelled versus observed site winds"
+plot_path <- val$artifacts$plots$wind_field_scatter
+if (!is.null(plot_path) && file.exists(plot_path)) {
+  knitr::include_graphics(plot_path)
+}
+```
+
+```{r}
+#| label: fig-bias-decomposition
+#| echo: false
+#| fig-cap: "Bias decomposition into frequency and intensity contributions"
+plot_path <- val$artifacts$plots$bias_decomposition
+if (!is.null(plot_path) && file.exists(plot_path)) {
+  knitr::include_graphics(plot_path)
+}
+```
+
+::: callout-note
+## Wind field validation is the hardest tier
+Station observations are point measurements affected by terrain, exposure, and instrumentation.
+Biases of around ±20% are normal, so this tier is usually the hardest one to pass cleanly.
+:::
+
+## Interpreting Results and Next Steps {#sec-interpretation}
+
+Start with the QQ plots and the bias decomposition.
+The QQ plots tell you where the model starts to drift away from the observed distribution, while the bias decomposition helps you separate a frequency problem from an intensity problem.
+
+A frequency bias means the model is generating too many or too few storm impacts.
+That usually points you toward site filtering, event classification, or annual-rate calibration choices.
+An intensity bias means the storm counts may be reasonable, but the modelled site winds are too weak or too strong.
+That points more toward the wind-field parameterization and the way local wind magnitudes are being estimated.
+
+If a tier fails, do not assume the whole model is unusable.
+The more useful question is which part of the workflow is being stressed by that failure, and whether the bias matters for your application.
+
+::: callout-tip
+## One-step shortcut
+If you already know the workflow and want a single entry point, `validate_hazard_model()` runs the hazard model and the validation suite in one call.
+It is convenient for repeat runs, but the two-step approach in this tutorial is easier to inspect and troubleshoot.
+:::
+
+::: callout-tip
+## Targeted reruns
+If you need to focus on one diagnostic only, the package also provides the individual tier functions `validate_hindcast()`, `validate_rates()`, and `validate_wind_field()`.
+This tutorial keeps the full suite as the main workflow so you can see the whole validation picture in one place.
+:::
+
+## Saved Outputs {#sec-saved-outputs}
+
+When `save_plots = TRUE` and `save_tables = TRUE`, the validation suite writes a small report bundle to `output/validation/`.
+These files are useful if you want to share diagnostics, archive a run, or compare results across model versions.
+
+| File | Description |
+|------|-------------|
+| `hindcast_return_levels.png` | Return level comparison with confidence intervals. |
+| `rate_comparison.png` | Model versus published annual rate scatter. |
+| `wind_field_scatter.png` | Model versus observed wind scatter. |
+| `bias_decomposition.png` | Frequency versus intensity bias contributions. |
+| `qq_annual_max.png` | QQ plot of annual maxima. |
+| `exceedance_comparison.png` | CDF comparison of observed and simulated annual maxima. |
+| `hindcast_return_levels.csv` | Hindcast comparison table. |
+| `rate_check.csv` | Rate sanity check results. |
+| `wind_field.csv` | Wind field spot-check results. |
+| `validation_summary.csv` | Compact per-location validation summary. |
+
+This validation workflow gives you a defensible baseline check before moving on to climate sensitivity, scenario analysis, or downstream impact modelling.
+Once you are comfortable reading the tier outputs, you can use the same pattern on your own sites and longer model runs.

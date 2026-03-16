@@ -1,0 +1,95 @@
+Tropical Cyclone Hazard Model – One-Page Description
+
+Purpose
+This model estimates how often tropical storm– and hurricane-force winds affect specific Caribbean islands and 
+produces stochastic (simulated) annual event sequences that can be directly coupled to a system-dynamics (SD) 
+model of port, infrastructure, and supply-chain disruption. The model focuses on what each island actually 
+experiences, not just how strong a storm is at its center.
+
+Core Inputs
+
+1) Historical storm data (IBTrACS, North Atlantic)
+For each tropical cyclone at 6-hour intervals:
+- Storm ID, year, and timestamp
+- Storm center latitude and longitude
+- Maximum sustained wind at the storm center (knots)
+- Directional wind radii for 34, 50, and 64-knot winds (by NE/SE/SW/NW quadrant)
+- Storm forward speed
+
+2) Target locations (islands/sites)
+- Name, latitude, longitude for each island (e.g., Saba, Statia)
+
+3) Model configuration
+- Wind thresholds (34, 50, 64 kt)
+- Computational distance gate (e.g., 800 km)
+- Minimum analysis year (e.g., 1970)
+- Optional island-specific disruption thresholds (e.g., port or infrastructure shutdown winds)
+- Simulation length (e.g., 1000 synthetic years)
+
+Analytical Steps
+
+Step 1 – Data cleaning and preparation
+Storm tracks are cleaned and standardized. Wind radii and wind speeds are converted to numeric values, 
+implausible values are removed, and timestamps are parsed.
+
+Step 2 – Select storms that could affect each island
+For each island, storm track points farther than a large distance gate are discarded. This gate is purely 
+computational and does not define impact.
+
+Step 3 – Determine storm–island geometry
+For each retained track point:
+- Distance from storm center to island is computed.
+- Bearing from storm center to island is calculated.
+- Island is assigned to a storm quadrant (NE, SE, SW, NW).
+
+This allows selection of the correct directional wind radii, capturing storm asymmetry.
+
+Step 4 – Construct the wind field at the island
+Using storm center wind speed, distance to the island, and directional radii:
+- A physically consistent radial wind-decay profile is built (Holland-type formulation).
+- The radius of maximum winds (RMW) is estimated consistently.
+- A forward-motion asymmetry term adjusts winds depending on storm motion.
+
+Result: an estimated sustained wind speed at the island for every 6-hour storm position.
+
+Step 5 – Aggregate to storm-level events
+All 6-hour wind estimates for a given storm and island are aggregated into a single event:
+- Peak wind speed experienced at the island
+- Duration above 34, 50, and 64 kt
+- Whether tropical storm or hurricane conditions occurred
+- Optional flags for port or infrastructure disruption
+
+Each storm contributes one row per island.
+
+Step 6 – Define severity based on island impact
+Storms are classified by the maximum wind actually experienced at the island:
+- None (<34 kt)
+- Tropical Storm (34–63 kt)
+- Hurricane (≥64 kt)
+
+Step 7 – Compute annual event frequencies
+For each island, distinct storm events are counted per year by severity. Years with no events are included as zeros.
+
+Step 8 – Fit stochastic occurrence models
+Mean annual occurrence rates are estimated for each severity class. An optional over-dispersion factor captures active 
+versus quiet hurricane seasons.
+
+Step 9 – Monte Carlo simulation
+Using the fitted rates, the model simulates hundreds to thousands of synthetic years of storm occurrence for each island.
+
+Outputs
+
+Primary outputs:
+- Annual probability and frequency of tropical storm and hurricane impacts per island
+- Synthetic annual event sequences
+- Event-level indicators such as peak wind, exposure duration, and disruption flags
+
+Secondary outputs:
+- Time series of estimated island wind speeds
+- Storm-by-storm summaries of intensity and exposure
+
+Key Strengths
+- Impact-based: severity defined by local wind exposure
+- Physically grounded: directional radii, radial decay, and motion asymmetry
+- SD-ready: outputs are discrete events and annual rates
+- Scalable: suitable for small islands with limited historical samples
