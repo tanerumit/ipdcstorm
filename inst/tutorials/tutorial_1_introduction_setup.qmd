@@ -45,59 +45,35 @@ The model combines NOAA's historical storm database (IBTrACS) with stochastic si
 
 The modeling scheme consists of three workflows:
 
-```{mermaid}
-flowchart LR
-  subgraph S1[Step 1 Historical calibration]
-    direction TB
-    M1[Historical calibration]
-    A1[Track observed storms]
-    A2[Compute island wind fields]
-    A3[Estimate event rates]
-    O1[Calibrated storm inputs]
-    M1 --> A1 --> A2 --> A3 --> O1
-  end
-
-  subgraph S2[Step 2 Stochastic simulation]
-    direction TB
-    M2[Stochastic simulation]
-    B1[Draw season activity]
-    B2[Simulate storm counts]
-    B3[Apply climate shifts]
-    O2[Synthetic annual storm catalog]
-    M2 --> B1 --> B2 --> B3 --> O2
-  end
-
-  subgraph S3[Step 3 Temporal downscaling]
-    direction TB
-    M3[Temporal downscaling]
-    C1[Resample storm events]
-    C2[Draw within season timing]
-    C3[Build daily wind series]
-    O3[Daily wind forcing for impact models]
-    M3 --> C1 --> C2 --> C3 --> O3
-  end
-
-  O1 --> M2
-  O2 --> M3
-```
-
 1.  **Historical calibration**\
-    The first workflow extracts observed tropical cyclone tracks from the IBTrACS North Atlantic database and computes site-level wind speeds for each historical storm using a Holland (1980) parametric wind profile with forward-motion asymmetry.
-    The wind profile uses directional wind radii from IBTrACS (where available) and climatological fallbacks to estimate storm size at each target location.
-    From the resulting site-specific event catalog, the model estimates storm arrival rates by severity class (tropical storm vs. hurricane) and a Gamma overdispersion parameter that captures the year-to-year clustering of active and quiet seasons.
+    
+The first workflow extracts observed tropical cyclone tracks from the IBTrACS North Atlantic database and computes site-level wind speeds for each historical storm using a Holland (1980) parametric wind profile with forward-motion asymmetry.  
+    
+The wind profile uses directional wind radii from IBTrACS (where available) and climatological fallbacks to estimate storm size at each target location.  
+    
+From the resulting site-specific event catalog, the model estimates storm arrival rates by severity class (tropical storm vs. hurricane) and a Gamma overdispersion parameter that captures the year-to-year clustering of active and quiet seasons.
 
 2.  **Stochastic simulation**\
-    The simulation workflow takes the calibrated rates and overdispersion parameter to generate a long series of synthetic hurricane seasons.
-    Each simulated year draws a random activity factor from a Gamma distribution to reproduce the observed burstiness of seasons, then draws storm counts from a Poisson distribution conditional on that activity level.
-The total count is split into tropical storms and hurricanes via a binomial draw.
-    Climate change enters through two SST-driven mechanisms: a rate effect that scales overall annual activity, and an intensity effect that shifts the storm-class split toward a higher hurricane fraction under warming.
+    
+The simulation workflow takes the calibrated rates and overdispersion parameter to generate a long series of synthetic hurricane seasons.  
+  
+Each simulated year draws a random activity factor from a Gamma distribution to reproduce the observed burstiness of seasons, then draws storm counts from a Poisson distribution conditional on that activity level. 
+
+The total count is split into tropical storms and hurricanes via a binomial draw.  
+
+Climate change enters through two SST-driven mechanisms: a rate effect that scales overall annual activity, and an intensity effect that shifts the storm-class split toward a higher hurricane fraction under warming.
+
 An optional third level perturbs individual storm properties (peak intensity, size, translation speed) for scenario exploration.
 
 3.  **Temporal downscaling**\
-    The final workflow converts simulated annual storm counts into a daily wind series for each island. For each storm in a simulated year, a historical event is resampled — with its physical attributes — from a severity-stratified library built during calibration.
-    Arrival dates are drawn from empirical day-of-year distributions that preserve the observed seasonality (the August–October peak).Each event is spread over its duration using a smooth rise-and-fall wind envelope that peaks at the sampled storm intensity, and overlapping events are combined into a 365-day time series of daily wind speeds (kt).
-    The model also flags supply-chain disruption (port closure, infrastructure damage) by comparing daily winds against configurable thresholds.
-    Combining all simulated years yields a long stochastic daily wind record that serves as direct forcing input for the system dynamics model.on record that serves as direct forcing input for the system dynamics model of supply-chain vulnerability.
+    
+The final workflow converts simulated annual storm counts into a daily wind series for each island. For each storm in a simulated year, a historical event is resampled — with its physical attributes — from a severity-stratified library built during calibration.  
+    
+Arrival dates are drawn from empirical day-of-year distributions that preserve the observed seasonality (the August–October peak).Each event is spread over its duration using a smooth rise-and-fall wind envelope that peaks at the sampled storm intensity, and overlapping events are combined into a 365-day time series of daily wind speeds (kt).  
+    
+The model also flags supply-chain disruption (port closure, infrastructure damage) by comparing daily winds against configurable thresholds.  
+    
+Combining all simulated years yields a long stochastic daily wind record that serves as direct forcing input for the system dynamics model.
 
 ## Prerequisites {#sec-prerequisites}
 
@@ -420,10 +396,8 @@ daily |>
 
 ## Key Parameters — What to Tune and Why {#sec-tuning}
 
-**`simulation_years`: ** (simulation length). This sets how many synthetic years you generate. Use 200 for quick debugging, 1,000 as a solid default, and 5,000–10,000 when you need stable estimates for rare events (return periods above 100 years). More years reduce Monte Carlo noise but increase runtime.
+**`simulation_years`: ** (simulation length). This sets how many synthetic years you generate. More years reduce Monte Carlo noise but increase runtime.
 
-**`search_radius_km`: ** (track-point gate radius). This sets how far from the site a storm track point can be and still be considered. Large storms can produce tropical-storm winds at a site even when the center is several hundred kilometers away. The default 800 km is conservative and usually captures all relevant storms without pulling in clearly irrelevant ones.
+**`search_radius_km`: ** (track-point gate radius). This sets how far from the site a storm track point can be and still be considered. The default 800 km is conservative and usually captures all relevant storms without pulling in clearly irrelevant ones.
 
-**`damage`: ** (damage function shape). This named list controls how daily wind is converted into daily fractional damage. `list(method = "powerlaw")` starts producing damage above a wind threshold (default 34 kt) and increases damage rapidly as wind approaches a reference speed (default 80 kt), with defaults `d_ref = 0.03`, `p = 3`, and a cap `d_max = 0.10`. `list(method = "intensity")` uses a simpler normalized intensity curve and still caps damage at `dmax`, which can be easier to communicate and tune.
-
-**`gust_factor`: ** (sustained-to-gust conversion). The model outputs sustained wind, but many thresholds and impacts are framed in gusts. gust_factor multiplies sustained wind to estimate gust wind for comparisons and downstream rules. Typical values are 1.2–1.3 for open terrain, and up to 1.4 for complex terrain or urban exposure.
+**`gust_factor`: ** (sustained-to-gust conversion). The gust_factor multiplies sustained wind to estimate gust wind for comparisons and downstream rules. Typical values are 1.2–1.3 for open terrain, and up to 1.4 for complex terrain or urban exposure.

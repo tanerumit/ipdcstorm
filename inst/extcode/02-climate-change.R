@@ -67,9 +67,10 @@ out_baseline <- run_hazard_model(
 # 3) Climate scenario
 # =============================================================================
 
-# 1) Set hypothetical delta_sst directly
-delta_sst_value <- 0.1
+# 1) Set hypothetical delta_sst directly for the target year.
+delta_sst_value <- 1.5
 
+# 2) Make the climate configuration file
 climate_hyp <- make_climate_cfg(
   delta_sst = delta_sst_value,
   sensitivity_mode = "fixed")
@@ -87,7 +88,7 @@ out_scenario <- run_hazard_model(
   cfg = scenario_cfg,
   targets = targets,
   seed = seed,
-  verbose = FALSE)
+  verbose = TRUE)
 
 # =============================================================================
 # 5) Compare simulated annual activity across scenarios
@@ -133,51 +134,6 @@ print(
 )
 
 # =============================================================================
-# 7) Percentage change relative to baseline
-# =============================================================================
-
-change_585 <- sim_compare |>
-  group_by(scenario, location) |>
-  summarise(
-    mean_total = mean(n_total, na.rm = TRUE),
-    mean_hur = mean(n_hur, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  filter(scenario %in% c("Baseline", "SSP5-8.5"))
-
-baseline_change <- change_585 |>
-  filter(scenario == "Baseline") |>
-  transmute(
-    location,
-    mean_total_baseline = mean_total,
-    mean_hur_baseline = mean_hur
-  ) |>
-  arrange(location)
-
-ssp585_change <- change_585 |>
-  filter(scenario == "SSP5-8.5") |>
-  transmute(
-    location,
-    mean_total_585 = mean_total,
-    mean_hur_585 = mean_hur
-  ) |>
-  arrange(location)
-
-change_585 <- baseline_change |>
-  left_join(ssp585_change, by = "location") |>
-  mutate(
-    pct_total_585 = 100 * (mean_total_585 - mean_total_baseline) / mean_total_baseline,
-    pct_hur_585 = 100 * (mean_hur_585 - mean_hur_baseline) / mean_hur_baseline
-  ) |>
-  select(location, pct_total_585, pct_hur_585)
-
-cat("\n--- SSP5-8.5 change relative to baseline (%) ---\n")
-print(
-  change_585 |>
-    mutate(across(where(is.numeric), ~ round(.x, 1)))
-)
-
-# =============================================================================
 # 8) Daily hazard illustration for one island
 # =============================================================================
 
@@ -185,25 +141,27 @@ daily_baseline <- generate_daily_hazard_impact(
   out = out_baseline,
   location = "Saba",
   sim_years = 1:200,
-  year0 = min(future_period),
+  year0 = 2025,
   gust_factor = 1.25,
-  damage_method = "powerlaw",
+  damage = list(method = "intensity"),
+  pulse_shape = "cosine",
   scenario = "baseline",
   seed = seed
 )$Saba
 
-daily_585 <- generate_daily_hazard_impact(
-  out = out_585,
+daily_scenario <- generate_daily_hazard_impact(
+  out = out_scenario,
   location = "Saba",
   sim_years = 1:200,
-  year0 = min(future_period),
+  year0 = 2025,
   gust_factor = 1.25,
-  damage_method = "powerlaw",
-  scenario = "ssp585",
+  damage = list(method = "intensity"),
+  pulse_shape = "cosine",
+  scenario = "future",
   seed = seed
 )$Saba
 
-daily_compare <- bind_rows(daily_baseline, daily_585)
+daily_compare <- bind_rows(daily_baseline, daily_scenario)
 
 daily_summary <- daily_compare |>
   group_by(scenario) |>
@@ -237,3 +195,5 @@ p_activity <- activity_summary |>
   theme_light(base_size = 11)
 
 print(p_activity)
+
+

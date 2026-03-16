@@ -48,7 +48,8 @@ hazard_cfg <- make_hazard_cfg(
 hazard_out <- run_hazard_model(
   cfg = hazard_cfg,
   targets = targets,
-  seed = seed
+  seed = seed,
+  verbose = TRUE
 )
 
 # ------------------------------------------------------------------------------

@@ -736,7 +736,12 @@ run_hazard_model <- function(cfg, targets,
       )
     ))
     .cli_info(sprintf("Climate scenario  : %s", scenario_label))
-    if (is.finite(climate_info$target_year)) {
+    has_target_year <- !is.null(climate_info$target_year) &&
+      length(climate_info$target_year) == 1L &&
+      is.numeric(climate_info$target_year) &&
+      !is.na(climate_info$target_year) &&
+      is.finite(climate_info$target_year)
+    if (has_target_year) {
       .cli_info(sprintf("Target year       : %.1f", climate_info$target_year))
     }
     .cli_info(sprintf("SST baseline     : %d-%d", min(bl_range), max(bl_range)))
