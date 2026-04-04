@@ -2,6 +2,7 @@
 # Baseline hazard validation pipeline
 # ==============================================================================
 
+# %%
 library(ipdcstorm)
 library(dplyr)
 library(ggplot2)
@@ -10,23 +11,25 @@ library(ggplot2)
 # Paths and output folders
 # ------------------------------------------------------------------------------
 
-ibtracs_file_path     <- "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
-baseline_output_dir   <- "output/baseline"
+ibtracs_file_path <- "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
+baseline_output_dir <- "output/baseline"
 validation_output_dir <- "output/validation"
 
 seed <- 2026
+
+# %%
 
 # ------------------------------------------------------------------------------
 # Target locations
 # ------------------------------------------------------------------------------
 
 targets <- tibble::tribble(
-  ~name,          ~lat,     ~lon,
-  "St_Martin",    18.0708, -63.0501,
-  "Saba",         17.6350, -63.2300,
-  "Statia",       17.4890, -62.9740,
-  "Puerto_Rico",  18.2208, -66.5901,
-  "Miami",        25.7617, -80.1918
+  ~name         , ~lat    , ~lon     ,
+  "St_Martin"   , 18.0708 , -63.0501 ,
+  "Saba"        , 17.6350 , -63.2300 ,
+  "Statia"      , 17.4890 , -62.9740 ,
+  "Puerto_Rico" , 18.2208 , -66.5901 ,
+  "Miami"       , 25.7617 , -80.1918
 )
 
 # ------------------------------------------------------------------------------
@@ -89,7 +92,6 @@ daily_by_location <- generate_daily_hazard_impact(
   scenario = "stationary",
   seed = seed
 )
-
 
 # # ------------------------------------------------------------------------------
 # # Save per-location visualizations
