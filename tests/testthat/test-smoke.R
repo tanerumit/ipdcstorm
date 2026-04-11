@@ -82,3 +82,34 @@ test_that("run_hazard_model console output is structured and user-facing", {
   expect_false(grepl("data=", msg, fixed = TRUE))
   expect_true(is.list(out$run_metadata))
 })
+
+test_that("run_hazard_model is reproducible with a fixed seed", {
+  cfg <- make_hazard_cfg(simulation_years = 5L)
+  targets <- tibble::tibble(location = "Saba", lat = 17.63, lon = -63.23)
+
+  run1 <- suppressWarnings(run_hazard_model(cfg, targets, seed = 42L, verbose = FALSE))
+  run2 <- suppressWarnings(run_hazard_model(cfg, targets, seed = 42L, verbose = FALSE))
+
+  expect_identical(run1$sim$n_ts,  run2$sim$n_ts)
+  expect_identical(run1$sim$n_hur, run2$sim$n_hur)
+  expect_identical(run1$run_metadata$seed, 42L)
+})
+
+test_that("run_hazard_model seed flows into generate_daily_hazard_impact via run_metadata", {
+  cfg <- make_hazard_cfg(simulation_years = 3L)
+  targets <- tibble::tibble(location = "Saba", lat = 17.63, lon = -63.23)
+
+  out <- suppressWarnings(run_hazard_model(cfg, targets, seed = 55L, verbose = FALSE))
+
+  # NULL seed inherits from out$run_metadata$seed (55L)
+  daily_inherited <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:3
+  )
+  # Explicit seed = 55L must give identical results
+  daily_explicit <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:3, seed = 55L
+  )
+
+  expect_identical(daily_inherited$Saba$wind_kt,   daily_explicit$Saba$wind_kt)
+  expect_identical(daily_inherited$Saba$event_id,  daily_explicit$Saba$event_id)
+})

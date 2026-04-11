@@ -255,3 +255,88 @@ test_that("daily hazard generation rejects invalid damage specifications", {
     fixed = TRUE
   )
 })
+
+# =============================================================================
+# Reproducibility tests
+# =============================================================================
+
+test_that("generate_daily_hazard_impact is reproducible with an explicit seed", {
+  out <- downscale_out_fixture()
+
+  run1 <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:3, year0 = 2001L, seed = 42L
+  )
+  run2 <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:3, year0 = 2001L, seed = 42L
+  )
+
+  expect_identical(run1$Saba$wind_kt, run2$Saba$wind_kt)
+  expect_identical(run1$Saba$event_id, run2$Saba$event_id)
+  expect_identical(run1$Saba$damage_rate, run2$Saba$damage_rate)
+})
+
+test_that("generate_daily_hazard_impact produces different output for different seeds", {
+  out <- downscale_out_fixture()
+
+  run_a <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:5, year0 = 2001L, seed = 1L
+  )
+  run_b <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:5, year0 = 2001L, seed = 2L
+  )
+
+  # Wind series should differ (at least in some years) when seeds differ
+  expect_false(identical(run_a$Saba$wind_kt, run_b$Saba$wind_kt))
+})
+
+test_that("generate_daily_hazard_impact inherits seed from out$run_metadata", {
+  out <- downscale_out_fixture()
+
+  # Attach a seed in run_metadata, matching what run_hazard_model() stores
+  out$run_metadata <- list(seed = 77L)
+
+  run_inherited <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:3, year0 = 2001L
+    # seed = NULL (default) — should pick up out$run_metadata$seed
+  )
+  run_explicit <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:3, year0 = 2001L, seed = 77L
+  )
+
+  expect_identical(run_inherited$Saba$wind_kt, run_explicit$Saba$wind_kt)
+  expect_identical(run_inherited$Saba$event_id, run_explicit$Saba$event_id)
+})
+
+test_that("generate_daily_hazard_impact falls back to seed 1 when run_metadata is absent", {
+  out <- downscale_out_fixture()
+  # No run_metadata — should fall back to seed 1L
+
+  run_default <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:3, year0 = 2001L
+  )
+  run_seed1 <- generate_daily_hazard_impact(
+    out = out, location = "Saba", sim_years = 1:3, year0 = 2001L, seed = 1L
+  )
+
+  expect_identical(run_default$Saba$wind_kt, run_seed1$Saba$wind_kt)
+})
+
+test_that("generate_daily_hazard_impact rejects invalid seed values", {
+  out <- downscale_out_fixture()
+
+  expect_error(
+    generate_daily_hazard_impact(out, "Saba", seed = "abc"),
+    "seed must be NULL or a single finite numeric value.",
+    fixed = TRUE
+  )
+  expect_error(
+    generate_daily_hazard_impact(out, "Saba", seed = c(1L, 2L)),
+    "seed must be NULL or a single finite numeric value.",
+    fixed = TRUE
+  )
+  expect_error(
+    generate_daily_hazard_impact(out, "Saba", seed = Inf),
+    "seed must be NULL or a single finite numeric value.",
+    fixed = TRUE
+  )
+})

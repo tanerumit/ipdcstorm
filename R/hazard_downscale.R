@@ -1055,9 +1055,12 @@ generate_daily_year_extended <- function(year, sampled_events,
 #' @param scenario Optional character scalar scenario label copied into the
 #'   output rows without modification.
 #'
-#' @param seed Integer scalar random seed. The wrapper offsets this seed by
-#'   location index so repeated calls are deterministic but distinct across
-#'   requested locations.
+#' @param seed Optional integer scalar random seed. When \code{NULL} (the
+#'   default), the seed is inherited from \code{out$run_metadata$seed} if
+#'   available, and falls back to \code{1L} otherwise. Pass an explicit integer
+#'   to override and decouple from the hazard-model run. The wrapper offsets the
+#'   resolved seed by location index so repeated calls are deterministic but
+#'   distinct across requested locations.
 #'
 #' @return
 #' A named list of tibbles, one element per requested location. Each tibble
@@ -1138,8 +1141,17 @@ generate_daily_hazard_impact <- function(
     damage = list(method = "intensity"),
     pulse_shape = "cosine",
     scenario = NA_character_,
-    seed = 1) {
+    seed = NULL) {
   stopifnot(is.character(location), length(location) >= 1L)
+
+  if (is.null(seed)) {
+    seed <- if (!is.null(out$run_metadata$seed)) out$run_metadata$seed else 1L
+  }
+  if (!is.numeric(seed) || length(seed) != 1L || !is.finite(seed)) {
+    stop("seed must be NULL or a single finite numeric value.", call. = FALSE)
+  }
+  seed <- as.integer(seed)
+
   damage <- .validate_damage_spec(damage)
 
   # --- Run each location via the internal worker ---
@@ -1249,8 +1261,9 @@ generate_daily_hazard_impact <- function(
     scenario,
     seed) {
 
-  set.seed(seed)
-
+  # seed is forwarded to build_event_library_from_out(), which calls
+  # set.seed(seed) internally; sampling after library construction inherits
+  # that RNG state deterministically.
   method <- if (!is.null(out$cfg) && !is.null(out$cfg$resampling_method)) out$cfg$resampling_method else NULL
   if (is.null(method)) method <- "stratified"
   copula_min_n <- if (!is.null(out$cfg) && !is.null(out$cfg$copula_min_n)) out$cfg$copula_min_n else 30L
