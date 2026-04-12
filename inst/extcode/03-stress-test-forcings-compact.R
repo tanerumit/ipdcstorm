@@ -24,14 +24,15 @@
 #   for frequency-of-exceedance or return-period analysis.
 # =============================================================================
 
-# %%
-library(ipdcstorm)
-library(dplyr)
-library(ggplot2)
+
 
 # =============================================================================
 # 1) Global settings
 # =============================================================================
+
+library(ipdcstorm)
+library(dplyr)
+library(ggplot2)
 
 ibtracs_file_path     <- "inst/extdata/ibtracs/ibtracs.NA.list.v04r01.csv"
 baseline_output_dir   <- "output/baseline"
@@ -42,16 +43,8 @@ simulation_years <- 2000L
 year0            <- 2025L    # calendar year assigned to sim_year = 1
 
 # Reference storm for stress-test selection (Hurricane Irma, 2017).
-# Uses the IBTrACS native SID (YYYYDDDLLLBBB format), NOT the ATCF ID
-# ("AL112017"). Use lookup_storm_id(hazard_out, year = 2017, min_wind_kt = 50)
-# to verify or find SIDs for other storms.
-irma_sid <- "2017242N16333"
-
-# %%
-
-# =============================================================================
-# 2) Target locations
-# =============================================================================
+# IBTrACS SID; used for both track-based and impact-based queries below.
+irma_sid <- "AL112017"
 
 targets <- tibble::tribble(
   ~name         , ~lat    , ~lon     ,
@@ -65,7 +58,7 @@ targets <- tibble::tribble(
 # %%
 
 # =============================================================================
-# 3) Configure and run the hazard model
+# 2) Configure and run the hazard model
 # =============================================================================
 
 # Stationary baseline: no climate delta applied; all stochastic variability
@@ -82,8 +75,6 @@ hazard_cfg <- make_hazard_cfg(
   )
 )
 
-# seed is stored in hazard_out$run_metadata$seed and automatically inherited
-# by generate_daily_hazard_impact() when called without an explicit seed.
 hazard_out <- run_hazard_model(
   cfg     = hazard_cfg,
   targets = targets,
@@ -97,16 +88,9 @@ hazard_out <- run_hazard_model(
 # 4) Generate daily hazard-impact series
 # =============================================================================
 
-# Spatially coherent variant (Option 1 — shared event pool).
-#
-# Storms are drawn once at basin level per simulated year; each drawn storm is
-# assigned to every location whose event library contains it. This enforces
-# co-occurrence: if Irma (2017242N16333) is drawn in year 47, it appears at
-# Saba, St. Martin, and any other location with Irma in its library, each with
-# its own site-level wind profile.
-#
-# Drop-in replacement for generate_daily_hazard_impact(); output schema is
-# identical. Seed is inherited from hazard_out$run_metadata$seed automatically.
+# Produces a named list of tibbles (one per location) with daily wind, surge,
+# and damage columns across all simulation years.
+
 daily_out <- generate_daily_hazard_impact_spatial(
   out         = hazard_out,
   location    = targets$name,
@@ -116,15 +100,8 @@ daily_out <- generate_daily_hazard_impact_spatial(
   damage      = list(method = "intensity"),
   pulse_shape = "cosine",
   scenario    = "stationary"
-  # seed = NULL  ->  inherits hazard_out$run_metadata$seed automatically
+  #seed = NULL  ->  inherits hazard_out$run_metadata$seed automatically
 )
-
-# To switch back to independent (per-location) sampling, replace with:
-# daily_out <- generate_daily_hazard_impact(
-#   out = hazard_out, location = targets$name, sim_years = seq_len(simulation_years),
-#   year0 = year0, gust_factor = 1.3, damage = list(method = "intensity"),
-#   pulse_shape = "cosine", scenario = "stationary"
-# )
 
 # %%
 
@@ -140,10 +117,15 @@ daily_out <- generate_daily_hazard_impact_spatial(
 # "<SID>_y<year>_<counter>", so this query matches by SID prefix.
 # Results represent a subset of the ensemble with Irma's physical fingerprint.
 
-track_years <- query_storm_track_years(
-  daily    = daily_out,
-  storm_id = irma_sid    # "AL112017" — Hurricane Irma 2017
-)
+# Step 1: find the right SID
+lookup_storm_id(hazard_out, year = 2017, location = "Saba", min_wind_kt = 50)
+#> storm_id        start_time           peak_wind_kt
+#> 2017242N16333   2017-09-05 12:00:00  63.6
+
+# Step 2: use it
+track_years <- query_storm_track_years(daily_out, storm_id = "2017242N16333")
+
+
 
 # How many times was Irma's track resampled at each location?
 track_freq <- track_years |>

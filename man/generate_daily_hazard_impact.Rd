@@ -13,7 +13,7 @@ generate_daily_hazard_impact(
   damage = list(method = "intensity"),
   pulse_shape = "cosine",
   scenario = NA_character_,
-  seed = 1
+  seed = NULL
 )
 }
 \arguments{
@@ -61,9 +61,12 @@ damage-rate formula.}
 \item{scenario}{Optional character scalar scenario label copied into the
 output rows without modification.}
 
-\item{seed}{Integer scalar random seed. The wrapper offsets this seed by
-location index so repeated calls are deterministic but distinct across
-requested locations.}
+\item{seed}{Optional integer scalar random seed. When \code{NULL} (the
+default), the seed is inherited from \code{out$run_metadata$seed} if
+available, and falls back to \code{1L} otherwise. Pass an explicit integer
+to override and decouple from the hazard-model run. The wrapper offsets the
+resolved seed by location index so repeated calls are deterministic but
+distinct across requested locations.}
 }
 \value{
 A named list of tibbles, one element per requested location. Each tibble

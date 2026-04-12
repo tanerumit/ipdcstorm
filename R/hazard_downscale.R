@@ -3,7 +3,7 @@
 # - Event classification helpers.
 # - Event-library construction and resampling.
 # - Daily event-to-time-series conversion.
-# - Daily hazard-impact generation.
+# - Daily hazard-impact generation (independent and spatially coherent).
 # - Damage forcing helpers.
 # =============================================================================
 
@@ -1382,6 +1382,493 @@ generate_daily_hazard_impact <- function(
     dplyr::relocate("location", "sim_year", "scenario", "date")
   attr(result, "gust_factor") <- gust_factor
   result
+}
+
+
+# =============================================================================
+# 5b) Spatially coherent daily hazard-impact generation (shared event pool)
+# =============================================================================
+
+#' Build a shared event pool from multiple location event libraries
+#'
+#' @description
+#' Unions all events from a named list of location event libraries, keeping one
+#' row per SID (the row with the highest site-level peak wind across all
+#' locations). Only \code{"TS"} and \code{"HUR"} class events are retained.
+#'
+#' @param libs Named list of event libraries as returned by
+#'   \code{build_event_library_from_out()}, one element per location.
+#' @return Tibble with one row per unique SID and a \code{storm_class} column
+#'   alongside any shared event attributes carried from the library tables.
+#' @keywords internal
+.build_shared_event_pool <- function(libs) {
+
+  .get_sid_col <- function(ev) {
+    if ("SID" %in% names(ev)) return(ev$SID)
+    if ("storm_id" %in% names(ev)) return(ev$storm_id)
+    rep(NA_character_, nrow(ev))
+  }
+
+  .get_vpk <- function(ev) {
+    if ("V_site_max_kt" %in% names(ev)) return(as.numeric(ev$V_site_max_kt))
+    if ("peak_wind_kt"  %in% names(ev)) return(as.numeric(ev$peak_wind_kt))
+    if ("wind_max_kt"   %in% names(ev)) return(as.numeric(ev$wind_max_kt))
+    rep(NA_real_, nrow(ev))
+  }
+
+  parts <- lapply(libs, function(lib) {
+    ev <- lib$events
+    if (is.null(ev) || nrow(ev) == 0L) return(NULL)
+    ev <- dplyr::as_tibble(ev)
+    ev$pool_SID <- .get_sid_col(ev)
+    ev$vpk      <- .get_vpk(ev)
+    ev <- ev[!is.na(ev$pool_SID), ]
+    # Drop the original SID/storm_id columns now so that rename(SID = pool_SID)
+    # does not fail after bind_rows when those columns are already present.
+    ev[, setdiff(names(ev), c("SID", "storm_id")), drop = FALSE]
+  })
+  parts <- Filter(Negate(is.null), parts)
+  if (length(parts) == 0L)
+    return(tibble::tibble(SID = character(), storm_class = character()))
+
+  all_ev <- dplyr::bind_rows(parts)
+
+  # Derive storm_class if absent
+  if (!"storm_class" %in% names(all_ev)) {
+    all_ev$storm_class <- dplyr::case_when(
+      is.finite(all_ev$vpk) & all_ev$vpk >= 64 ~ "HUR",
+      is.finite(all_ev$vpk) & all_ev$vpk >= 34 ~ "TS",
+      TRUE ~ NA_character_
+    )
+  }
+  all_ev <- all_ev[all_ev$storm_class %in% c("TS", "HUR"), ]
+  if (nrow(all_ev) == 0L)
+    return(tibble::tibble(SID = character(), storm_class = character()))
+
+  # One row per SID — highest site-level peak wind
+  all_ev |>
+    dplyr::group_by(.data$pool_SID, .data$storm_class) |>
+    dplyr::slice_max(order_by = .data$vpk, n = 1L, with_ties = FALSE) |>
+    dplyr::ungroup() |>
+    dplyr::rename(SID = "pool_SID")
+}
+
+
+#' Sample SIDs from the shared event pool
+#'
+#' @param pool Tibble from \code{.build_shared_event_pool()}.
+#' @param storm_class Character scalar; one of \code{"TS"} or \code{"HUR"}.
+#' @param n Integer scalar number of SIDs to draw (with replacement).
+#' @return Character vector of length \code{n}, or \code{character(0)} when
+#'   \code{n == 0} or the class sub-pool is empty.
+#' @keywords internal
+.sample_shared_sids <- function(pool, storm_class, n) {
+  if (n == 0L || nrow(pool) == 0L) return(character(0))
+  sub <- pool[pool$storm_class == storm_class, , drop = FALSE]
+  if (nrow(sub) == 0L) return(character(0))
+  sample(sub$SID, size = n, replace = TRUE)
+}
+
+
+#' Zero-row sampled-events tibble
+#'
+#' @description
+#' Returns a zero-row tibble with the schema expected by
+#' \code{generate_daily_year_extended()}.
+#'
+#' @return Zero-row tibble.
+#' @keywords internal
+.empty_sampled_events_tbl <- function() {
+  tibble::tibble(
+    severity    = character(0),
+    start_date  = as.Date(character(0)),
+    dur_days    = integer(0),
+    V_peak      = numeric(0),
+    event_id    = character(0),
+    event_class = character(0),
+    Pc_min_hPa  = numeric(0),
+    dP_max_hPa  = numeric(0),
+    RMW_mean_km = numeric(0)
+  )
+}
+
+
+#' Build event rows from shared SIDs using a location-specific library
+#'
+#' @description
+#' For each SID in \code{sids} that exists in \code{lib$events}, constructs one
+#' event row in the schema produced by \code{sample_events_for_year_extended()}.
+#' SIDs absent from the location library are silently skipped, so the number of
+#' rows returned may be less than \code{length(sids)}.
+#'
+#' @param lib Event library from \code{build_event_library_from_out()}.
+#' @param sids Character vector of SIDs to look up.
+#' @param sev Character scalar severity; one of \code{"TS"} or \code{"HUR"}.
+#' @param year Integer scalar calendar year for date construction and
+#'   \code{event_id} encoding.
+#' @param counter_start Integer scalar starting value for the within-year event
+#'   counter (used to produce unique \code{event_id} values across TS and HUR
+#'   draws for the same year and location).
+#' @return Named list with elements:
+#'   \describe{
+#'     \item{\code{rows}}{Tibble of event rows (zero or more).}
+#'     \item{\code{n_filled}}{Integer count of rows produced.}
+#'     \item{\code{counter}}{Updated event counter.}
+#'   }
+#' @keywords internal
+.build_event_rows_from_sids <- function(lib, sids, sev, year, counter_start) {
+  year    <- as.integer(year)
+  counter <- as.integer(counter_start)
+
+  if (length(sids) == 0L || is.null(lib$events) || nrow(lib$events) == 0L)
+    return(list(rows = .empty_sampled_events_tbl(), n_filled = 0L, counter = counter))
+
+  ev <- dplyr::as_tibble(lib$events)
+  if ("SID" %in% names(ev)) {
+    ev$.sid <- ev$SID
+  } else if ("storm_id" %in% names(ev)) {
+    ev$.sid <- ev$storm_id
+  } else {
+    return(list(rows = .empty_sampled_events_tbl(), n_filled = 0L, counter = counter))
+  }
+
+  # Local helpers — mirrors internals of sample_events_for_year_extended()
+  get_dur_days <- function(row) {
+    if ("dur_days" %in% names(row) && is.finite(row$dur_days[1]) && row$dur_days[1] > 0)
+      return(as.integer(row$dur_days[1]))
+    if (all(c("start_time", "end_time") %in% names(row)) &&
+        !is.na(row$start_time[1]) && !is.na(row$end_time[1])) {
+      d <- as.numeric(difftime(row$end_time[1], row$start_time[1], units = "days"))
+      return(max(1L, as.integer(floor(d) + 1L)))
+    }
+    if ("n_points" %in% names(row) && is.finite(row$n_points[1]) && row$n_points[1] > 0)
+      return(max(1L, as.integer(ceiling(row$n_points[1] / 4))))
+    1L
+  }
+
+  get_V_peak <- function(row, sev) {
+    v <- NA_real_
+    if ("V_site_max_kt" %in% names(row)) v <- as.numeric(row$V_site_max_kt[1])
+    if (!is.finite(v) && "wind_max_kt" %in% names(row))  v <- as.numeric(row$wind_max_kt[1])
+    if (!is.finite(v) && "peak_wind_kt" %in% names(row)) v <- as.numeric(row$peak_wind_kt[1])
+    if (!is.finite(v) || v <= 0) v <- if (sev == "HUR") 80 else 40
+    v
+  }
+
+  safe_num <- function(row, col) {
+    if (col %in% names(row)) {
+      val <- as.numeric(row[[col]][1])
+      if (is.finite(val)) return(val)
+    }
+    NA_real_
+  }
+
+  get_doy <- function(row) {
+    if ("doy" %in% names(row) && is.finite(row$doy[1]) &&
+        row$doy[1] >= 1 && row$doy[1] <= 366)
+      return(as.integer(row$doy[1]))
+    if ("start_time" %in% names(row) && !is.na(row$start_time[1]))
+      return(as.integer(format(as.Date(row$start_time[1]), "%j")))
+    220L  # tropical-season centre fallback
+  }
+
+  row_list <- vector("list", length(sids))
+  n_filled <- 0L
+
+  for (k in seq_along(sids)) {
+    sid  <- sids[k]
+    midx <- which(ev$.sid == sid)
+    if (length(midx) == 0L) next  # SID not in this location's library
+
+    # Multiple library rows for the same SID: pick the one with highest V_peak
+    if (length(midx) > 1L) {
+      vpk  <- vapply(midx, function(i) get_V_peak(ev[i, ], sev), numeric(1L))
+      midx <- midx[which.max(vpk)]
+    }
+
+    row        <- ev[midx, , drop = FALSE]
+    doy0       <- get_doy(row)
+    start_date <- as.Date(sprintf("%d-01-01", year)) + (doy0 - 1L)
+    dur_days   <- get_dur_days(row)
+    V_peak     <- get_V_peak(row, sev)
+
+    counter    <- counter + 1L
+    eid        <- paste0(sid, "_y", year, "_", counter)
+
+    row_list[[k]] <- tibble::tibble(
+      severity    = sev,
+      start_date  = start_date,
+      dur_days    = as.integer(dur_days),
+      V_peak      = as.numeric(V_peak),
+      event_id    = eid,
+      event_class = if (sev == "HUR") "HUR" else "TS",
+      Pc_min_hPa  = dplyr::coalesce(
+        safe_num(row, "min_pressure_hpa"), safe_num(row, "Pc_min_hPa")),
+      dP_max_hPa  = dplyr::coalesce(
+        safe_num(row, "pressure_deficit_hpa"), safe_num(row, "dP_max_hPa")),
+      RMW_mean_km = dplyr::coalesce(
+        safe_num(row, "rmw_mean_km"), safe_num(row, "RMW_mean_km"))
+    )
+    n_filled <- n_filled + 1L
+  }
+
+  rows <- dplyr::bind_rows(Filter(Negate(is.null), row_list))
+  if (nrow(rows) == 0L) rows <- .empty_sampled_events_tbl()
+  list(rows = rows, n_filled = n_filled, counter = counter)
+}
+
+
+#' Generate spatially coherent daily synthetic hazard and impact time series
+#'
+#' @description
+#' Drop-in replacement for \code{\link{generate_daily_hazard_impact}()} that
+#' enforces spatial coherence across locations by sampling storms once at the
+#' basin level per simulated year and assigning each drawn storm to every
+#' location whose event library contains it (Option 1 — shared event pool).
+#'
+#' The key difference from the independent-sampling baseline is that the
+#' annual storm draw happens \emph{before} the location loop rather than
+#' inside it. Consequently, if Hurricane Irma (\code{"2017242N16333"}) is
+#' drawn in simulated year 47, it will appear simultaneously at every location
+#' that has an Irma entry in its event library (e.g. both St. Martin and Saba),
+#' each retaining its own site-level wind profile, duration, and pressure
+#' attributes. Storms whose tracks never came within the search radius of a
+#' location are absent from that location's library and are therefore skipped
+#' silently for that location, so per-location event counts may be lower than
+#' the basin-level draw.
+#'
+#' Basin-level annual counts are resolved as \code{max(n_ts)} and
+#' \code{max(n_hur)} across all requested locations for each simulation year,
+#' using the counts already present in \code{out$sim}.
+#'
+#' All downstream processing (climate perturbation, pulse generation, damage
+#' forcing) is identical to the independent-sampling variant.
+#'
+#' @param out List returned by \code{run_hazard_model()}.
+#' @param location Character vector of one or more target location names.
+#' @param sim_years Integer vector of simulation-year indices to generate.
+#' @param year0 Integer scalar base calendar year for \code{sim_year == 1}.
+#' @param gust_factor Numeric scalar gust multiplier applied to \code{wind_kt}.
+#' @param damage Named list defining the daily damage model; same specification
+#'   as \code{\link{generate_daily_hazard_impact}()}.
+#' @param pulse_shape Character scalar pulse shape; \code{"cosine"} or
+#'   \code{"triangle"}.
+#' @param scenario Optional character scalar scenario label carried into output.
+#' @param seed Optional integer scalar seed. Defaults to
+#'   \code{out$run_metadata$seed} or \code{1L}. Per-location library seeds are
+#'   offset by location index for reproducibility.
+#'
+#' @return Named list of tibbles — one per requested location — with the same
+#'   column schema as \code{\link{generate_daily_hazard_impact}()}.
+#'
+#' @seealso
+#' \code{\link{generate_daily_hazard_impact}},
+#' \code{\link{build_event_library_from_out}},
+#' \code{\link{generate_daily_year_extended}}
+#'
+#' @examples
+#' \dontrun{
+#' daily_spatial <- generate_daily_hazard_impact_spatial(
+#'   out         = hazard_out,
+#'   location    = c("Saba", "St_Martin", "Statia"),
+#'   sim_years   = 1:2000,
+#'   year0       = 2025,
+#'   gust_factor = 1.3,
+#'   damage      = list(method = "intensity"),
+#'   pulse_shape = "cosine",
+#'   scenario    = "stationary"
+#' )
+#' # Verify spatial coherence: Irma should appear in the same sim_years
+#' # at every location that has Irma in its event library.
+#' lapply(daily_spatial, function(loc_tbl) {
+#'   loc_tbl |>
+#'     dplyr::filter(grepl("^2017242N16333", event_id)) |>
+#'     dplyr::distinct(sim_year) |>
+#'     dplyr::pull(sim_year)
+#' })
+#' }
+#' @export
+generate_daily_hazard_impact_spatial <- function(
+    out,
+    location,
+    sim_years   = 1:1000,
+    year0       = 2000,
+    gust_factor = 1,
+    damage      = list(method = "intensity"),
+    pulse_shape = "cosine",
+    scenario    = NA_character_,
+    seed        = NULL) {
+
+  stopifnot(is.character(location), length(location) >= 1L)
+
+  if (is.null(seed)) {
+    seed <- if (!is.null(out$run_metadata$seed)) out$run_metadata$seed else 1L
+  }
+  if (!is.numeric(seed) || length(seed) != 1L || !is.finite(seed)) {
+    stop("seed must be NULL or a single finite numeric value.", call. = FALSE)
+  }
+  seed <- as.integer(seed)
+
+  damage <- .validate_damage_spec(damage)
+
+  # ---- Build all location event libraries ------------------------------------
+  method <- if (!is.null(out$cfg) && !is.null(out$cfg$resampling_method))
+    out$cfg$resampling_method else "stratified"
+  copula_min_n        <- if (!is.null(out$cfg$copula_min_n))        out$cfg$copula_min_n        else 30L
+  copula_k            <- if (!is.null(out$cfg$copula_k))            out$cfg$copula_k            else 1L
+  copula_robust_scale <- if (!is.null(out$cfg$copula_robust_scale)) out$cfg$copula_robust_scale else TRUE
+
+  libs <- stats::setNames(vector("list", length(location)), location)
+  for (i in seq_along(location)) {
+    libs[[location[i]]] <- build_event_library_from_out(
+      out,
+      location            = location[i],
+      seed                = seed + i - 1L,
+      resampling_method   = method,
+      copula_min_n        = copula_min_n,
+      copula_k            = copula_k,
+      copula_robust_scale = copula_robust_scale
+    )
+  }
+
+  # ---- Build shared basin-level event pool -----------------------------------
+  set.seed(seed)
+  pool <- .build_shared_event_pool(libs)
+
+  # ---- Validate and cache per-location sim tables ----------------------------
+  if (is.null(out$sim)) stop("out$sim is NULL.", call. = FALSE)
+
+  sim_by_loc <- stats::setNames(vector("list", length(location)), location)
+  for (loc in location) {
+    s <- out$sim |>
+      dplyr::filter(.data$location == loc, .data$sim_year %in% sim_years)
+    if (nrow(s) == 0L)
+      stop("No sim years found for location '", loc, "' in out$sim.", call. = FALSE)
+    sim_by_loc[[loc]] <- s
+  }
+
+  # Climate perturbation settings (forwarded unchanged from the independent variant)
+  delta_sst       <- if (!is.null(out$fit)) attr(out$fit, "delta_sst") else NULL
+  perturb_cfg     <- if (!is.null(out$fit)) attr(out$fit, "perturb")   else NULL
+  perturb_enabled <- !is.null(perturb_cfg)
+
+  # ---- Pre-allocate output storage -------------------------------------------
+  results <- stats::setNames(
+    lapply(location, function(loc) vector("list", length(sim_years))),
+    location
+  )
+
+  # ---- Main loop: year first, then location -----------------------------------
+  for (yr_idx in seq_along(sim_years)) {
+    sim_yr <- sim_years[yr_idx]
+    cal_yr <- as.integer(year0) + (sim_yr - 1L)
+
+    # Basin-level counts: max across locations for this sim_year
+    n_ts_vec <- vapply(location, function(loc) {
+      s <- sim_by_loc[[loc]]
+      r <- s[s$sim_year == sim_yr, ]
+      if (nrow(r) == 0L) return(0L)
+      as.integer(r$n_ts[1L])
+    }, integer(1L))
+
+    n_hur_vec <- vapply(location, function(loc) {
+      s <- sim_by_loc[[loc]]
+      r <- s[s$sim_year == sim_yr, ]
+      if (nrow(r) == 0L) return(0L)
+      as.integer(r$n_hur[1L])
+    }, integer(1L))
+
+    n_ts_basin  <- max(n_ts_vec,  0L)
+    n_hur_basin <- max(n_hur_vec, 0L)
+
+    # Draw shared SIDs once at basin level
+    shared_ts_sids  <- .sample_shared_sids(pool, "TS",  n_ts_basin)
+    shared_hur_sids <- .sample_shared_sids(pool, "HUR", n_hur_basin)
+
+    # ---- Per-location: resolve shared SIDs and generate daily series ---------
+    for (loc in location) {
+      lib <- libs[[loc]]
+
+      ts_res  <- .build_event_rows_from_sids(lib, shared_ts_sids,  "TS",  cal_yr, 0L)
+      hur_res <- .build_event_rows_from_sids(lib, shared_hur_sids, "HUR", cal_yr, ts_res$counter)
+      sampled <- dplyr::bind_rows(ts_res$rows, hur_res$rows)
+
+      # Apply climate perturbation when enabled
+      if (perturb_enabled && nrow(sampled) > 0L) {
+        if (!is.numeric(delta_sst) || length(delta_sst) != 1L || !is.finite(delta_sst))
+          stop("delta_sst must be a single finite numeric value for perturb_event().", call. = FALSE)
+        sampled <- perturb_event(sampled, delta_sst = delta_sst, cc_params = perturb_cfg)
+      }
+
+      daily0 <- generate_daily_year_extended(
+        year           = cal_yr,
+        sampled_events = sampled,
+        pulse_shape    = pulse_shape
+      ) |>
+        dplyr::mutate(sim_year = sim_yr, location = loc, scenario = scenario)
+
+      # Damage intensity index
+      intensity_pars <- if (identical(damage$method, "intensity")) {
+        damage[c("V0", "V1", "p")]
+      } else {
+        list(V0 = 34, V1 = 120, p = damage$p)
+      }
+      daily0 <- daily0 |>
+        dplyr::mutate(
+          damage_intensity = pmax(
+            0,
+            pmin(1, (.data$wind_kt - intensity_pars$V0) /
+                      (intensity_pars$V1 - intensity_pars$V0))
+          )^intensity_pars$p
+        )
+
+      # Damage rate and cumulative damage
+      if (damage$method == "intensity") {
+        daily1 <- do.call(
+          add_damage_forcing,
+          c(list(daily = daily0), damage[c("V0", "V1", "p", "dmax")])
+        )
+        daily1 <- daily1 |>
+          dplyr::mutate(cum_damage = cumsum(dplyr::coalesce(.data$damage_rate, 0)))
+      } else {
+        daily1 <- daily0 |>
+          dplyr::mutate(
+            damage_rate = do.call(
+              damage_rate_from_wind,
+              c(list(wind_kt = .data$wind_kt), damage[c("thr", "V_ref", "d_ref", "p", "d_max")])
+            ),
+            cum_damage = cumsum(dplyr::coalesce(.data$damage_rate, 0))
+          )
+      }
+
+      results[[loc]][[yr_idx]] <- daily1
+    }
+  }
+
+  # ---- Assemble and return final output --------------------------------------
+  for (loc in location) {
+    tbl <- dplyr::bind_rows(results[[loc]]) |>
+      dplyr::mutate(
+        wind_gust_kt = .data$wind_kt * gust_factor,
+        surge_m      = ifelse(
+          is.finite(.data$pressure_hpa),
+          0.14 * (1013 - .data$pressure_hpa),
+          NA_real_
+        )
+      ) |>
+      dplyr::select(
+        "location", "sim_year", "scenario", "date",
+        "wind_kt", "wind_gust_kt", "surge_m",
+        "event_id", "event_class", "pressure_hpa",
+        "pressure_deficit_hpa", "rmw_km",
+        "damage_intensity", "damage_rate", "cum_damage"
+      ) |>
+      dplyr::relocate("location", "sim_year", "scenario", "date")
+    attr(tbl, "gust_factor") <- gust_factor
+    results[[loc]] <- tbl
+  }
+
+  results
 }
 
 
