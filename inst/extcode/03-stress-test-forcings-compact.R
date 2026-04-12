@@ -44,7 +44,7 @@ year0            <- 2025L    # calendar year assigned to sim_year = 1
 
 # Reference storm for stress-test selection (Hurricane Irma, 2017).
 # IBTrACS SID; used for both track-based and impact-based queries below.
-irma_sid <- "AL112017"
+irma_sid <- "2017242N16333"
 
 targets <- tibble::tribble(
   ~name         , ~lat    , ~lon     ,
@@ -123,7 +123,7 @@ lookup_storm_id(hazard_out, year = 2017, location = "Saba", min_wind_kt = 50)
 #> 2017242N16333   2017-09-05 12:00:00  63.6
 
 # Step 2: use it
-track_years <- query_storm_track_years(daily_out, storm_id = "2017242N16333")
+track_years <- query_storm_track_years(daily_out, storm_id = irma_sid)
 
 
 
@@ -179,7 +179,8 @@ impact_years_wind <- query_impact_years(
   daily    = daily_out,
   storm_id = irma_sid,
   out      = hazard_out,
-  metric   = "peak_wind_kt"
+  metric   = "peak_wind_kt",
+  percentile = 0.95
 )
 
 wind_freq <- impact_years_wind |>
@@ -197,7 +198,8 @@ impact_years_damage <- query_impact_years(
   daily    = daily_out,
   storm_id = irma_sid,
   out      = hazard_out,
-  metric   = "cum_damage"
+  metric   = "cum_damage",
+  percentile = 0.95
 )
 
 damage_freq <- impact_years_damage |>

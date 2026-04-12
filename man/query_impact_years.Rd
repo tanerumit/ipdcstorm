@@ -10,7 +10,9 @@ query_impact_years(
   out = NULL,
   location = NULL,
   metric = c("peak_wind_kt", "cum_damage", "max_damage_rate"),
-  threshold = NULL
+  threshold = NULL,
+  percentile = NULL,
+  min_threshold = NULL
 )
 }
 \arguments{
@@ -39,7 +41,23 @@ value of the \code{cum_damage} column).}
 \item{threshold}{Optional numeric scalar or named numeric vector. When a
 scalar is supplied it is applied to all locations. When a named vector is
 supplied the names must match the queried locations. Overrides automatic
-threshold derivation.}
+storm-based threshold derivation; used as the lower bound when
+\code{percentile} is also specified.}
+
+\item{percentile}{Optional numeric scalar in \code{(0, 1)}. When supplied,
+the empirical \code{percentile} of the annual metric distribution is
+computed per location and used as an additional selection gate. The
+effective threshold becomes
+\code{max(ref_threshold, percentile_threshold)}, so only years that clear
+\emph{both} the reference-storm level and the distributional percentile
+are returned. For example \code{percentile = 0.95} retains at most the top
+5 \\% of years. Default \code{NULL} disables the percentile gate.}
+
+\item{min_threshold}{Optional numeric scalar applied as an absolute floor on
+the effective threshold after all other computations. Useful for ensuring a
+minimum physical severity level regardless of the reference storm or
+percentile gate (e.g. \code{min_threshold = 64} for \code{metric =
+  "peak_wind_kt"} to require at least Cat-1 strength). Default \code{NULL}.}
 }
 \value{
 Tibble with columns:
@@ -48,7 +66,9 @@ Tibble with columns:
 \item{\code{sim_year}}{Simulation year index.}
 \item{\code{annual_metric}}{Annual metric value for that year (column
 name matches the chosen \code{metric}).}
-\item{\code{threshold}}{The threshold applied for that location.}
+\item{\code{threshold}}{The effective threshold applied for that location,
+reflecting the combined result of storm-based, percentile, and
+\code{min_threshold} logic.}
 }
 Rows are sorted by \code{location} then \code{sim_year}.
 }
@@ -79,6 +99,25 @@ impact_years <- query_impact_years(
   metric   = "peak_wind_kt"
 )
 impact_years
+
+# Hybrid: Irma wind as lower bound, 95th-percentile as selection gate
+query_impact_years(
+  daily      = daily_out,
+  storm_id   = "2017242N16333",
+  out        = out,
+  metric     = "peak_wind_kt",
+  percentile = 0.95
+)
+
+# Hybrid with explicit Cat-2 floor (83 kt) regardless of Irma's site wind
+query_impact_years(
+  daily         = daily_out,
+  storm_id      = "2017242N16333",
+  out           = out,
+  metric        = "peak_wind_kt",
+  percentile    = 0.95,
+  min_threshold = 83
+)
 
 # Cumulative damage at least as large as Irma's, with explicit threshold
 query_impact_years(

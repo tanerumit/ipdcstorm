@@ -185,19 +185,39 @@ daily_irma_track_saba <- daily_out$Saba |>
 #   cum_damage      total cumulative damage fraction over the year
 #   max_damage_rate worst single-day damage rate
 #
-# Threshold derivation when threshold = NULL:
-#   peak_wind_kt  -> read from hazard_out$events (historical site-level record)
-#   damage metrics -> median metric across the track-based years in daily_out
+# Threshold derivation (hybrid):
+#   ref_threshold   -> Irma's site wind from hazard_out$events (peak_wind_kt)
+#                      or median metric across track-based years (damage metrics)
+#   percentile gate -> empirical quantile of annual metric distribution
+#   effective       -> max(ref_threshold, percentile_threshold)
+#   min_threshold   -> optional absolute floor applied after the above
+#
+# Tune `percentile_gate` and `wind_floor_kt` in the parameters block below.
+
+# --- Selection parameters (adjust to control stress-year frequency) ----------
+
+# percentile_gate:  selection gate on the annual-metric distribution.
+#   0.95 -> top 5% of years (~100 out of 2000); 0.90 -> top 10% (~200 / 2000).
+#   Combined with the storm-based lower bound via max(), so both must be cleared.
+percentile_gate <- 0.95
+
+# wind_floor_kt: absolute lower bound on the peak-wind threshold.
+#   NULL -> no floor (percentile gate + Irma's site wind determine threshold).
+#   Set to e.g. 64 (Cat-1) or 83 (Cat-2) to enforce a physical minimum.
+wind_floor_kt <- NULL
 
 # --- 6a) Peak-wind exceedance ---
 
-# Threshold is read directly from hazard_out$events for Irma at each
-# location; falls back to the simulation median if Irma never reached a site.
+# Effective threshold per location = max(Irma's historical site wind,
+#   percentile_gate quantile of annual peak wind).  wind_floor_kt is applied
+#   afterwards as an absolute floor.
 impact_years_wind <- query_impact_years(
-  daily    = daily_out,
-  storm_id = irma_sid,
-  out      = hazard_out,
-  metric   = "peak_wind_kt"
+  daily         = daily_out,
+  storm_id      = irma_sid,
+  out           = hazard_out,
+  metric        = "peak_wind_kt",
+  percentile    = percentile_gate,
+  min_threshold = wind_floor_kt
 )
 
 wind_freq <- impact_years_wind |>
@@ -209,13 +229,13 @@ print(wind_freq)
 
 # --- 6b) Cumulative damage exceedance ---
 
-# Threshold is derived from the median cum_damage across Irma-track years,
-# since cumulative damage is not stored in hazard_out$events.
+# Same percentile gate applied to cum_damage distribution.
 impact_years_damage <- query_impact_years(
-  daily    = daily_out,
-  storm_id = irma_sid,
-  out      = hazard_out,
-  metric   = "cum_damage"
+  daily      = daily_out,
+  storm_id   = irma_sid,
+  out        = hazard_out,
+  metric     = "cum_damage",
+  percentile = percentile_gate
 )
 
 damage_freq <- impact_years_damage |>

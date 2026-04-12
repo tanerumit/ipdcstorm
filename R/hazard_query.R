@@ -438,7 +438,21 @@ query_storm_track_years <- function(daily, storm_id, location = NULL) {
 #' @param threshold Optional numeric scalar or named numeric vector. When a
 #'   scalar is supplied it is applied to all locations. When a named vector is
 #'   supplied the names must match the queried locations. Overrides automatic
-#'   threshold derivation.
+#'   storm-based threshold derivation; used as the lower bound when
+#'   \code{percentile} is also specified.
+#' @param percentile Optional numeric scalar in \code{(0, 1)}. When supplied,
+#'   the empirical \code{percentile} of the annual metric distribution is
+#'   computed per location and used as an additional selection gate. The
+#'   effective threshold becomes
+#'   \code{max(ref_threshold, percentile_threshold)}, so only years that clear
+#'   \emph{both} the reference-storm level and the distributional percentile
+#'   are returned. For example \code{percentile = 0.95} retains at most the top
+#'   5 \% of years. Default \code{NULL} disables the percentile gate.
+#' @param min_threshold Optional numeric scalar applied as an absolute floor on
+#'   the effective threshold after all other computations. Useful for ensuring a
+#'   minimum physical severity level regardless of the reference storm or
+#'   percentile gate (e.g. \code{min_threshold = 64} for \code{metric =
+#'   "peak_wind_kt"} to require at least Cat-1 strength). Default \code{NULL}.
 #'
 #' @return Tibble with columns:
 #' \describe{
@@ -446,7 +460,9 @@ query_storm_track_years <- function(daily, storm_id, location = NULL) {
 #'   \item{\code{sim_year}}{Simulation year index.}
 #'   \item{\code{annual_metric}}{Annual metric value for that year (column
 #'     name matches the chosen \code{metric}).}
-#'   \item{\code{threshold}}{The threshold applied for that location.}
+#'   \item{\code{threshold}}{The effective threshold applied for that location,
+#'     reflecting the combined result of storm-based, percentile, and
+#'     \code{min_threshold} logic.}
 #' }
 #' Rows are sorted by \code{location} then \code{sim_year}.
 #'
@@ -461,6 +477,25 @@ query_storm_track_years <- function(daily, storm_id, location = NULL) {
 #'   metric   = "peak_wind_kt"
 #' )
 #' impact_years
+#'
+#' # Hybrid: Irma wind as lower bound, 95th-percentile as selection gate
+#' query_impact_years(
+#'   daily      = daily_out,
+#'   storm_id   = "2017242N16333",
+#'   out        = out,
+#'   metric     = "peak_wind_kt",
+#'   percentile = 0.95
+#' )
+#'
+#' # Hybrid with explicit Cat-2 floor (83 kt) regardless of Irma's site wind
+#' query_impact_years(
+#'   daily         = daily_out,
+#'   storm_id      = "2017242N16333",
+#'   out           = out,
+#'   metric        = "peak_wind_kt",
+#'   percentile    = 0.95,
+#'   min_threshold = 83
+#' )
 #'
 #' # Cumulative damage at least as large as Irma's, with explicit threshold
 #' query_impact_years(
@@ -477,10 +512,12 @@ query_storm_track_years <- function(daily, storm_id, location = NULL) {
 query_impact_years <- function(
     daily,
     storm_id,
-    out       = NULL,
-    location  = NULL,
-    metric    = c("peak_wind_kt", "cum_damage", "max_damage_rate"),
-    threshold = NULL) {
+    out           = NULL,
+    location      = NULL,
+    metric        = c("peak_wind_kt", "cum_damage", "max_damage_rate"),
+    threshold     = NULL,
+    percentile    = NULL,
+    min_threshold = NULL) {
 
   metric <- match.arg(metric)
 
@@ -494,6 +531,20 @@ query_impact_years <- function(
     }
   }
 
+  if (!is.null(percentile)) {
+    if (!is.numeric(percentile) || length(percentile) != 1L ||
+        !is.finite(percentile) || percentile <= 0 || percentile >= 1) {
+      stop("`percentile` must be a single numeric value in (0, 1).", call. = FALSE)
+    }
+  }
+
+  if (!is.null(min_threshold)) {
+    if (!is.numeric(min_threshold) || length(min_threshold) != 1L ||
+        !is.finite(min_threshold)) {
+      stop("`min_threshold` must be a single finite numeric value.", call. = FALSE)
+    }
+  }
+
   tbl <- .resolve_daily_tbl(daily, location)
 
   locs <- unique(tbl$location)
@@ -501,7 +552,7 @@ query_impact_years <- function(
     stop("No locations found in the resolved daily data.", call. = FALSE)
   }
 
-  # --- Resolve per-location thresholds ---
+  # --- Resolve per-location reference thresholds ---
   if (!is.null(threshold)) {
     if (length(threshold) == 1L) {
       thr_map <- stats::setNames(rep(threshold, length(locs)), locs)
@@ -529,12 +580,36 @@ query_impact_years <- function(
   # --- Compute annual metric across all locations ---
   annual <- .annual_metric_tbl(tbl, metric)
 
-  # --- Filter years meeting threshold, joining per-location threshold values ---
+  # --- Build threshold table, applying percentile gate and min_threshold ------
   thr_df <- tibble::tibble(
     location  = names(thr_map),
     threshold = unname(thr_map)
   )
 
+  # Percentile gate: compute per-location percentile and take the max with the
+  # reference threshold so that both criteria must be satisfied simultaneously.
+  if (!is.null(percentile)) {
+    pct_df <- annual |>
+      dplyr::group_by(.data$location) |>
+      dplyr::summarise(
+        pct_threshold = stats::quantile(.data$annual_metric, percentile, na.rm = TRUE),
+        .groups = "drop"
+      )
+    thr_df <- thr_df |>
+      dplyr::left_join(pct_df, by = "location") |>
+      dplyr::mutate(
+        threshold = pmax(.data$threshold, .data$pct_threshold, na.rm = TRUE)
+      ) |>
+      dplyr::select("location", "threshold")
+  }
+
+  # Absolute floor: applied after all other threshold logic.
+  if (!is.null(min_threshold)) {
+    thr_df <- thr_df |>
+      dplyr::mutate(threshold = pmax(.data$threshold, min_threshold))
+  }
+
+  # --- Filter years meeting the effective threshold ---------------------------
   annual |>
     dplyr::left_join(thr_df, by = "location") |>
     dplyr::filter(.data$annual_metric >= .data$threshold) |>
