@@ -13,7 +13,8 @@ generate_daily_hazard_impact_spatial(
   damage = list(method = "intensity"),
   pulse_shape = "cosine",
   scenario = NA_character_,
-  seed = NULL
+  seed = NULL,
+  verbose = TRUE
 )
 }
 \arguments{

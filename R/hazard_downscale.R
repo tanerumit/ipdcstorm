@@ -309,11 +309,13 @@ build_event_library <- function(track_df, event_df,
     std <- .standardize_matrix(as.matrix(ev_sub[, feat, drop = FALSE]))
 
     list(
-      feat = feat,
-      L = L,
+      feat   = feat,
+      L      = L,
       ev_sub = ev_sub,
-      X = as.matrix(ev_sub[, feat, drop = FALSE]),
-      Zstd = std$Z
+      X      = as.matrix(ev_sub[, feat, drop = FALSE]),
+      Zstd   = std$Z,
+      center = std$center,
+      scale  = std$scale
     )
   }
 
@@ -327,12 +329,8 @@ build_event_library <- function(track_df, event_df,
       x_star[j] <- .norm_to_emp_quantile(u[j], fit$X[, j])
     }
 
-    X <- fit$X
-    x_std <- rep(NA_real_, p)
-    for (j in seq_len(p)) {
-      ss <- .robust_scale_vec(X[, j])
-      x_std[j] <- (x_star[j] - ss$center) / ss$scale
-    }
+    # Use pre-computed center/scale from fit rather than recomputing per draw
+    x_std <- (x_star - fit$center) / fit$scale
 
     ok_dim <- is.finite(x_std)
     if (!any(ok_dim)) {
@@ -819,10 +817,7 @@ generate_daily_year_extended <- function(year, sampled_events,
       pe <- ps + (idx1c - idx0c)
 
       contrib <- pulse[ps:pe]
-      realized_peak <- suppressWarnings(max(contrib, na.rm = TRUE))
-      if (!is.finite(realized_peak)) {
-        realized_peak <- NA_real_
-      }
+      realized_peak <- if (length(contrib) > 0L) max(contrib) else NA_real_
       event_class_k <- .classify_downscaled_event_peak(realized_peak)
 
       if (!is.na(id) && is.finite(realized_peak)) {
@@ -1304,6 +1299,13 @@ generate_daily_hazard_impact <- function(
 
   perturb_enabled <- !is.null(perturb_cfg)
 
+  # Pre-compute intensity parameters once — these are constant across all years.
+  intensity_pars <- if (identical(damage$method, "intensity")) {
+    damage[c("V0", "V1", "p")]
+  } else {
+    list(V0 = 34, V1 = 120, p = damage$p)
+  }
+
   daily_list <- vector("list", nrow(sim))
 
   for (i in seq_len(nrow(sim))) {
@@ -1324,50 +1326,48 @@ generate_daily_hazard_impact <- function(
       sampled <- perturb_event(sampled, delta_sst = delta_sst, cc_params = perturb_cfg)
     }
 
-    daily0 <- generate_daily_year_extended(
+    daily_list[[i]] <- generate_daily_year_extended(
       year = yr,
       sampled_events = sampled,
       pulse_shape = pulse_shape
-    ) |>
-      dplyr::mutate(
-        sim_year = sim$sim_year[i],
-        location = !!location,
-        scenario = !!scenario
-      )
-
-    intensity_pars <- if (identical(damage$method, "intensity")) {
-      damage[c("V0", "V1", "p")]
-    } else {
-      list(V0 = 34, V1 = 120, p = damage$p)
-    }
-    daily0 <- daily0 |>
-      dplyr::mutate(
-        damage_intensity = pmax(
-          0,
-          pmin(1, (.data$wind_kt - intensity_pars$V0) / (intensity_pars$V1 - intensity_pars$V0))
-        )^intensity_pars$p
-      )
-
-    if (damage$method == "intensity") {
-      daily1 <- do.call(
-        add_damage_forcing,
-        c(list(daily = daily0), damage[c("V0", "V1", "p", "dmax")])
-      )
-      daily1 <- daily1 |>
-        dplyr::mutate(cum_damage = cumsum(dplyr::coalesce(.data$damage_rate, 0)))
-    } else {
-      daily1 <- daily0 |>
-        dplyr::mutate(
-          damage_rate = do.call(
-            damage_rate_from_wind,
-            c(list(wind_kt = .data$wind_kt), damage[c("thr", "V_ref", "d_ref", "p", "d_max")])
-          ),
-          cum_damage = cumsum(dplyr::coalesce(.data$damage_rate, 0))
-        )
-    }
-    daily_list[[i]] <- daily1
+    )
   }
-  result <- dplyr::bind_rows(daily_list) |>
+
+  # Assemble full series, then add constant and derived columns in bulk rather
+  # than repeating the same dplyr calls once per simulation year.
+  result <- dplyr::bind_rows(daily_list)
+
+  # sim_year: each year block may be 365 or 366 rows (leap years), so use
+  # per-element lengths rather than assuming a fixed block size.
+  n_days_per_year <- vapply(daily_list, nrow, integer(1L))
+  result$sim_year  <- rep(sim$sim_year, times = n_days_per_year)
+  result$location  <- location
+  result$scenario  <- scenario
+
+  # Damage intensity (vectorized over the full assembled series)
+  result$damage_intensity <- pmax(
+    0,
+    pmin(1, (result$wind_kt - intensity_pars$V0) / (intensity_pars$V1 - intensity_pars$V0))
+  )^intensity_pars$p
+
+  # Damage rate (vectorized over the full assembled series)
+  if (damage$method == "intensity") {
+    result <- do.call(add_damage_forcing, c(list(daily = result), damage[c("V0", "V1", "p", "dmax")]))
+  } else {
+    result$damage_rate <- do.call(
+      damage_rate_from_wind,
+      c(list(wind_kt = result$wind_kt), damage[c("thr", "V_ref", "d_ref", "p", "d_max")])
+    )
+  }
+
+  # cum_damage: per-sim_year cumulative sum using base ave() for grouping
+  result$cum_damage <- ave(
+    dplyr::coalesce(result$damage_rate, 0),
+    result$sim_year,
+    FUN = cumsum
+  )
+
+  result <- result |>
     dplyr::mutate(
       wind_gust_kt = .data$wind_kt * gust_factor,
       surge_m = ifelse(is.finite(.data$pressure_hpa), 0.14 * (1013 - .data$pressure_hpa), NA_real_)
@@ -1697,7 +1697,8 @@ generate_daily_hazard_impact_spatial <- function(
     damage      = list(method = "intensity"),
     pulse_shape = "cosine",
     scenario    = NA_character_,
-    seed        = NULL) {
+    seed        = NULL,
+    verbose     = TRUE) {
 
   stopifnot(is.character(location), length(location) >= 1L)
 
@@ -1752,6 +1753,28 @@ generate_daily_hazard_impact_spatial <- function(
   perturb_cfg     <- if (!is.null(out$fit)) attr(out$fit, "perturb")   else NULL
   perturb_enabled <- !is.null(perturb_cfg)
 
+  # ---- Progress header -------------------------------------------------------
+  n_years <- length(sim_years)
+  t_start <- proc.time()[["elapsed"]]
+  if (verbose) {
+    scen_label <- if (is.na(scenario) || !nzchar(scenario)) "baseline" else scenario
+    perturb_label <- if (perturb_enabled) {
+      sprintf("perturb ON (delta_sst = %+.2f C)", delta_sst)
+    } else {
+      "perturb OFF"
+    }
+    message(sprintf(
+      "[daily] %d years x %d location(s) | scenario: %s | seed: %d | %s",
+      n_years, length(location), scen_label, seed, perturb_label
+    ))
+    # Quarterly progress ticks (only when the run is large enough to matter)
+    tick_at <- if (n_years >= 100L) {
+      unique(floor(seq(n_years / 4, n_years - 1, length.out = 3L)))
+    } else {
+      integer(0)
+    }
+  }
+
   # ---- Pre-allocate output storage -------------------------------------------
   results <- stats::setNames(
     lapply(location, function(loc) vector("list", length(sim_years))),
@@ -1762,6 +1785,10 @@ generate_daily_hazard_impact_spatial <- function(
   for (yr_idx in seq_along(sim_years)) {
     sim_yr <- sim_years[yr_idx]
     cal_yr <- as.integer(year0) + (sim_yr - 1L)
+
+    if (verbose && yr_idx %in% tick_at) {
+      message(sprintf("[daily]   %d / %d years ...", yr_idx, n_years))
+    }
 
     # Basin-level counts: max across locations for this sim_year
     n_ts_vec <- vapply(location, function(loc) {
@@ -1843,6 +1870,11 @@ generate_daily_hazard_impact_spatial <- function(
 
       results[[loc]][[yr_idx]] <- daily1
     }
+  }
+
+  if (verbose) {
+    elapsed <- proc.time()[["elapsed"]] - t_start
+    message(sprintf("[daily] Done in %.1fs", elapsed))
   }
 
   # ---- Assemble and return final output --------------------------------------

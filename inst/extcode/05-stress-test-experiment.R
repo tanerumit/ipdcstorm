@@ -5,18 +5,25 @@
 #   Part 1 — Select 5 representative high-impact years from 2,000 synthetic
 #             baseline years. Candidates must include at least one event at or
 #             above the IRMA 2017 site-level impact (peak wind >= 80 kt). Years
-#             are rated on severity, hurricane duration, compounding storm
-#             activity, and total damage, then sampled at Q50/Q80/Q90/Q95/Q99.
+#             are rated on a two-metric composite score (r_peak, r_damage) with
+#             configurable weights, then sampled at Q50/Q80/Q90/Q95/Q99.
 #
-#   Part 2 — Replay those same 5 year indices under four KNMI'23 climate
-#             scenarios using the same seed (common random numbers), so that
-#             any difference in outcomes is attributable to climate forcing
-#             rather than sampling variability.
+#   Part 2 — Replay those same 5 year indices under KNMI'23 climate scenarios
+#             (knmi_Ld, knmi_Hd) using the same seed (common random numbers).
+#             Two experiment modes are available via FREEZE_FREQUENCY:
+#               FALSE — full response: both frequency and intensity change.
+#               TRUE  — intensity-only: frequency frozen at baseline, only
+#                       event intensities are perturbed by warming.
+#
+# Key config switches (all in the Config block below):
+#   TARGET_YEAR      — 2050 or 2100
+#   FREEZE_FREQUENCY — FALSE (full) or TRUE (intensity-only)
+#   w_peak / w_damage — relative weights for the composite stress rating
 #
 # Outputs:
-#   selected_ids      — integer[5]: replicable year indices (seed = SEED)
-#   baseline_stress   — named list[location] of daily tibbles for 5 baseline years
-#   cc_stress         — named list[scenario][location] of daily tibbles for 5 years
+#   selected_ids    — integer[5]: replicable year indices (seed = SEED)
+#   baseline_stress — named list[location] of daily tibbles for 5 baseline years
+#   cc_stress       — named list[scenario][location] of daily tibbles for 5 years
 #
 # Data path:
 #   Uses the packaged demo IBTrACS subset by default.
@@ -32,10 +39,33 @@ library(ipdcstorm)
 
 SEED           <- 42L
 N_SIM          <- 2000L
-TARGET_YEAR    <- 2050
 IRMA_WIND_KT   <- 80     # site-level peak wind threshold for IRMA-like impact (kt)
 QUANTILE_PROBS <- c(0.50, 0.80, 0.90, 0.95, 0.99)
 KNMI_SCENARIOS <- c("knmi_Ld", "knmi_Hd")
+
+# Future target year: set to 2050 (near-term) or 2100 (end-of-century).
+# Controls the SST delta used for all KNMI climate scenarios in Part 2.
+# KNMI'23 provides distinct delta_sst values for each horizon:
+#   knmi_Ld / knmi_Hd at 2050 → moderate forcing
+#   knmi_Ld / knmi_Hd at 2100 → full end-of-century forcing (knmi_Hd reaches ~2.6 °C)
+TARGET_YEAR <- 2050   # switch to 2100 for end-of-century analysis
+
+# Controlled experiment mode (TRUE / FALSE).
+#
+# FALSE (default): full climate response — KNMI scenarios change both storm
+#   frequency (via climate-adjusted Poisson/NB rates in out_cc$sim) and
+#   individual event intensity (via perturb_event()). Years with different
+#   storm counts from the baseline are expected and represent the genuine
+#   frequency signal of warming.
+#
+# TRUE: intensity-only response — storm frequency is frozen at the baseline
+#   by substituting out_base$sim into the KNMI out object before daily
+#   generation. Only perturb_event() is active, so every scenario year
+#   contains the same events as the corresponding baseline year, each
+#   shifted upward in intensity by the scenario's delta_sst. Use this mode
+#   to isolate the pure intensity signal and produce directly comparable
+#   traces across baseline and scenarios.
+FREEZE_FREQUENCY <- TRUE
 
 # Target locations (Dutch Caribbean)
 targets <- tibble::tribble(
@@ -120,23 +150,31 @@ message("  IRMA-like candidates (peak wind >= ", IRMA_WIND_KT, " kt): ",
         nrow(irma_candidates), " of ", N_SIM, " years")
 
 # --- Rank candidates on a composite stress rating ---
-# Four metrics (all higher = more stressful):
-#   r_peak     : site-level peak wind (severity)
-#   r_duration : total hurricane-intensity days across sites (persistence)
-#   r_compound : number of storms in the year (compounding exposure)
-#   r_damage   : cumulative damage rate across sites and year
-# Each metric is rank-normalised within the candidate pool [0, 1].
-# Equal weights; final rating averaged across four components.
+#
+# Two metrics, each rank-normalised to [0, 1] within the candidate pool:
+#
+#   r_peak   : max(peak_wind_kt) across all sites — worst instantaneous
+#              intensity; governs single-event structural damage threshold
+#              exceedance (loss scales ~wind^3).
+#
+#   r_damage : sum(damage_rate) across all days and sites — integrated
+#              portfolio impact; embeds intensity, duration, and multi-event
+#              accumulation in one physically meaningful number.
+#
+# Weights (w_peak + w_damage must sum to 1):
+#   Equal weighting by default; increase w_peak to favour severity-driven
+#   selection, increase w_damage to favour accumulation-driven selection.
+
+w_peak   <- 0.5
+w_damage <- 0.5
 
 n_cand <- nrow(irma_candidates)
 
 irma_rated <- irma_candidates |>
   mutate(
-    r_peak     = rank(peak_wind_max,  ties.method = "average") / n_cand,
-    r_duration = rank(hur_days_total, ties.method = "average") / n_cand,
-    r_compound = rank(n_total,        ties.method = "average") / n_cand,
-    r_damage   = rank(damage_total,   ties.method = "average") / n_cand,
-    rating     = (r_peak + r_duration + r_compound + r_damage) / 4
+    r_peak   = rank(peak_wind_max, ties.method = "average") / n_cand,
+    r_damage = rank(damage_total,  ties.method = "average") / n_cand,
+    rating   = w_peak * r_peak + w_damage * r_damage
   ) |>
   arrange(rating)
 
@@ -164,11 +202,21 @@ baseline_stress <- lapply(daily_base_list, function(df) {
 
 # =============================================================================
 # Part 2: KNMI'23 climate scenarios — same seed, same year indices
+#
+# Two experiment modes controlled by FREEZE_FREQUENCY:
+#
+#   FALSE — full climate response: both storm frequency (out_cc$sim) and
+#           event intensity (perturb_event) vary with the scenario.
+#
+#   TRUE  — intensity-only: out_base$sim is substituted so every scenario
+#           year has the same storm counts as the baseline; only
+#           perturb_event() shifts individual event intensities upward.
 # =============================================================================
 
 message("\nPart 2: KNMI'23 scenarios at target year ", TARGET_YEAR)
-message("  Scenarios: ", paste(KNMI_SCENARIOS, collapse = ", "))
-message("  Replaying year indices: ", paste(selected_ids, collapse = ", "))
+message("  Scenarios       : ", paste(KNMI_SCENARIOS, collapse = ", "))
+message("  Freeze frequency: ", FREEZE_FREQUENCY)
+message("  Year indices    : ", paste(selected_ids, collapse = ", "))
 
 cc_stress <- vector("list", length(KNMI_SCENARIOS))
 names(cc_stress) <- KNMI_SCENARIOS
@@ -185,6 +233,13 @@ for (scen in KNMI_SCENARIOS) {
 
   # Same seed → common random numbers; differences isolate climate forcing only.
   out_cc <- run_hazard_model(cfg_cc, targets = targets, seed = SEED, verbose = FALSE)
+
+  # Controlled mode: substitute baseline sim table so storm counts per year
+  # are identical to the baseline. Only perturb_event() (intensity) differs.
+  if (FREEZE_FREQUENCY) {
+    out_cc$sim    <- out_base$sim
+    out_cc$config <- out_cc$config   # leave climate config intact for perturb
+  }
 
   # Generate daily series for ALL N_SIM years, then filter to selected_ids.
   #
@@ -221,11 +276,14 @@ for (scen in KNMI_SCENARIOS) {
 message("\n--- Stress-test experiment complete ---")
 message("Seed              : ", SEED)
 message("Simulation years  : ", N_SIM)
+message("Target year       : ", TARGET_YEAR)
 message("IRMA threshold    : ", IRMA_WIND_KT, " kt")
 message("Candidate years   : ", n_cand, " / ", N_SIM)
+message("Rating metrics    : r_peak (w=", w_peak, ") + r_damage (w=", w_damage, ")")
 message("Selected year IDs : ", paste(selected_ids, collapse = ", "),
         "  [", paste0("Q", round(QUANTILE_PROBS * 100), collapse = " / "), "]")
 message("CC scenarios      : ", paste(KNMI_SCENARIOS, collapse = ", "))
+message("Freeze frequency  : ", FREEZE_FREQUENCY)
 message("")
 message("Objects in workspace:")
 message("  selected_ids      — integer[5]: year indices for all scenario comparisons")

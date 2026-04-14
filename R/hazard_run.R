@@ -488,13 +488,21 @@ run_hazard_model <- function(cfg, targets,
   # Collect per-location summary for table display
   loc_summary <- list()
 
+  # Pre-compute distances from every track point to every target once, avoiding
+  # a redundant full haversine scan per iteration of the location loop.
+  dist_matrix <- vapply(
+    seq_len(nrow(targets)),
+    function(j) dist_to_target(ib_sub$lat, ib_sub$lon, targets$lat[j], targets$lon[j]),
+    numeric(nrow(ib_sub))
+  )
+
   for (i in seq_len(nrow(targets))) {
     loc <- targets[i, ]
     loc_name <- as.character(loc$name)
 
-    dat_loc <- ib_sub |>
-      dplyr::mutate(dist_km = dist_to_target(.data$lat, .data$lon, loc$lat, loc$lon)) |>
-      dplyr::filter(.data$dist_km <= cfg$search_radius_km)
+    keep <- dist_matrix[, i] <= cfg$search_radius_km
+    dat_loc <- ib_sub[keep, , drop = FALSE]
+    dat_loc$dist_km <- dist_matrix[keep, i]
 
     if (nrow(dat_loc) == 0) {
       warning("No trackpoints within search_radius_km for location: ", loc_name, " (search_radius_km=", cfg$search_radius_km, "). Skipping.")

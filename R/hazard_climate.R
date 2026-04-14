@@ -1168,6 +1168,14 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
                                        scenario,
                                        allow_knmi = TRUE) {
   if (is.null(perturb)) {
+    if (allow_knmi && grepl("^knmi_", scenario)) {
+      warning(
+        "Storm perturbation is disabled for KNMI scenario '", scenario, "'. ",
+        "Individual storm intensities will NOT be shifted by delta_sst. ",
+        "Pass perturb = list() to enable scenario-appropriate intensity perturbation.",
+        call. = FALSE
+      )
+    }
     return(list(
       state = "disabled",
       params = NULL
