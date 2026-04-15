@@ -1,0 +1,367 @@
+---
+title: "Tutorial 4 — Climate Stress-Test Experiment"
+subtitle: "Hurricane Wind Hazard Model for the Caribbean"
+author: ""
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: true
+    code-fold: false
+    code-tools: true
+    code-copy: true
+    highlight-style: github
+    smooth-scroll: true
+    self-contained: true
+execute:
+  eval: true
+  echo: true
+  warning: false
+  message: false
+editor:
+  markdown:
+    wrap: sentence
+---
+
+```{r}
+#| label: setup-hidden
+#| include: false
+knitr::opts_chunk$set(comment = "#>")
+```
+
+::: callout-note
+## Prerequisites
+This tutorial builds on [Tutorial 3](tutorial_3_climate_change.qmd).
+You should already be familiar with `make_hazard_cfg()`, `run_hazard_model()`, and named KNMI'23 climate scenarios.
+:::
+
+This tutorial shows how to design a **climate stress-test experiment**: pick a handful of high-impact synthetic years from a long stationary baseline, then replay those *same* years under future-climate scenarios using common random numbers (CRN).
+The result is a directly comparable set of daily wind traces where any difference between baseline and future is attributable to climate forcing alone.
+
+## What This Tutorial Covers {#sec-what-this-covers}
+
+By the end, you will be able to:
+
+- generate a long stationary baseline and rate years on a composite stress score
+- pick representative high-impact years at fixed severity quantiles (Q50–Q99)
+- replay those year indices under KNMI'23 scenarios with CRN, pinning the dominant event
+- visualize baseline-vs-scenario daily wind traces in a single faceted panel
+
+```{r}
+#| label: setup-packages
+library(ipdcstorm)
+library(dplyr)
+library(ggplot2)
+```
+
+## Experiment Configuration {#sec-config}
+
+A small block of switches controls the entire experiment.
+The defaults below run quickly for the vignette; for a production stress-test, raise `n_sim` to 2,000 or more.
+
+```{r}
+#| label: config
+seed            <- 42L
+n_sim           <- 500L                       # raise to 2000+ in production
+irma_wind_kt    <- 80                         # IRMA-like site-level threshold (kt)
+quantile_probs  <- c(0.50, 0.80, 0.90, 0.95, 0.99)
+knmi_scenarios  <- c("knmi_Ld", "knmi_Hd")    # low-dry and high-dry KNMI'23
+target_year     <- 2100                       # 2050 (near-term) or 2100 (end-of-century)
+
+# Composite rating weights (must sum to 1)
+w_peak   <- 0.5   # severity (max site-level peak wind)
+w_damage <- 0.5   # accumulation (integrated portfolio damage)
+
+targets <- tibble::tribble(
+  ~name,         ~lat,     ~lon,
+  "St_Martin",   18.0708, -63.0501,
+  "Saba",        17.6350, -63.2300,
+  "Statia",      17.4890, -62.9740,
+  "Puerto_Rico", 18.4655, -66.1057,
+  "Miami",       25.7617, -80.1918
+)
+
+ibtracs_demo <- system.file("extdata", "ibtracs_demo.csv", package = "ipdcstorm")
+```
+
+## Part 1 — Baseline & Year Selection {#sec-baseline}
+
+We first run a stationary baseline of `n_sim` synthetic years and downscale every year to daily wind and damage at every target location.
+
+```{r}
+#| label: run-baseline
+cfg_base <- make_hazard_cfg(
+  data_path        = ibtracs_demo,
+  simulation_years = n_sim,
+  climate          = make_climate_cfg(scenario = "stationary")
+)
+
+out_base <- run_hazard_model(cfg_base, targets = targets, seed = seed, verbose = FALSE)
+
+daily_base_list <- generate_daily_hazard_impact_spatial(
+  out         = out_base,
+  location    = targets$name,
+  sim_years   = seq_len(n_sim),
+  year0       = 2000L,
+  gust_factor = 1.0,
+  damage      = list(method = "intensity"),
+  pulse_shape = "cosine",
+  scenario    = "baseline",
+  seed        = seed
+)
+```
+
+### Annual metrics across all sites {#sec-annual-metrics}
+
+Each year is summarised on basin-wide metrics: peak site-level wind, hurricane- and storm-day counts, and integrated damage across all sites.
+
+```{r}
+#| label: annual-metrics
+daily_base <- bind_rows(daily_base_list)
+
+annual_all <- daily_base |>
+  group_by(sim_year, location) |>
+  summarise(
+    peak_wind_kt = max(wind_kt, na.rm = TRUE),
+    n_hur_days   = sum(wind_kt >= 64, na.rm = TRUE),
+    n_storm_days = sum(wind_kt >= 34, na.rm = TRUE),
+    total_damage = sum(damage_rate, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  group_by(sim_year) |>
+  summarise(
+    peak_wind_max    = max(peak_wind_kt),
+    hur_days_total   = sum(n_hur_days),
+    storm_days_total = sum(n_storm_days),
+    damage_total     = sum(total_damage),
+    .groups = "drop"
+  )
+```
+
+### Composite stress rating {#sec-rating}
+
+Candidate years must contain at least one IRMA-class event (peak wind ≥ `r irma_wind_kt` kt).
+Surviving years are rank-normalised on two metrics and combined into a single rating in `[0, 1]`:
+
+| Metric | Meaning |
+|--------|---------|
+| `r_peak`   | Worst single-site peak wind (severity; loss scales ~wind³). |
+| `r_damage` | Sum of `damage_rate` across days and sites (integrated impact). |
+
+```{r}
+#| label: rate-candidates
+irma_candidates <- annual_all |>
+  filter(peak_wind_max >= irma_wind_kt)
+
+n_cand <- nrow(irma_candidates)
+
+irma_rated <- irma_candidates |>
+  mutate(
+    r_peak   = rank(peak_wind_max, ties.method = "average") / n_cand,
+    r_damage = rank(damage_total,  ties.method = "average") / n_cand,
+    rating   = w_peak * r_peak + w_damage * r_damage
+  ) |>
+  arrange(rating)
+
+# Pick years at the target quantiles of the rating distribution
+sel_pos      <- pmax(1L, ceiling(quantile_probs * n_cand))
+selected_ids <- irma_rated$sim_year[sel_pos]
+
+irma_rated |>
+  filter(sim_year %in% selected_ids) |>
+  mutate(
+    quantile = paste0("Q", round(quantile_probs * 100), "%")
+  ) |>
+  select(quantile, sim_year, peak_wind_max, hur_days_total,
+         damage_total, rating)
+```
+
+### Pin the focal event {#sec-focal}
+
+For each selected year we identify the SID of the basin-level peak hurricane day.
+Pinning this SID into every scenario run guarantees the focal event always appears, with its intensity and duration perturbed by the scenario's `delta_sst` — all other storm slots remain free to vary with climate.
+
+```{r}
+#| label: focal-sids
+baseline_stress <- lapply(daily_base_list, function(df) {
+  df[df$sim_year %in% selected_ids, ]
+})
+
+focal_sids <- setNames(vector("list", length(selected_ids)),
+                       as.character(selected_ids))
+
+for (yr in selected_ids) {
+  yr_hur <- bind_rows(lapply(baseline_stress, function(df) {
+    df[df$sim_year == yr & !is.na(df$event_class) & df$event_class == "HUR", ]
+  }))
+  if (nrow(yr_hur) == 0L) {
+    focal_sids[[as.character(yr)]] <- NA_character_
+    next
+  }
+  peak_row <- yr_hur[which.max(yr_hur$wind_kt), ]
+  focal_sids[[as.character(yr)]] <- sub("_y[0-9]+_[0-9]+$", "",
+                                        peak_row$event_id[1L])
+}
+
+focal_sids
+```
+
+## Part 2 — KNMI'23 Climate Replays {#sec-replays}
+
+The same `seed` and the same `sim_years = 1:n_sim` vector are used for every scenario.
+This is the **common random numbers** trick: the RNG is consumed at exactly the same rate in every run, so year `i` in the baseline corresponds to year `i` in the scenario.
+Differences between traces therefore isolate climate forcing rather than sampling noise.
+
+::: callout-tip
+## Why iterate the full `1:n_sim`?
+Passing only `selected_ids` to the scenario run would put its first iteration at the initial RNG state, while the baseline reached those same indices after consuming hundreds of prior draws.
+The result would be completely different event sampling — unrelated to climate.
+:::
+
+```{r}
+#| label: run-scenarios
+cc_stress <- vector("list", length(knmi_scenarios))
+names(cc_stress) <- knmi_scenarios
+
+for (scen in knmi_scenarios) {
+  cfg_cc <- make_hazard_cfg(
+    data_path        = ibtracs_demo,
+    simulation_years = n_sim,
+    climate          = make_climate_cfg(scenario   = scen,
+                                        target_year = target_year,
+                                        perturb     = TRUE)
+  )
+
+  out_cc <- run_hazard_model(cfg_cc, targets = targets,
+                             seed = seed, verbose = FALSE)
+
+  cc_daily_all <- generate_daily_hazard_impact_spatial(
+    out         = out_cc,
+    location    = targets$name,
+    sim_years   = seq_len(n_sim),
+    year0       = 2000L,
+    gust_factor = 1.0,
+    damage      = list(method = "intensity"),
+    pulse_shape = "cosine",
+    scenario    = scen,
+    seed        = seed,
+    pinned_sids = focal_sids
+  )
+
+  cc_stress[[scen]] <- lapply(cc_daily_all, function(df) {
+    df[df$sim_year %in% selected_ids, ]
+  })
+}
+```
+
+## Part 3 — Visualize the Stress-Test Traces {#sec-viz}
+
+Each panel below is one selected year, with the stationary baseline (black) overlaid against the KNMI'23 scenarios (blue = low-dry, red = high-dry).
+Reference dashes mark the tropical-storm (34 kt) and hurricane (64 kt) thresholds.
+
+```{r}
+#| label: assemble-plot-data
+focal_location <- "Saba"
+
+scenario_labels <- c(
+  "Baseline" = "Baseline (stationary)",
+  "knmi_Ld"  = "KNMI L-d (low warming, dry)",
+  "knmi_Hd"  = "KNMI H-d (high warming, dry)"
+)
+scenario_colors <- c(
+  "Baseline" = "black",
+  "knmi_Ld"  = "#4575b4",
+  "knmi_Hd"  = "#d73027"
+)
+
+# Hurricane season window (Jun 1 – Dec 31, non-leap)
+season_doy_start <- 152L
+season_doy_end   <- 365L
+month_doy_all    <- cumsum(c(1L, 31L, 28L, 31L, 30L, 31L,
+                             30L, 31L, 31L, 30L, 31L, 30L))
+season_months    <- 6:12
+month_doy_starts <- month_doy_all[season_months]
+month_labels     <- month.abb[season_months]
+
+base_df <- baseline_stress[[focal_location]] |>
+  mutate(scenario = "Baseline",
+         doy      = as.integer(format(date, "%j")))
+
+knmi_df <- bind_rows(lapply(knmi_scenarios, function(scen) {
+  cc_stress[[scen]][[focal_location]] |>
+    mutate(scenario = scen,
+           doy      = as.integer(format(date, "%j")))
+}))
+
+trace_labels <- setNames(
+  paste0("Trace ", seq_along(selected_ids),
+         "  \u2014  Q", round(quantile_probs * 100), "%"),
+  as.character(selected_ids)
+)
+
+plot_df <- bind_rows(knmi_df, base_df) |>
+  filter(doy >= season_doy_start, doy <= season_doy_end) |>
+  mutate(
+    scenario    = factor(scenario, levels = c(knmi_scenarios, "Baseline")),
+    trace_label = factor(trace_labels[as.character(sim_year)],
+                         levels = trace_labels)
+  )
+```
+
+```{r}
+#| label: plot-traces
+#| fig-width: 9
+#| fig-height: 11
+ggplot(plot_df, aes(x = doy, y = wind_kt)) +
+  geom_hline(yintercept = 34, linetype = "dashed",
+             colour = "#E69F00", linewidth = 0.35, alpha = 0.8) +
+  geom_hline(yintercept = 64, linetype = "dashed",
+             colour = "#d73027", linewidth = 0.35, alpha = 0.8) +
+  geom_line(data = ~ filter(.x, scenario != "Baseline"),
+            aes(colour = scenario), linewidth = 0.9, alpha = 0.9) +
+  geom_line(data = ~ filter(.x, scenario == "Baseline"),
+            aes(colour = scenario), linewidth = 1.2) +
+  scale_colour_manual(values = scenario_colors,
+                      labels = scenario_labels,
+                      breaks = c("Baseline", knmi_scenarios),
+                      name   = NULL) +
+  scale_x_continuous(limits = c(season_doy_start, season_doy_end),
+                     breaks = month_doy_starts,
+                     labels = month_labels,
+                     expand = expansion(mult = c(0.01, 0.01))) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = expansion(mult = c(0, 0.08))) +
+  facet_wrap(~ trace_label, nrow = 5, ncol = 1, scales = "fixed") +
+  labs(
+    x = NULL,
+    y = "Sustained wind speed (kt)",
+    title = sprintf("%s \u2014 Stress-test wind traces: baseline vs KNMI\u201923",
+                    focal_location),
+    subtitle = sprintf(
+      "%d high-impact years from %d synthetic years (seed = %d, target year %d)",
+      length(selected_ids), n_sim, seed, target_year),
+    caption = "Dashed: TS (34 kt, orange) and hurricane (64 kt, red) thresholds"
+  ) +
+  theme_light(base_size = 10) +
+  theme(
+    legend.position  = "bottom",
+    legend.key.width = unit(1.4, "cm"),
+    strip.text       = element_text(size = 8.5, face = "bold"),
+    panel.spacing.y  = unit(0.4, "lines"),
+    plot.subtitle    = element_text(size = 8, colour = "grey40"),
+    plot.caption     = element_text(size = 7, colour = "grey50", hjust = 0)
+  ) +
+  guides(colour = guide_legend(nrow = 1,
+                               override.aes = list(linewidth = 1.1)))
+```
+
+## Where to Go Next {#sec-next}
+
+- Switch `target_year` to `2050` to compare near-term vs end-of-century forcing.
+- Add `knmi_Ln` / `knmi_Hn` to `knmi_scenarios` for the wet variants.
+- Tune `w_peak` / `w_damage` to bias year selection toward severity vs accumulation.
+- Change `focal_location` to view the same experiment from a different island.
+- For a production run, point `data_path` at the full IBTrACS NA CSV and raise `n_sim` to ≥ 2,000.

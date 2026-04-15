@@ -17,7 +17,7 @@ navbar:
   components:
     intro:
       text: Get started
-      href: articles/tutorial_1_introduction_setup.html
+      href: articles/tutorial_1_setup.html
 
 home:
   sidebar:
@@ -27,7 +27,10 @@ articles:
   - title: Tutorials
     navbar: Tutorials
     contents:
-      - tutorial_1_introduction_setup
+      - tutorial_1_setup
+      - tutorial_2_validation
+      - tutorial_3_climate_change
+      - tutorial_4_stress_test
 
 reference:
   - title: Core hazard workflow
