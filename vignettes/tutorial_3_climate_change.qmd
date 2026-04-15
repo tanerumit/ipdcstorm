@@ -235,7 +235,7 @@ To illustrate that step, we generate daily hazard-impact series for Saba under t
 
 ```{r}
 #| label: generate-daily-series
-daily_baseline <- generate_daily_hazard_impact(
+daily_baseline <- generate_daily_hazard_impact_spatial(
   out = out_baseline,
   location = "Saba",
   sim_years = 1:200,
@@ -247,7 +247,7 @@ daily_baseline <- generate_daily_hazard_impact(
   seed = 123
 )$Saba
 
-daily_future <- generate_daily_hazard_impact(
+daily_future <- generate_daily_hazard_impact_spatial(
   out = out_future,
   location = "Saba",
   sim_years = 1:200,

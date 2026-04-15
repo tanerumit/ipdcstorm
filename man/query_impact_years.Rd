@@ -17,7 +17,7 @@ query_impact_years(
 }
 \arguments{
 \item{daily}{Named list of tibbles returned by
-\code{\link{generate_daily_hazard_impact}()}, or a single tibble.}
+\code{\link{generate_daily_hazard_impact_spatial}()}, or a single tibble.}
 
 \item{storm_id}{Character scalar IBTrACS SID of the reference storm (e.g.
 \code{"2017242N16333"} for Hurricane Irma — IBTrACS native SID, not ATCF "AL112017").}
@@ -51,7 +51,7 @@ effective threshold becomes
 \code{max(ref_threshold, percentile_threshold)}, so only years that clear
 \emph{both} the reference-storm level and the distributional percentile
 are returned. For example \code{percentile = 0.95} retains at most the top
-5 \\% of years. Default \code{NULL} disables the percentile gate.}
+5\% of years. Default \code{NULL} disables the percentile gate.}
 
 \item{min_threshold}{Optional numeric scalar applied as an absolute floor on
 the effective threshold after all other computations. Useful for ensuring a
@@ -131,5 +131,5 @@ query_impact_years(
 }
 \seealso{
 \code{\link{query_storm_track_years}},
-\code{\link{generate_daily_hazard_impact}}
+\code{\link{generate_daily_hazard_impact_spatial}}
 }

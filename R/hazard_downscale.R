@@ -428,7 +428,7 @@ build_event_library <- function(track_df, event_df,
 #' wind or surge values with user-supplied thresholds.
 #'
 #' @param daily Tibble/data.frame returned by
-#'   \code{generate_daily_hazard_impact()}.
+#'   \code{generate_daily_hazard_impact_spatial()}.
 #' @param thr_port Numeric scalar wind threshold (kt) for port disruption.
 #' @param thr_infra Numeric scalar wind threshold (kt) for infrastructure
 #'   disruption.
@@ -444,7 +444,7 @@ build_event_library <- function(track_df, event_df,
 #'   surge_m = c(0.1, 0.8)
 #' )
 #' disruption_flags(daily, thr_port = 34, thr_infra = 50, thr_surge = 0.5)
-#' @seealso \code{\link{generate_daily_hazard_impact}}
+#' @seealso \code{\link{generate_daily_hazard_impact_spatial}}
 #' @export
 disruption_flags <- function(daily,
                              thr_port = NA_real_,
@@ -466,14 +466,14 @@ disruption_flags <- function(daily,
 #' storm or hurricane event.
 #'
 #' @param daily Tibble/data.frame returned by
-#'   \code{generate_daily_hazard_impact()}.
+#'   \code{generate_daily_hazard_impact_spatial()}.
 #'
 #' @return Logical vector identifying tropical-storm or hurricane days.
 #' @examples
 #' daily <- tibble::tibble(event_class = c(NA, "TS", "HUR"))
 #' is_tc_day(daily)
 #' is_hur_day(daily)
-#' @seealso \code{\link{generate_daily_hazard_impact}}
+#' @seealso \code{\link{generate_daily_hazard_impact_spatial}}
 #' @export
 is_tc_day <- function(daily) {
   daily$event_class %in% c("TS", "HUR")
@@ -492,7 +492,7 @@ is_hur_day <- function(daily) {
 #' package daily resolution.
 #'
 #' @param daily Tibble/data.frame returned by
-#'   \code{generate_daily_hazard_impact()}.
+#'   \code{generate_daily_hazard_impact_spatial()}.
 #' @param threshold_kt Numeric scalar wind threshold (kt).
 #' @param use_gust Logical scalar; if \code{TRUE}, use \code{wind_gust_kt}.
 #'
@@ -513,7 +513,7 @@ exposure_hours <- function(daily, threshold_kt, use_gust = FALSE) {
 #' simulation year, and scenario.
 #'
 #' @param daily Tibble/data.frame returned by
-#'   \code{generate_daily_hazard_impact()}.
+#'   \code{generate_daily_hazard_impact_spatial()}.
 #'
 #' @return Tibble with one row per location and simulation year and a
 #'   \code{peak_wind_kt} column.
@@ -580,6 +580,50 @@ build_event_library_from_out <- function(out, location, ..., seed = NULL) {
 # 4) Event sampling and daily pulse generation
 # =============================================================================
 
+# --- Shared single-row event accessors ---------------------------------------
+# Used by both sample_events_for_year_extended() and .build_event_rows_from_sids().
+# Defined once at module level to eliminate duplication and ensure consistent
+# fallback logic (including the peak_wind_kt column) across both code paths.
+
+.ev_dur_days <- function(row) {
+  if ("dur_days" %in% names(row) && is.finite(row$dur_days[1L]) && row$dur_days[1L] > 0L)
+    return(as.integer(row$dur_days[1L]))
+  if (all(c("start_time", "end_time") %in% names(row)) &&
+      !is.na(row$start_time[1L]) && !is.na(row$end_time[1L])) {
+    d <- as.numeric(difftime(row$end_time[1L], row$start_time[1L], units = "days"))
+    return(max(1L, as.integer(floor(d) + 1L)))
+  }
+  if ("n_points" %in% names(row) && is.finite(row$n_points[1L]) && row$n_points[1L] > 0L)
+    return(max(1L, as.integer(ceiling(row$n_points[1L] / 4L))))
+  1L
+}
+
+.ev_V_peak <- function(row, sev) {
+  v <- NA_real_
+  if ("V_site_max_kt" %in% names(row)) v <- as.numeric(row$V_site_max_kt[1L])
+  if (!is.finite(v) && "wind_max_kt"  %in% names(row)) v <- as.numeric(row$wind_max_kt[1L])
+  if (!is.finite(v) && "peak_wind_kt" %in% names(row)) v <- as.numeric(row$peak_wind_kt[1L])
+  if (!is.finite(v) || v <= 0) v <- if (sev == "HUR") 80 else if (sev == "TS") 40 else 25
+  as.numeric(v)
+}
+
+.ev_safe_num <- function(row, col) {
+  if (col %in% names(row)) {
+    val <- suppressWarnings(as.numeric(row[[col]][1L]))
+    if (is.finite(val)) return(val)
+  }
+  NA_real_
+}
+
+.ev_doy <- function(row) {
+  if ("doy" %in% names(row) && is.finite(row$doy[1L]) &&
+      row$doy[1L] >= 1L && row$doy[1L] <= 366L)
+    return(as.integer(row$doy[1L]))
+  if ("start_time" %in% names(row) && !is.na(row$start_time[1L]))
+    return(as.integer(format(as.Date(row$start_time[1L]), "%j")))
+  220L  # tropical-season centre fallback
+}
+
 #' Sample synthetic storm events for a year with extended attributes
 #'
 #' @description
@@ -627,40 +671,6 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
   stopifnot(is.list(lib), is.function(lib$sample_doy), is.function(lib$sample_event))
   year <- as.integer(year)
 
-  # Helper: extract duration in days from a sampled event row
-  get_dur_days <- function(row) {
-    if ("dur_days" %in% names(row) && is.finite(row$dur_days) && row$dur_days > 0) {
-      return(as.integer(row$dur_days))
-    }
-    if (all(c("start_time", "end_time") %in% names(row)) &&
-        !is.na(row$start_time) && !is.na(row$end_time)) {
-      d <- as.numeric(difftime(row$end_time, row$start_time, units = "days"))
-      return(max(1L, as.integer(floor(d) + 1L)))
-    }
-    if ("n_points" %in% names(row) && is.finite(row$n_points) && row$n_points > 0) {
-      return(max(1L, as.integer(ceiling(row$n_points / 4))))
-    }
-    1L
-  }
-
-  # Helper: extract peak wind, with severity-aware fallbacks
-  get_V_peak <- function(row, sev) {
-    v <- NA_real_
-    if ("V_site_max_kt" %in% names(row)) v <- row$V_site_max_kt
-    if (!is.finite(v) && "wind_max_kt" %in% names(row)) v <- row$wind_max_kt
-    if (!is.finite(v) || v <= 0) v <- if (sev == "HUR") 80 else if (sev == "TS") 40 else 25
-    as.numeric(v)
-  }
-
-  # Helper: safely extract a numeric attribute, returning NA if missing
-  safe_num <- function(row, col) {
-    if (col %in% names(row)) {
-      val <- as.numeric(row[[col]])
-      if (is.finite(val)) return(val)
-    }
-    NA_real_
-  }
-
   # Counter for unique event IDs within this year
   event_counter <- 0L
 
@@ -671,8 +681,8 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
     row <- dplyr::as_tibble(lib$sample_event(sev))
 
     start_date <- as.Date(sprintf("%d-01-01", year)) + (doy0 - 1L)
-    dur_days <- get_dur_days(row)
-    V_peak <- get_V_peak(row, sev)
+    dur_days <- .ev_dur_days(row)
+    V_peak <- .ev_V_peak(row, sev)
 
     # Event ID: use SID if available, otherwise generate
     event_counter <<- event_counter + 1L
@@ -692,9 +702,9 @@ sample_events_for_year_extended <- function(lib, year, n_ts, n_hur, seed = NULL)
       V_peak      = as.numeric(V_peak),
       event_id    = eid,
       event_class = event_class,
-      Pc_min_hPa  = dplyr::coalesce(safe_num(row, "min_pressure_hpa"), safe_num(row, "Pc_min_hPa")),
-      dP_max_hPa  = dplyr::coalesce(safe_num(row, "pressure_deficit_hpa"), safe_num(row, "dP_max_hPa")),
-      RMW_mean_km = dplyr::coalesce(safe_num(row, "rmw_mean_km"), safe_num(row, "RMW_mean_km"))
+      Pc_min_hPa  = dplyr::coalesce(.ev_safe_num(row, "min_pressure_hpa"), .ev_safe_num(row, "Pc_min_hPa")),
+      dP_max_hPa  = dplyr::coalesce(.ev_safe_num(row, "pressure_deficit_hpa"), .ev_safe_num(row, "dP_max_hPa")),
+      RMW_mean_km = dplyr::coalesce(.ev_safe_num(row, "rmw_mean_km"), .ev_safe_num(row, "RMW_mean_km"))
     )
   }
 
@@ -871,313 +881,178 @@ generate_daily_year_extended <- function(year, sampled_events,
 
 
 # =============================================================================
+# 4b) Background wind: correlated Weibull marginals via Gaussian copula
+# =============================================================================
+
+#' Background wind configuration for correlated Weibull generation
+#'
+#' @description
+#' Specifies monthly Weibull marginal parameters per location and an optional
+#' Gaussian copula correlation matrix for generating spatially correlated
+#' background wind on all days. Background winds are combined with storm
+#' pulses via \code{pmax}, so the storm signal always dominates on active days.
+#'
+#' The Gaussian copula workflow per simulated year:
+#' \enumerate{
+#'   \item Simulate a \eqn{K}-variate AR(1) process in standardised normal
+#'         space, using the Cholesky factor of \code{cor_matrix} to impose
+#'         spatial correlation and \code{ar1} for day-to-day persistence.
+#'   \item Map each margin through \code{pnorm()} to obtain uniform scores.
+#'   \item Transform each score through its site- and month-specific Weibull
+#'         quantile function to produce background wind speeds in kt.
+#' }
+#'
+#' @param weibull_params Named list of data frames, one per location.
+#'   Each data frame must have columns \code{month} (integer 1-12),
+#'   \code{shape} (Weibull shape > 0), and \code{scale} (Weibull scale > 0).
+#' @param cor_matrix Numeric Pearson correlation matrix for the Gaussian
+#'   copula. Row and column names must match \code{names(weibull_params)}.
+#'   Must be symmetric positive-definite with unit diagonal.
+#'   \code{NULL} (default) treats locations as independent.
+#' @param ar1 Numeric scalar in \code{[0, 1)}; AR(1) coefficient for
+#'   day-to-day persistence in the normal domain. \code{0} (default) gives
+#'   independent daily draws.
+#'
+#' @return A list of class \code{"background_wind_cfg"}.
+#' @export
+make_background_wind_cfg <- function(weibull_params,
+                                     cor_matrix = NULL,
+                                     ar1 = 0) {
+
+  # ---- Validate weibull_params -----------------------------------------------
+  if (!is.list(weibull_params) || is.null(names(weibull_params)) ||
+      any(!nzchar(names(weibull_params)))) {
+    stop("weibull_params must be a named list, one entry per location.", call. = FALSE)
+  }
+  for (nm in names(weibull_params)) {
+    df <- weibull_params[[nm]]
+    if (!is.data.frame(df) || !all(c("month", "shape", "scale") %in% names(df)))
+      stop("weibull_params[['", nm, "']] must be a data frame with columns ",
+           "month, shape, scale.", call. = FALSE)
+    if (!all(df$month %in% 1:12))
+      stop("weibull_params[['", nm, "']]$month must be integers in 1:12.", call. = FALSE)
+    if (any(!is.finite(df$shape) | df$shape <= 0))
+      stop("weibull_params[['", nm, "']]$shape must be finite and > 0.", call. = FALSE)
+    if (any(!is.finite(df$scale) | df$scale <= 0))
+      stop("weibull_params[['", nm, "']]$scale must be finite and > 0.", call. = FALSE)
+  }
+
+  locs <- names(weibull_params)
+  K    <- length(locs)
+
+  # ---- Validate / default cor_matrix -----------------------------------------
+  if (is.null(cor_matrix)) {
+    cor_matrix <- diag(K)
+    rownames(cor_matrix) <- colnames(cor_matrix) <- locs
+  } else {
+    if (!is.matrix(cor_matrix) || !is.numeric(cor_matrix))
+      stop("cor_matrix must be a numeric matrix.", call. = FALSE)
+    if (nrow(cor_matrix) != K || ncol(cor_matrix) != K)
+      stop("cor_matrix must be ", K, "x", K, " to match weibull_params locations.", call. = FALSE)
+    # Assign names from weibull_params if absent; otherwise verify they match.
+    if (is.null(rownames(cor_matrix))) {
+      rownames(cor_matrix) <- colnames(cor_matrix) <- locs
+    } else if (!identical(sort(rownames(cor_matrix)), sort(locs))) {
+      stop("cor_matrix row/col names must match names(weibull_params).", call. = FALSE)
+    }
+    # Reorder to match weibull_params order
+    cor_matrix <- cor_matrix[locs, locs, drop = FALSE]
+    if (!isTRUE(all.equal(cor_matrix, t(cor_matrix), tolerance = 1e-8)))
+      stop("cor_matrix must be symmetric.", call. = FALSE)
+    if (!isTRUE(all.equal(diag(cor_matrix), rep(1, K), tolerance = 1e-8, check.names = FALSE)))
+      stop("cor_matrix must have unit diagonal.", call. = FALSE)
+    if (inherits(tryCatch(chol(cor_matrix), error = function(e) e), "error"))
+      stop("cor_matrix is not positive-definite.", call. = FALSE)
+  }
+
+  # ---- Validate ar1 ----------------------------------------------------------
+  if (!is.numeric(ar1) || length(ar1) != 1L || !is.finite(ar1) || ar1 < 0 || ar1 >= 1)
+    stop("ar1 must be a single numeric value in [0, 1).", call. = FALSE)
+
+  # Precompute Cholesky upper factor once (U'U = cor_matrix)
+  chol_U <- chol(cor_matrix)
+
+  structure(
+    list(
+      weibull_params = weibull_params,
+      cor_matrix     = cor_matrix,
+      chol_U         = chol_U,
+      ar1            = ar1,
+      locations      = locs
+    ),
+    class = c("background_wind_cfg", "list")
+  )
+}
+
+
+#' Generate one year of correlated background wind for multiple locations
+#'
+#' @description
+#' Simulates a \eqn{K}-variate AR(1) in standardised normal space with
+#' spatial covariance given by the Gaussian copula, then transforms each
+#' margin through its site- and month-specific Weibull quantile function.
+#'
+#' @param year Integer calendar year (determines leap year and month mapping).
+#' @param location Character vector of location names; must be a subset of
+#'   \code{cfg$locations}.
+#' @param cfg A \code{background_wind_cfg} object.
+#'
+#' @return Named list of numeric vectors (one per location), each of length
+#'   365 or 366, containing background wind speeds in kt.
+#' @keywords internal
+.generate_background_wind_year <- function(year, location, cfg) {
+
+  year   <- as.integer(year)
+  dates  <- seq.Date(as.Date(sprintf("%d-01-01", year)),
+                     as.Date(sprintf("%d-12-31", year)), by = "day")
+  n      <- length(dates)
+  months <- as.integer(format(dates, "%m"))
+  K      <- length(location)
+
+  # Subset Cholesky to the requested locations (preserves order)
+  chol_U    <- cfg$chol_U[location, location, drop = FALSE]
+  ar1       <- cfg$ar1
+  innov_sd  <- sqrt(1 - ar1^2)   # scales innovations to keep marginal variance = 1
+
+  # ---- K-variate AR(1) in standardised normal space -------------------------
+  # x_t = ar1 * x_{t-1} + innov_sd * (z_t %*% chol_U),  z_t ~ N(0, I_K)
+  # Marginal: x_t ~ N(0, cor_matrix) for all t.
+  Z    <- matrix(stats::rnorm(n * K), nrow = n, ncol = K)
+  innov <- Z %*% chol_U * innov_sd        # correlated innovations, n x K
+
+  X <- matrix(0, nrow = n, ncol = K)
+  x_prev <- stats::rnorm(K) %*% chol_U   # draw from stationary distribution
+  for (d in seq_len(n)) {
+    X[d, ] <- ar1 * x_prev + innov[d, ]
+    x_prev  <- X[d, ]
+  }
+  colnames(X) <- location
+
+  # ---- Copula transform to Weibull marginals ---------------------------------
+  # u_t = pnorm(x_t) in (0,1); background = qweibull(u_t, shape[month], scale[month])
+  U <- stats::pnorm(X)   # n x K
+
+  bg <- stats::setNames(vector("list", K), location)
+  for (loc in location) {
+    wp    <- cfg$weibull_params[[loc]]
+    # Build month-indexed lookup vectors aligned to dates
+    shape <- wp$shape[match(months, wp$month)]
+    scale <- wp$scale[match(months, wp$month)]
+    bg[[loc]] <- stats::qweibull(U[, loc], shape = shape, scale = scale)
+  }
+
+  bg
+}
+
+
+# =============================================================================
 # 5) Daily hazard-impact generation
 # =============================================================================
 
-#' Generate daily synthetic hazard and impact time series from hazard-model output
-#'
-#' @description
-#' Converts stochastic annual hazard-model output from \code{run_hazard_model()}
-#' into daily synthetic hazard and impact series for one or more target
-#' locations and selected simulation years.
-#'
-#' For each requested location, the function:
-#' \enumerate{
-#'   \item builds an empirical event library from the location-specific
-#'   historical track-point and event information stored in \code{out};
-#'   \item reads the simulated annual storm counts from \code{out$sim}
-#'   (currently tropical storms and hurricanes via \code{n_ts} and
-#'   \code{n_hur});
-#'   \item resamples synthetic events year by year from the empirical library;
-#'   \item optionally applies event-level climate perturbations when such
-#'   metadata are attached to \code{out$fit};
-#'   \item downscales each sampled event to a daily sustained-wind pulse;
-#'   \item combines overlapping events into a daily series, retaining the
-#'   dominant event identifier and associated pressure / RMW attributes for each
-#'   day; and
-#'   \item derives gust wind, a simple pressure-based surge proxy, daily damage
-#'   forcing, and cumulative damage.
-#' }
-#'
-#' The function is intended as a temporal downscaling bridge between the annual
-#' synthetic hazard model and downstream impact models that operate at daily
-#' time step. It does not re-simulate storm occurrence from first principles;
-#' instead, it reuses the synthetic annual counts already generated by
-#' \code{run_hazard_model()} and combines them with empirical event structure
-#' extracted from the historical event library. The return value is always a
-#' named list of tibbles, one element per requested location.
-#'
-#' @details
-#' The daily series is generated through the following helper workflow:
-#'
-#' \enumerate{
-#'   \item \code{\link{build_event_library_from_out}()} extracts the
-#'   location-specific historical event library from \code{out$trackpoints} and
-#'   \code{out$events}. Depending on configuration stored in \code{out$cfg}, the
-#'   underlying sampler can use either stratified historical resampling or the
-#'   \code{"copula_nn"} nearest-neighbour copula workflow.
-#'   \item \code{sample_events_for_year_extended()} samples the required number
-#'   of tropical storms and hurricanes for each simulation year using the
-#'   annual counts in \code{out$sim}. Sampled events carry start date, duration,
-#'   peak wind, central pressure, pressure deficit, and mean radius of maximum
-#'   wind.
-#'   \item If climate perturbation metadata are attached to \code{out$fit}, the
-#'   sampled event set is modified with \code{perturb_event()} before daily
-#'   downscaling. This is only applied when perturbation settings are present
-#'   and a finite scalar \code{delta_sst} is available.
-#'   \item \code{\link{generate_daily_year_extended}()} converts each sampled
-#'   event into a daily time series by applying \code{\link{event_pulse}()} to
-#'   the event duration and peak wind, then merges overlapping events by taking
-#'   the daily maximum wind contribution. The dominant event for each day
-#'   carries the \code{event_id}, \code{event_class}, \code{pressure_hpa},
-#'   \code{pressure_deficit_hpa}, and \code{rmw_km} fields into the final daily
-#'   table.
-#'   \item Damage forcing is then added using either
-#'   \code{\link{add_damage_forcing}()} or
-#'   \code{\link{damage_rate_from_wind}()}, depending on
-#'   \code{damage$method}. \code{cum_damage} is computed as the cumulative sum
-#'   of daily \code{damage_rate} within the generated series.
-#'   \item Finally, \code{wind_gust_kt} is derived as
-#'   \code{wind_kt * gust_factor}, and \code{surge_m} is derived from central
-#'   pressure using the simple pressure-deficit proxy
-#'   \code{0.14 * (1013 - pressure_hpa)} where pressure is available.
-#' }
-#'
-#' Scientific parameterization:
-#'
-#' \itemize{
-#'   \item \strong{Gust factor.}
-#'   \code{gust_factor} is a simple multiplicative conversion from daily
-#'   sustained wind speed to daily gust wind speed:
-#'   \deqn{wind\_gust\_kt = wind\_kt \times gust\_factor}
-#'   No additional boundary-layer or exposure correction is applied inside this
-#'   function. A value of 1 leaves gust equal to sustained wind; values above 1
-#'   represent stronger short-duration peak gusts.
-#'
-#'   \item \strong{Pulse shape.}
-#'   \code{pulse_shape} controls the within-event temporal evolution of daily
-#'   sustained wind through \code{\link{event_pulse}()}. Supported values are
-#'   currently \code{"cosine"} and \code{"triangle"}. The cosine option uses
-#'   \code{sin(pi * (t - 0.5) / d)} over event day \code{t = 1, ..., d}, giving
-#'   a smooth rise and fall with zero at the event edges. The triangle option
-#'   uses a piecewise-linear ramp up and down around the event midpoint. In both
-#'   cases the profile is scaled to the sampled event peak wind \code{V_peak}
-#'   and truncated at zero.
-#'
-#'   \item \strong{Damage intensity index.}
-#'   Regardless of \code{damage$method}, the function first computes a bounded
-#'   hazard-intensity index from sustained daily wind:
-#'   \deqn{I = \mathrm{clip}_{[0,1]}\left(\frac{wind\_kt - V0}{V1 - V0}\right)^p}
-#'   where \code{V0} is the lower damage threshold, \code{V1} is the wind speed
-#'   at which the normalized intensity saturates at 1, and \code{p} controls
-#'   convexity. This index is stored in \code{damage_intensity}. For
-#'   \code{damage$method = "intensity"}, these values come from the intensity
-#'   damage specification; for \code{damage$method = "powerlaw"}, the generic
-#'   index uses \code{V0 = 34} kt and \code{V1 = 120} kt with the shared
-#'   exponent \code{p}.
-#'
-#'   \item \strong{Damage method = "intensity".}
-#'   This route calls \code{\link{add_damage_forcing}()}, which maps the bounded
-#'   intensity index to daily damage rate as
-#'   \deqn{damage\_rate = dmax \times I}
-#'   where \code{dmax} is the maximum daily damage fraction. Defaults are
-#'   \code{V0 = 34} kt, \code{V1 = 120} kt, \code{p = 3}, and
-#'   \code{dmax = 0.02}. This is a capped intensity-index model rather than a
-#'   direct engineering vulnerability curve.
-#'
-#'   \item \strong{Damage method = "powerlaw".}
-#'   This route calls \code{\link{damage_rate_from_wind}()}, which applies a
-#'   thresholded power law calibrated at a reference wind:
-#'   \deqn{x = \max\left(0, \frac{wind\_kt - thr}{V\_ref - thr}\right)}
-#'   \deqn{damage\_rate = \min(d\_max,\; d\_ref \times x^p)}
-#'   Here \code{thr} is the wind threshold below which damage is zero,
-#'   \code{V_ref} is a calibration wind at which damage equals \code{d_ref},
-#'   \code{p} is the exponent, and \code{d_max} is the daily cap. Defaults are
-#'   \code{thr = 34} kt, \code{V_ref = 80} kt, \code{d_ref = 0.03},
-#'   \code{p = 3}, and \code{d_max = 0.10}. This method exposes the reference
-#'   point explicitly and is easier to align with an external damage assumption
-#'   at a chosen hazard level.
-#'
-#'   \item \strong{Cumulative damage.}
-#'   \code{cum_damage} is computed as the running cumulative sum of
-#'   \code{damage_rate} over the generated daily sequence for each location.
-#'   It is therefore a synthetic cumulative forcing index, not necessarily a
-#'   literal stock-loss fraction unless the user calibrates the daily damage
-#'   formulation accordingly.
-#' }
-#'
-#' @param out List returned by \code{run_hazard_model()}. Must contain
-#'   location-specific simulation output in \code{out$sim} and the historical
-#'   event / track-point information needed to build the empirical event library.
-#'
-#' @param location Character vector of one or more target location names for
-#'   which daily series should be generated. Each requested location must be
-#'   present in the hazard-model output.
-#'
-#' @param sim_years Integer vector of simulation-year indices to generate.
-#'   These refer to the synthetic years in \code{out$sim}, not historical
-#'   calendar years.
-#'
-#' @param year0 Integer scalar base calendar year used to map synthetic year
-#'   indices to dates. The function interprets \code{sim_year == 1} as
-#'   \code{year0}, \code{sim_year == 2} as \code{year0 + 1}, and so on.
-#'
-#' @param gust_factor Numeric scalar multiplier used to convert daily sustained
-#'   wind \code{wind_kt} to daily gust wind \code{wind_gust_kt}. No internal
-#'   validation against observed gust-duration conventions is performed.
-#'
-#' @param damage Named list defining the daily damage model. Must include a
-#'   scalar character element \code{method} equal to \code{"intensity"} or
-#'   \code{"powerlaw"}. Recognized method-specific fields are:
-#'   \describe{
-#'     \item{\code{method = "intensity"}}{\code{V0}, \code{V1}, \code{p},
-#'       \code{dmax}. Defaults are \code{V0 = 34} kt, \code{V1 = 120} kt,
-#'       \code{p = 3}, and \code{dmax = 0.02}.}
-#'     \item{\code{method = "powerlaw"}}{\code{thr}, \code{V_ref},
-#'       \code{d_ref}, \code{p}, \code{d_max}. Defaults are \code{thr = 34} kt,
-#'       \code{V_ref = 80} kt, \code{d_ref = 0.03}, \code{p = 3}, and
-#'       \code{d_max = 0.10}.}
-#'   }
-#'   Unknown fields for the selected method are rejected. The output still
-#'   includes \code{damage_intensity}; for \code{method = "powerlaw"}, it is a
-#'   generic bounded wind-intensity index and does not change the power-law
-#'   damage-rate formula.
-#'
-#' @param pulse_shape Character scalar pulse shape passed to
-#'   \code{\link{event_pulse}()}. Currently supported values are
-#'   \code{"cosine"} and \code{"triangle"}.
-#'
-#' @param scenario Optional character scalar scenario label copied into the
-#'   output rows without modification.
-#'
-#' @param seed Optional integer scalar random seed. When \code{NULL} (the
-#'   default), the seed is inherited from \code{out$run_metadata$seed} if
-#'   available, and falls back to \code{1L} otherwise. Pass an explicit integer
-#'   to override and decouple from the hazard-model run. The wrapper offsets the
-#'   resolved seed by location index so repeated calls are deterministic but
-#'   distinct across requested locations.
-#'
-#' @return
-#' A named list of tibbles, one element per requested location. Each tibble
-#' contains a daily synthetic hazard-impact series with columns:
-#' \describe{
-#'   \item{\code{location}}{Target location name.}
-#'   \item{\code{sim_year}}{Synthetic simulation-year index from \code{out$sim}.}
-#'   \item{\code{scenario}}{Scenario label passed through from the function call.}
-#'   \item{\code{date}}{Daily calendar date derived from \code{year0}.}
-#'   \item{\code{wind_kt}}{Daily sustained wind speed (kt).}
-#'   \item{\code{wind_gust_kt}}{Daily gust wind speed (kt), computed using
-#'     \code{gust_factor}.}
-#'   \item{\code{surge_m}}{Simple pressure-based surge proxy (m).}
-#'   \item{\code{event_id}}{Identifier of the dominant event contributing the
-#'     highest wind on that day, or \code{NA} outside events.}
-#'   \item{\code{event_class}}{Dominant daily event class, currently \code{"TS"}
-#'     or \code{"HUR"}, based on realized downscaled peak.}
-#'   \item{\code{pressure_hpa}}{Minimum central pressure associated with the
-#'     dominant event on that day, when available.}
-#'   \item{\code{pressure_deficit_hpa}}{Pressure deficit associated with the
-#'     dominant event on that day, when available.}
-#'   \item{\code{rmw_km}}{Mean radius of maximum wind for the dominant event,
-#'     when available.}
-#'   \item{\code{damage_intensity}}{Bounded normalized hazard-intensity index.}
-#'   \item{\code{damage_rate}}{Daily damage forcing fraction from the selected
-#'     damage model.}
-#'   \item{\code{cum_damage}}{Cumulative sum of \code{damage_rate}.}
-#' }
-#' Each location tibble also carries a \code{"gust_factor"} attribute.
-#'
-#' @seealso
-#' \code{\link{build_event_library_from_out}},
-#' \code{\link{generate_daily_year_extended}},
-#' \code{\link{event_pulse}},
-#' \code{\link{add_damage_forcing}},
-#' \code{\link{damage_rate_from_wind}}
-#'
-#' @examples
-#' \dontrun{
-#' # Single location — returns a named list of length 1
-#' res <- generate_daily_hazard_impact(
-#'   out = out,
-#'   location = "Saba",
-#'   sim_years = 1:10,
-#'   year0 = 2000,
-#'   gust_factor = 1.3,
-#'   damage = list(method = "intensity", V0 = 34, V1 = 120, p = 3, dmax = 0.02),
-#'   pulse_shape = "cosine",
-#'   scenario = "baseline",
-#'   seed = 1
-#' )
-#' res$Saba
-#'
-#' # Multiple locations with the power-law damage option
-#' res <- generate_daily_hazard_impact(
-#'   out = out,
-#'   location = c("Saba", "St. Eustatius"),
-#'   sim_years = 1:5,
-#'   damage = list(
-#'     method = "powerlaw",
-#'     thr = 34,
-#'     V_ref = 80,
-#'     d_ref = 0.03,
-#'     p = 3,
-#'     d_max = 0.10
-#'   )
-#' )
-#' res$Saba
-#' res$`St. Eustatius`
-#' }
-#' @export
-generate_daily_hazard_impact <- function(
-    out,
-    location,
-    sim_years = 1:1000,
-    year0 = 2000,
-    gust_factor = 1,
-    damage = list(method = "intensity"),
-    pulse_shape = "cosine",
-    scenario = NA_character_,
-    seed = NULL) {
-  stopifnot(is.character(location), length(location) >= 1L)
-
-  if (is.null(seed)) {
-    seed <- if (!is.null(out$run_metadata$seed)) out$run_metadata$seed else 1L
-  }
-  if (!is.numeric(seed) || length(seed) != 1L || !is.finite(seed)) {
-    stop("seed must be NULL or a single finite numeric value.", call. = FALSE)
-  }
-  seed <- as.integer(seed)
-
-  damage <- .validate_damage_spec(damage)
-
-  # --- Run each location via the internal worker ---
-  results <- stats::setNames(
-    vector("list", length(location)),
-    location
-  )
-
-  for (loc in location) {
-    # Per-location seed: deterministic but distinct across locations
-    loc_seed <- seed + match(loc, location) - 1L
-
-    results[[loc]] <- .generate_daily_hazard_impact_single(
-      out = out,
-      location = loc,
-      sim_years = sim_years,
-      year0 = year0,
-      gust_factor = gust_factor,
-      damage = damage,
-      pulse_shape = pulse_shape,
-      scenario = scenario,
-      seed = loc_seed
-    )
-  }
-
-  results
-}
 
 #' Validate and fill damage specification defaults
 #'
-#' @param damage Named list supplied to \code{generate_daily_hazard_impact()}.
+#' @param damage Named list supplied to \code{generate_daily_hazard_impact_spatial()}.
 #' @return Named list with validated method-specific defaults filled in.
 #' @keywords internal
 .validate_damage_spec <- function(damage) {
@@ -1225,164 +1100,6 @@ generate_daily_hazard_impact <- function(
     utils::modifyList(damage)
 }
 
-#' Generate daily hazard and damage for one location
-#'
-#' @description
-#' Internal worker that builds one location's event library, samples annual
-#' events from the stochastic hazard output, and assembles the final daily
-#' hazard-impact table.
-#'
-#' @param out List returned by \code{run_hazard_model()}.
-#' @param location Character scalar location name.
-#' @param sim_years Integer vector of simulation-year indices to generate.
-#' @param year0 Integer scalar base calendar year corresponding to
-#'   \code{sim_year == 1}.
-#' @param gust_factor Numeric scalar gust multiplier.
-#' @param damage Named list of validated damage parameters.
-#' @param pulse_shape Character scalar pulse-shape identifier.
-#' @param scenario Optional character scalar scenario label carried into output.
-#' @param seed Integer scalar seed for deterministic per-location generation.
-#' @return Tibble with the daily hazard-impact schema used by
-#'   \code{generate_daily_hazard_impact()}.
-#' @keywords internal
-.generate_daily_hazard_impact_single <- function(
-    out,
-    location,
-    sim_years,
-    year0,
-    gust_factor,
-    damage,
-    pulse_shape,
-    scenario,
-    seed) {
-
-  # seed is forwarded to build_event_library_from_out(), which calls
-  # set.seed(seed) internally; sampling after library construction inherits
-  # that RNG state deterministically.
-  method <- if (!is.null(out$cfg) && !is.null(out$cfg$resampling_method)) out$cfg$resampling_method else NULL
-  if (is.null(method)) method <- "stratified"
-  copula_min_n <- if (!is.null(out$cfg) && !is.null(out$cfg$copula_min_n)) out$cfg$copula_min_n else 30L
-  copula_k <- if (!is.null(out$cfg) && !is.null(out$cfg$copula_k)) out$cfg$copula_k else 1L
-  copula_robust_scale <- if (!is.null(out$cfg) && !is.null(out$cfg$copula_robust_scale)) out$cfg$copula_robust_scale else TRUE
-
-  lib <- build_event_library_from_out(
-    out,
-    location = location,
-    seed = seed,
-    resampling_method = method,
-    copula_min_n = copula_min_n,
-    copula_k = copula_k,
-    copula_robust_scale = copula_robust_scale
-  )
-
-  if (is.null(out$sim)) stop("out$sim is NULL.", call. = FALSE)
-
-  sim <- out$sim |>
-    dplyr::filter(.data$location == !!location, .data$sim_year %in% sim_years)
-
-  if (nrow(sim) == 0) stop("No sim years found for location '", location, "' in out$sim.", call. = FALSE)
-
-  .get_sim_col <- function(sim, candidates) {
-    hit <- candidates[candidates %in% names(sim)][1]
-    if (is.na(hit)) {
-      stop("Missing expected column in out$sim. Tried: ",
-           paste(candidates, collapse = ", "), call. = FALSE)
-    }
-    sim[[hit]]
-  }
-
-  n_ts_vec  <- .get_sim_col(sim, c("n_ts"))
-  n_hur_vec <- .get_sim_col(sim, c("n_hur"))
-
-  delta_sst <- if (!is.null(out$fit)) attr(out$fit, "delta_sst") else NULL
-  perturb_cfg <- if (!is.null(out$fit)) attr(out$fit, "perturb") else NULL
-
-  perturb_enabled <- !is.null(perturb_cfg)
-
-  # Pre-compute intensity parameters once — these are constant across all years.
-  intensity_pars <- if (identical(damage$method, "intensity")) {
-    damage[c("V0", "V1", "p")]
-  } else {
-    list(V0 = 34, V1 = 120, p = damage$p)
-  }
-
-  daily_list <- vector("list", nrow(sim))
-
-  for (i in seq_len(nrow(sim))) {
-    yr <- year0 + (sim$sim_year[i] - 1L)
-
-    sampled <- sample_events_for_year_extended(
-      lib = lib,
-      year = yr,
-      n_ts = n_ts_vec[i],
-      n_hur = n_hur_vec[i]
-    )
-
-    # Apply storm perturbation only when explicitly enabled in the climate config.
-    if (perturb_enabled && nrow(sampled) > 0) {
-      if (!is.numeric(delta_sst) || length(delta_sst) != 1L || !is.finite(delta_sst)) {
-        stop("delta_sst must be a single finite numeric value for perturb_event().", call. = FALSE)
-      }
-      sampled <- perturb_event(sampled, delta_sst = delta_sst, cc_params = perturb_cfg)
-    }
-
-    daily_list[[i]] <- generate_daily_year_extended(
-      year = yr,
-      sampled_events = sampled,
-      pulse_shape = pulse_shape
-    )
-  }
-
-  # Assemble full series, then add constant and derived columns in bulk rather
-  # than repeating the same dplyr calls once per simulation year.
-  result <- dplyr::bind_rows(daily_list)
-
-  # sim_year: each year block may be 365 or 366 rows (leap years), so use
-  # per-element lengths rather than assuming a fixed block size.
-  n_days_per_year <- vapply(daily_list, nrow, integer(1L))
-  result$sim_year  <- rep(sim$sim_year, times = n_days_per_year)
-  result$location  <- location
-  result$scenario  <- scenario
-
-  # Damage intensity (vectorized over the full assembled series)
-  result$damage_intensity <- pmax(
-    0,
-    pmin(1, (result$wind_kt - intensity_pars$V0) / (intensity_pars$V1 - intensity_pars$V0))
-  )^intensity_pars$p
-
-  # Damage rate (vectorized over the full assembled series)
-  if (damage$method == "intensity") {
-    result <- do.call(add_damage_forcing, c(list(daily = result), damage[c("V0", "V1", "p", "dmax")]))
-  } else {
-    result$damage_rate <- do.call(
-      damage_rate_from_wind,
-      c(list(wind_kt = result$wind_kt), damage[c("thr", "V_ref", "d_ref", "p", "d_max")])
-    )
-  }
-
-  # cum_damage: per-sim_year cumulative sum using base ave() for grouping
-  result$cum_damage <- ave(
-    dplyr::coalesce(result$damage_rate, 0),
-    result$sim_year,
-    FUN = cumsum
-  )
-
-  result <- result |>
-    dplyr::mutate(
-      wind_gust_kt = .data$wind_kt * gust_factor,
-      surge_m = ifelse(is.finite(.data$pressure_hpa), 0.14 * (1013 - .data$pressure_hpa), NA_real_)
-    ) |>
-    dplyr::select(
-      "location", "sim_year", "scenario", "date",
-      "wind_kt", "wind_gust_kt", "surge_m",
-      "event_id", "event_class", "pressure_hpa",
-      "pressure_deficit_hpa", "rmw_km", "damage_intensity",
-      "damage_rate", "cum_damage"
-    ) |>
-    dplyr::relocate("location", "sim_year", "scenario", "date")
-  attr(result, "gust_factor") <- gust_factor
-  result
-}
 
 
 # =============================================================================
@@ -1532,46 +1249,6 @@ generate_daily_hazard_impact <- function(
     return(list(rows = .empty_sampled_events_tbl(), n_filled = 0L, counter = counter))
   }
 
-  # Local helpers — mirrors internals of sample_events_for_year_extended()
-  get_dur_days <- function(row) {
-    if ("dur_days" %in% names(row) && is.finite(row$dur_days[1]) && row$dur_days[1] > 0)
-      return(as.integer(row$dur_days[1]))
-    if (all(c("start_time", "end_time") %in% names(row)) &&
-        !is.na(row$start_time[1]) && !is.na(row$end_time[1])) {
-      d <- as.numeric(difftime(row$end_time[1], row$start_time[1], units = "days"))
-      return(max(1L, as.integer(floor(d) + 1L)))
-    }
-    if ("n_points" %in% names(row) && is.finite(row$n_points[1]) && row$n_points[1] > 0)
-      return(max(1L, as.integer(ceiling(row$n_points[1] / 4))))
-    1L
-  }
-
-  get_V_peak <- function(row, sev) {
-    v <- NA_real_
-    if ("V_site_max_kt" %in% names(row)) v <- as.numeric(row$V_site_max_kt[1])
-    if (!is.finite(v) && "wind_max_kt" %in% names(row))  v <- as.numeric(row$wind_max_kt[1])
-    if (!is.finite(v) && "peak_wind_kt" %in% names(row)) v <- as.numeric(row$peak_wind_kt[1])
-    if (!is.finite(v) || v <= 0) v <- if (sev == "HUR") 80 else 40
-    v
-  }
-
-  safe_num <- function(row, col) {
-    if (col %in% names(row)) {
-      val <- as.numeric(row[[col]][1])
-      if (is.finite(val)) return(val)
-    }
-    NA_real_
-  }
-
-  get_doy <- function(row) {
-    if ("doy" %in% names(row) && is.finite(row$doy[1]) &&
-        row$doy[1] >= 1 && row$doy[1] <= 366)
-      return(as.integer(row$doy[1]))
-    if ("start_time" %in% names(row) && !is.na(row$start_time[1]))
-      return(as.integer(format(as.Date(row$start_time[1]), "%j")))
-    220L  # tropical-season centre fallback
-  }
-
   row_list <- vector("list", length(sids))
   n_filled <- 0L
 
@@ -1582,15 +1259,15 @@ generate_daily_hazard_impact <- function(
 
     # Multiple library rows for the same SID: pick the one with highest V_peak
     if (length(midx) > 1L) {
-      vpk  <- vapply(midx, function(i) get_V_peak(ev[i, ], sev), numeric(1L))
+      vpk  <- vapply(midx, function(i) .ev_V_peak(ev[i, ], sev), numeric(1L))
       midx <- midx[which.max(vpk)]
     }
 
     row        <- ev[midx, , drop = FALSE]
-    doy0       <- get_doy(row)
+    doy0       <- .ev_doy(row)
     start_date <- as.Date(sprintf("%d-01-01", year)) + (doy0 - 1L)
-    dur_days   <- get_dur_days(row)
-    V_peak     <- get_V_peak(row, sev)
+    dur_days   <- .ev_dur_days(row)
+    V_peak     <- .ev_V_peak(row, sev)
 
     counter    <- counter + 1L
     eid        <- paste0(sid, "_y", year, "_", counter)
@@ -1603,11 +1280,11 @@ generate_daily_hazard_impact <- function(
       event_id    = eid,
       event_class = if (sev == "HUR") "HUR" else "TS",
       Pc_min_hPa  = dplyr::coalesce(
-        safe_num(row, "min_pressure_hpa"), safe_num(row, "Pc_min_hPa")),
+        .ev_safe_num(row, "min_pressure_hpa"), .ev_safe_num(row, "Pc_min_hPa")),
       dP_max_hPa  = dplyr::coalesce(
-        safe_num(row, "pressure_deficit_hpa"), safe_num(row, "dP_max_hPa")),
+        .ev_safe_num(row, "pressure_deficit_hpa"), .ev_safe_num(row, "dP_max_hPa")),
       RMW_mean_km = dplyr::coalesce(
-        safe_num(row, "rmw_mean_km"), safe_num(row, "RMW_mean_km"))
+        .ev_safe_num(row, "rmw_mean_km"), .ev_safe_num(row, "RMW_mean_km"))
     )
     n_filled <- n_filled + 1L
   }
@@ -1621,7 +1298,7 @@ generate_daily_hazard_impact <- function(
 #' Generate spatially coherent daily synthetic hazard and impact time series
 #'
 #' @description
-#' Drop-in replacement for \code{\link{generate_daily_hazard_impact}()} that
+#' Drop-in replacement for \code{\link{generate_daily_hazard_impact_spatial}()} that
 #' enforces spatial coherence across locations by sampling storms once at the
 #' basin level per simulated year and assigning each drawn storm to every
 #' location whose event library contains it (Option 1 — shared event pool).
@@ -1650,7 +1327,7 @@ generate_daily_hazard_impact <- function(
 #' @param year0 Integer scalar base calendar year for \code{sim_year == 1}.
 #' @param gust_factor Numeric scalar gust multiplier applied to \code{wind_kt}.
 #' @param damage Named list defining the daily damage model; same specification
-#'   as \code{\link{generate_daily_hazard_impact}()}.
+#'   as \code{\link{generate_daily_hazard_impact_spatial}()}.
 #' @param pulse_shape Character scalar pulse shape; \code{"cosine"} or
 #'   \code{"triangle"}.
 #' @param scenario Optional character scalar scenario label carried into output.
@@ -1659,10 +1336,10 @@ generate_daily_hazard_impact <- function(
 #'   offset by location index for reproducibility.
 #'
 #' @return Named list of tibbles — one per requested location — with the same
-#'   column schema as \code{\link{generate_daily_hazard_impact}()}.
+#'   column schema as \code{\link{generate_daily_hazard_impact_spatial}()}.
 #'
 #' @seealso
-#' \code{\link{generate_daily_hazard_impact}},
+#' \code{\link{generate_daily_hazard_impact_spatial}},
 #' \code{\link{build_event_library_from_out}},
 #' \code{\link{generate_daily_year_extended}}
 #'
@@ -1691,14 +1368,16 @@ generate_daily_hazard_impact <- function(
 generate_daily_hazard_impact_spatial <- function(
     out,
     location,
-    sim_years   = 1:1000,
-    year0       = 2000,
-    gust_factor = 1,
-    damage      = list(method = "intensity"),
-    pulse_shape = "cosine",
-    scenario    = NA_character_,
-    seed        = NULL,
-    verbose     = TRUE) {
+    sim_years      = 1:1000,
+    year0          = 2000,
+    gust_factor    = 1,
+    damage         = list(method = "intensity"),
+    pulse_shape    = "cosine",
+    scenario       = NA_character_,
+    seed           = NULL,
+    pinned_sids    = NULL,
+    background_wind = NULL,
+    verbose        = FALSE) {
 
   stopifnot(is.character(location), length(location) >= 1L)
 
@@ -1753,6 +1432,43 @@ generate_daily_hazard_impact_spatial <- function(
   perturb_cfg     <- if (!is.null(out$fit)) attr(out$fit, "perturb")   else NULL
   perturb_enabled <- !is.null(perturb_cfg)
 
+  # ---- Validate pinned_sids --------------------------------------------------
+  if (!is.null(pinned_sids)) {
+    if (!is.list(pinned_sids)) {
+      stop("pinned_sids must be NULL or a named list mapping sim_year to a SID string.",
+           call. = FALSE)
+    }
+    bad <- vapply(pinned_sids, function(x) {
+      if (is.null(x)) return(FALSE)
+      if (is.character(x) && length(x) == 1L) return(FALSE)  # single char or NA_character_
+      return(TRUE)
+    }, logical(1L))
+    if (any(bad)) {
+      stop("Each pinned_sids entry must be a single character SID or NA.", call. = FALSE)
+    }
+  }
+
+  # ---- Validate background_wind and pre-generate all years ------------------
+  # Background is generated with seed+1 so that the storm-sampling RNG (seeded
+  # below at set.seed(seed)) is completely unaffected, preserving CRN.
+  bg_years <- NULL
+  if (!is.null(background_wind)) {
+    if (!inherits(background_wind, "background_wind_cfg"))
+      stop("background_wind must be a background_wind_cfg object from make_background_wind_cfg().",
+           call. = FALSE)
+    missing_locs <- setdiff(location, background_wind$locations)
+    if (length(missing_locs) > 0L)
+      stop("background_wind has no Weibull parameters for location(s): ",
+           paste(missing_locs, collapse = ", "), ".", call. = FALSE)
+
+    set.seed(seed + 1L)
+    bg_years <- vector("list", length(sim_years))
+    for (yr_idx in seq_along(sim_years)) {
+      cal_yr <- as.integer(year0) + (sim_years[yr_idx] - 1L)
+      bg_years[[yr_idx]] <- .generate_background_wind_year(cal_yr, location, background_wind)
+    }
+  }
+
   # ---- Progress header -------------------------------------------------------
   n_years <- length(sim_years)
   t_start <- proc.time()[["elapsed"]]
@@ -1763,9 +1479,18 @@ generate_daily_hazard_impact_spatial <- function(
     } else {
       "perturb OFF"
     }
+    n_pins <- if (!is.null(pinned_sids)) {
+      sum(vapply(pinned_sids, function(x) !is.null(x) && length(x) == 1L && !is.na(x), logical(1L)))
+    } else 0L
+    pin_label <- if (n_pins > 0L) sprintf("pins: %d", n_pins) else "no pins"
+    bg_label  <- if (!is.null(background_wind)) {
+      sprintf("background: Weibull+copula (ar1=%.2f)", background_wind$ar1)
+    } else {
+      "background: none"
+    }
     message(sprintf(
-      "[daily] %d years x %d location(s) | scenario: %s | seed: %d | %s",
-      n_years, length(location), scen_label, seed, perturb_label
+      "[daily] %d years x %d location(s) | scenario: %s | seed: %d | %s | %s | %s",
+      n_years, length(location), scen_label, seed, perturb_label, pin_label, bg_label
     ))
     # Quarterly progress ticks (only when the run is large enough to matter)
     tick_at <- if (n_years >= 100L) {
@@ -1809,8 +1534,19 @@ generate_daily_hazard_impact_spatial <- function(
     n_hur_basin <- max(n_hur_vec, 0L)
 
     # Draw shared SIDs once at basin level
-    shared_ts_sids  <- .sample_shared_sids(pool, "TS",  n_ts_basin)
-    shared_hur_sids <- .sample_shared_sids(pool, "HUR", n_hur_basin)
+    shared_ts_sids <- .sample_shared_sids(pool, "TS", n_ts_basin)
+
+    # HUR draw: pin focal SID when requested, fill remaining slots freely
+    focal_sid <- if (!is.null(pinned_sids)) pinned_sids[[as.character(sim_yr)]] else NULL
+    shared_hur_sids <- if (!is.null(focal_sid) && !is.na(focal_sid) && nzchar(focal_sid)) {
+      # Guarantee the focal event; exclude it from the random pool to avoid
+      # double-counting it in the same year.
+      n_remaining  <- max(0L, n_hur_basin - 1L)
+      pool_reduced <- pool[!(pool$storm_class == "HUR" & pool$SID == focal_sid), , drop = FALSE]
+      c(focal_sid, .sample_shared_sids(pool_reduced, "HUR", n_remaining))
+    } else {
+      .sample_shared_sids(pool, "HUR", n_hur_basin)
+    }
 
     # ---- Per-location: resolve shared SIDs and generate daily series ---------
     for (loc in location) {
@@ -1833,6 +1569,14 @@ generate_daily_hazard_impact_spatial <- function(
         pulse_shape    = pulse_shape
       ) |>
         dplyr::mutate(sim_year = sim_yr, location = loc, scenario = scenario)
+
+      # Overlay background wind before damage calculations.
+      # pmax keeps the storm signal intact on event days; background fills zeros.
+      if (!is.null(bg_years)) {
+        bg_loc <- bg_years[[yr_idx]][[loc]]
+        if (length(bg_loc) == nrow(daily0))
+          daily0$wind_kt <- pmax(daily0$wind_kt, bg_loc)
+      }
 
       # Damage intensity index
       intensity_pars <- if (identical(damage$method, "intensity")) {

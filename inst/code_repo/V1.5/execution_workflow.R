@@ -93,7 +93,7 @@ lib_saba$doy_by_severity
 # 4) Generate synthetic daily wind+impact series from simulated annual counts
 # -----------------------------------------------------------------------------
 
-daily_saba_impact <- generate_daily_hazard_impact(
+daily_saba_impact <- generate_daily_hazard_impact_spatial(
   out = out,
   island = "Saba",
   sim_years = 1:200,

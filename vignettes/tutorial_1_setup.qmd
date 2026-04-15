@@ -330,11 +330,11 @@ Useful for diagnostics and spot-checking individual storms.
 ### Workflow 3 — Generate daily wind time series {#sec-daily}
 
 The simulation above produces annual counts.
-To get a **daily time series**, use `generate_daily_hazard_impact()`:
+To get a **daily time series**, use `generate_daily_hazard_impact_spatial()`:
 
 ```{r}
 #| label: daily-single
-daily <- generate_daily_hazard_impact(
+daily <- generate_daily_hazard_impact_spatial(
   out         = out,
   location    = "Saba",
   sim_years   = 1:200,               # use first 200 simulated years

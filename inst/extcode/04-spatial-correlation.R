@@ -91,7 +91,7 @@ if (!exists("hazard_out")) {
 }
 
 if (!exists("daily_out")) {
-  daily_out <- generate_daily_hazard_impact(
+  daily_out <- generate_daily_hazard_impact_spatial(
     out         = hazard_out,
     location    = targets$name,
     sim_years   = seq_len(simulation_years),

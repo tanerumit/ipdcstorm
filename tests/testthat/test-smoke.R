@@ -95,18 +95,18 @@ test_that("run_hazard_model is reproducible with a fixed seed", {
   expect_identical(run1$run_metadata$seed, 42L)
 })
 
-test_that("run_hazard_model seed flows into generate_daily_hazard_impact via run_metadata", {
+test_that("run_hazard_model seed flows into generate_daily_hazard_impact_spatial via run_metadata", {
   cfg <- make_hazard_cfg(simulation_years = 3L)
   targets <- tibble::tibble(location = "Saba", lat = 17.63, lon = -63.23)
 
   out <- suppressWarnings(run_hazard_model(cfg, targets, seed = 55L, verbose = FALSE))
 
   # NULL seed inherits from out$run_metadata$seed (55L)
-  daily_inherited <- generate_daily_hazard_impact(
+  daily_inherited <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:3
   )
   # Explicit seed = 55L must give identical results
-  daily_explicit <- generate_daily_hazard_impact(
+  daily_explicit <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:3, seed = 55L
   )
 

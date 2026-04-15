@@ -44,11 +44,12 @@ to \code{beta_0} when \code{sensitivity_mode = "linear_shifted"}.}
 \item{k_gamma}{Numeric scalar; linear sensitivity-shift coefficient applied
 to \code{gamma_0} when \code{sensitivity_mode = "linear_shifted"}.}
 
-\item{perturb}{Optional storm-perturbation settings.
+\item{perturb}{Controls storm-perturbation of individual event properties
+(intensity, duration, wind radii) by \code{delta_sst}.
 \itemize{
-\item \code{NULL}: disable storm perturbation.
-\item \code{list()}: enable storm perturbation with defaults from \code{default_cc_params()}.
-\item named list: enable storm perturbation with user overrides.
+\item \code{TRUE}: enable with scenario-appropriate defaults (recommended for KNMI scenarios).
+\item \code{FALSE} or \code{NULL}: disable (default).
+\item named list: enable with explicit parameter overrides (see \code{default_cc_params()}).
 }}
 }
 \value{
@@ -66,8 +67,9 @@ instead enable a linear sensitivity shift:
 
 \code{gamma = gamma_0 * (1 + k_gamma * delta_sst)}
 
-Optional storm perturbation is available as an expert sensitivity and is
-disabled unless \code{perturb} is supplied explicitly.
+Optional storm perturbation shifts individual event intensity, duration, and
+wind radii by \code{delta_sst}. It is disabled by default; pass \code{perturb = TRUE}
+to enable scenario-appropriate defaults.
 
 Climate can be specified in two equivalent ways:
 \enumerate{

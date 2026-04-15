@@ -1,8 +1,18 @@
 downscale_track_fixture <- function() {
   tibble::tibble(
-    SID = c("storm_ts", "storm_ts", "storm_hur", "storm_hur"),
+    SID = c(
+      "storm_ts", "storm_ts",
+      "storm_ts2", "storm_ts2",
+      "storm_hur", "storm_hur",
+      "storm_hur2", "storm_hur2"
+    ),
     iso_time = as.POSIXct(
-      c("2000-08-01 00:00:00", "2000-08-01 06:00:00", "2000-09-10 00:00:00", "2000-09-10 06:00:00"),
+      c(
+        "2000-08-01 00:00:00", "2000-08-01 06:00:00",
+        "2000-07-15 00:00:00", "2000-07-15 06:00:00",
+        "2000-09-10 00:00:00", "2000-09-10 06:00:00",
+        "2000-10-05 00:00:00", "2000-10-05 06:00:00"
+      ),
       tz = "UTC"
     )
   )
@@ -10,16 +20,24 @@ downscale_track_fixture <- function() {
 
 downscale_event_fixture <- function() {
   tibble::tibble(
-    location = c("Saba", "Saba"),
-    storm_id = c("storm_ts", "storm_hur"),
-    peak_wind_kt = c(45, 85),
-    storm_intensity_kt = c(55, 110),
-    min_pressure_hpa = c(995, 955),
-    pressure_deficit_hpa = c(15, 55),
-    rmw_mean_km = c(40, 24),
-    start_time = as.POSIXct(c("2000-08-01 00:00:00", "2000-09-10 00:00:00"), tz = "UTC"),
-    end_time = as.POSIXct(c("2000-08-02 00:00:00", "2000-09-12 00:00:00"), tz = "UTC"),
-    n_points = c(2L, 2L)
+    location = c("Saba", "Saba", "Saba", "Saba"),
+    storm_id = c("storm_ts", "storm_ts2", "storm_hur", "storm_hur2"),
+    peak_wind_kt = c(45, 52, 85, 95),
+    storm_intensity_kt = c(55, 62, 110, 120),
+    min_pressure_hpa = c(995, 990, 955, 945),
+    pressure_deficit_hpa = c(15, 22, 55, 65),
+    rmw_mean_km = c(40, 35, 24, 28),
+    start_time = as.POSIXct(
+      c("2000-08-01 00:00:00", "2000-07-15 00:00:00",
+        "2000-09-10 00:00:00", "2000-10-05 00:00:00"),
+      tz = "UTC"
+    ),
+    end_time = as.POSIXct(
+      c("2000-08-02 00:00:00", "2000-07-17 00:00:00",
+        "2000-09-12 00:00:00", "2000-10-08 00:00:00"),
+      tz = "UTC"
+    ),
+    n_points = c(2L, 2L, 2L, 2L)
   )
 }
 
@@ -29,10 +47,10 @@ downscale_out_fixture <- function() {
     trackpoints = list(Saba = downscale_track_fixture()),
     events = downscale_event_fixture(),
     sim = tibble::tibble(
-      location = "Saba",
-      sim_year = 1L,
-      n_ts = 1L,
-      n_hur = 1L
+      location = rep("Saba", 5L),
+      sim_year = 1L:5L,
+      n_ts = c(1L, 1L, 1L, 1L, 1L),
+      n_hur = c(1L, 1L, 1L, 1L, 1L)
     )
   )
 }
@@ -102,7 +120,7 @@ test_that("daily hazard helpers classify events and aggregate daily diagnostics"
 
 test_that("daily hazard generation and damage helpers return public output schema", {
   out <- downscale_out_fixture()
-  daily_list <- generate_daily_hazard_impact(
+  daily_list <- generate_daily_hazard_impact_spatial(
     out = out,
     location = "Saba",
     sim_years = 1L,
@@ -129,7 +147,7 @@ test_that("daily hazard generation and damage helpers return public output schem
 test_that("daily hazard generation accepts damage defaults for both methods", {
   out <- downscale_out_fixture()
 
-  intensity <- generate_daily_hazard_impact(
+  intensity <- generate_daily_hazard_impact_spatial(
     out = out,
     location = "Saba",
     sim_years = 1L,
@@ -137,7 +155,7 @@ test_that("daily hazard generation accepts damage defaults for both methods", {
     damage = list(method = "intensity"),
     seed = 20
   )$Saba
-  powerlaw <- generate_daily_hazard_impact(
+  powerlaw <- generate_daily_hazard_impact_spatial(
     out = out,
     location = "Saba",
     sim_years = 1L,
@@ -166,7 +184,7 @@ test_that("daily hazard generation accepts damage defaults for both methods", {
 test_that("daily hazard generation honors damage overrides numerically", {
   out <- downscale_out_fixture()
 
-  intensity <- generate_daily_hazard_impact(
+  intensity <- generate_daily_hazard_impact_spatial(
     out = out,
     location = "Saba",
     sim_years = 1L,
@@ -174,7 +192,7 @@ test_that("daily hazard generation honors damage overrides numerically", {
     damage = list(method = "intensity", V0 = 40, V1 = 100, p = 2, dmax = 0.05),
     seed = 20
   )$Saba
-  powerlaw <- generate_daily_hazard_impact(
+  powerlaw <- generate_daily_hazard_impact_spatial(
     out = out,
     location = "Saba",
     sim_years = 1L,
@@ -225,32 +243,32 @@ test_that("daily hazard generation rejects invalid damage specifications", {
   )
 
   expect_error(
-    do.call(generate_daily_hazard_impact, c(base_args, list(damage = "intensity"))),
+    do.call(generate_daily_hazard_impact_spatial, c(base_args, list(damage = "intensity"))),
     "`damage` must be a named list.",
     fixed = TRUE
   )
   expect_error(
-    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list()))),
+    do.call(generate_daily_hazard_impact_spatial, c(base_args, list(damage = list()))),
     "`damage$method` must be a single non-empty character string.",
     fixed = TRUE
   )
   expect_error(
-    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list(method = "bad")))),
+    do.call(generate_daily_hazard_impact_spatial, c(base_args, list(damage = list(method = "bad")))),
     "`damage$method` must be one of: intensity, powerlaw.",
     fixed = TRUE
   )
   expect_error(
-    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list(method = "intensity", thr = 34)))),
+    do.call(generate_daily_hazard_impact_spatial, c(base_args, list(damage = list(method = "intensity", thr = 34)))),
     "unsupported field(s) for method 'intensity': thr",
     fixed = TRUE
   )
   expect_error(
-    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list(method = "powerlaw", V0 = 34)))),
+    do.call(generate_daily_hazard_impact_spatial, c(base_args, list(damage = list(method = "powerlaw", V0 = 34)))),
     "unsupported field(s) for method 'powerlaw': V0",
     fixed = TRUE
   )
   expect_error(
-    do.call(generate_daily_hazard_impact, c(base_args, list(damage = list(method = "intensity", p = c(2, 3))))),
+    do.call(generate_daily_hazard_impact_spatial, c(base_args, list(damage = list(method = "intensity", p = c(2, 3))))),
     "`damage$p` must be a single finite numeric value.",
     fixed = TRUE
   )
@@ -260,13 +278,13 @@ test_that("daily hazard generation rejects invalid damage specifications", {
 # Reproducibility tests
 # =============================================================================
 
-test_that("generate_daily_hazard_impact is reproducible with an explicit seed", {
+test_that("generate_daily_hazard_impact_spatial is reproducible with an explicit seed", {
   out <- downscale_out_fixture()
 
-  run1 <- generate_daily_hazard_impact(
+  run1 <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:3, year0 = 2001L, seed = 42L
   )
-  run2 <- generate_daily_hazard_impact(
+  run2 <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:3, year0 = 2001L, seed = 42L
   )
 
@@ -275,13 +293,13 @@ test_that("generate_daily_hazard_impact is reproducible with an explicit seed", 
   expect_identical(run1$Saba$damage_rate, run2$Saba$damage_rate)
 })
 
-test_that("generate_daily_hazard_impact produces different output for different seeds", {
+test_that("generate_daily_hazard_impact_spatial produces different output for different seeds", {
   out <- downscale_out_fixture()
 
-  run_a <- generate_daily_hazard_impact(
+  run_a <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:5, year0 = 2001L, seed = 1L
   )
-  run_b <- generate_daily_hazard_impact(
+  run_b <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:5, year0 = 2001L, seed = 2L
   )
 
@@ -289,17 +307,17 @@ test_that("generate_daily_hazard_impact produces different output for different 
   expect_false(identical(run_a$Saba$wind_kt, run_b$Saba$wind_kt))
 })
 
-test_that("generate_daily_hazard_impact inherits seed from out$run_metadata", {
+test_that("generate_daily_hazard_impact_spatial inherits seed from out$run_metadata", {
   out <- downscale_out_fixture()
 
   # Attach a seed in run_metadata, matching what run_hazard_model() stores
   out$run_metadata <- list(seed = 77L)
 
-  run_inherited <- generate_daily_hazard_impact(
+  run_inherited <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:3, year0 = 2001L
     # seed = NULL (default) — should pick up out$run_metadata$seed
   )
-  run_explicit <- generate_daily_hazard_impact(
+  run_explicit <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:3, year0 = 2001L, seed = 77L
   )
 
@@ -307,35 +325,35 @@ test_that("generate_daily_hazard_impact inherits seed from out$run_metadata", {
   expect_identical(run_inherited$Saba$event_id, run_explicit$Saba$event_id)
 })
 
-test_that("generate_daily_hazard_impact falls back to seed 1 when run_metadata is absent", {
+test_that("generate_daily_hazard_impact_spatial falls back to seed 1 when run_metadata is absent", {
   out <- downscale_out_fixture()
   # No run_metadata — should fall back to seed 1L
 
-  run_default <- generate_daily_hazard_impact(
+  run_default <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:3, year0 = 2001L
   )
-  run_seed1 <- generate_daily_hazard_impact(
+  run_seed1 <- generate_daily_hazard_impact_spatial(
     out = out, location = "Saba", sim_years = 1:3, year0 = 2001L, seed = 1L
   )
 
   expect_identical(run_default$Saba$wind_kt, run_seed1$Saba$wind_kt)
 })
 
-test_that("generate_daily_hazard_impact rejects invalid seed values", {
+test_that("generate_daily_hazard_impact_spatial rejects invalid seed values", {
   out <- downscale_out_fixture()
 
   expect_error(
-    generate_daily_hazard_impact(out, "Saba", seed = "abc"),
+    generate_daily_hazard_impact_spatial(out, "Saba", seed = "abc"),
     "seed must be NULL or a single finite numeric value.",
     fixed = TRUE
   )
   expect_error(
-    generate_daily_hazard_impact(out, "Saba", seed = c(1L, 2L)),
+    generate_daily_hazard_impact_spatial(out, "Saba", seed = c(1L, 2L)),
     "seed must be NULL or a single finite numeric value.",
     fixed = TRUE
   )
   expect_error(
-    generate_daily_hazard_impact(out, "Saba", seed = Inf),
+    generate_daily_hazard_impact_spatial(out, "Saba", seed = Inf),
     "seed must be NULL or a single finite numeric value.",
     fixed = TRUE
   )

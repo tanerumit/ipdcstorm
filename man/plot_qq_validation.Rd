@@ -4,7 +4,13 @@
 \alias{plot_qq_validation}
 \title{Plot QQ plots comparing simulated vs observed annual maxima}
 \usage{
-plot_qq_validation(val, cfg = NULL, out_dir = NULL, base_size = NULL)
+plot_qq_validation(
+  val,
+  cfg = NULL,
+  out_dir = NULL,
+  base_size = NULL,
+  save = TRUE
+)
 }
 \arguments{
 \item{val}{Output from \code{run_validation_suite()}.}

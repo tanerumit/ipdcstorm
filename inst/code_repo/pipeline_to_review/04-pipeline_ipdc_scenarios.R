@@ -36,7 +36,7 @@ out_stat <- run_hazard_model(
 
 
 
-daily_585 <- generate_daily_hazard_impact(
+daily_585 <- generate_daily_hazard_impact_spatial(
   out = out_585, island = "Saba", sim_years = 1:200, year0 = 2025,
   thr_port = 40, thr_infra = 55, gust_factor = 1.25,
   damage_method = "powerlaw", seed = 42,

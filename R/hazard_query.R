@@ -17,7 +17,7 @@
 #'
 #' @description
 #' Accepts either a named list of tibbles (as returned by
-#' \code{\link{generate_daily_hazard_impact}()}) or a single tibble, and
+#' \code{\link{generate_daily_hazard_impact_spatial}()}) or a single tibble, and
 #' returns a flat tibble filtered to the requested location(s).
 #'
 #' @param daily Named list of tibbles or single tibble.
@@ -45,7 +45,7 @@
     tbl <- tibble::as_tibble(tbl)
   } else {
     stop(
-      "`daily` must be a tibble or a named list from generate_daily_hazard_impact().",
+      "`daily` must be a tibble or a named list from generate_daily_hazard_impact_spatial().",
       call. = FALSE
     )
   }
@@ -326,7 +326,7 @@ lookup_storm_id <- function(
 #' year that received that track will be returned.
 #'
 #' @param daily Named list of tibbles returned by
-#'   \code{\link{generate_daily_hazard_impact}()}, or a single tibble for one
+#'   \code{\link{generate_daily_hazard_impact_spatial}()}, or a single tibble for one
 #'   location.
 #' @param storm_id Character scalar IBTrACS SID of the target storm (e.g.
 #'   \code{"2017242N16333"} for Hurricane Irma — IBTrACS native SID, not ATCF "AL112017").
@@ -355,7 +355,7 @@ lookup_storm_id <- function(
 #' query_storm_track_years(daily_out, storm_id = "2017242N16333", location = "Saba")
 #' }
 #' @seealso \code{\link{query_impact_years}},
-#'   \code{\link{generate_daily_hazard_impact}}
+#'   \code{\link{generate_daily_hazard_impact_spatial}}
 #' @export
 query_storm_track_years <- function(daily, storm_id, location = NULL) {
   if (!is.character(storm_id) || length(storm_id) != 1L || !nzchar(storm_id)) {
@@ -419,7 +419,7 @@ query_storm_track_years <- function(daily, storm_id, location = NULL) {
 #' }
 #'
 #' @param daily Named list of tibbles returned by
-#'   \code{\link{generate_daily_hazard_impact}()}, or a single tibble.
+#'   \code{\link{generate_daily_hazard_impact_spatial}()}, or a single tibble.
 #' @param storm_id Character scalar IBTrACS SID of the reference storm (e.g.
 #'   \code{"2017242N16333"} for Hurricane Irma — IBTrACS native SID, not ATCF "AL112017").
 #' @param out Optional list returned by \code{\link{run_hazard_model}()}. Used
@@ -447,7 +447,7 @@ query_storm_track_years <- function(daily, storm_id, location = NULL) {
 #'   \code{max(ref_threshold, percentile_threshold)}, so only years that clear
 #'   \emph{both} the reference-storm level and the distributional percentile
 #'   are returned. For example \code{percentile = 0.95} retains at most the top
-#'   5 \% of years. Default \code{NULL} disables the percentile gate.
+#'   5% of years. Default \code{NULL} disables the percentile gate.
 #' @param min_threshold Optional numeric scalar applied as an absolute floor on
 #'   the effective threshold after all other computations. Useful for ensuring a
 #'   minimum physical severity level regardless of the reference storm or
@@ -507,7 +507,7 @@ query_storm_track_years <- function(daily, storm_id, location = NULL) {
 #' )
 #' }
 #' @seealso \code{\link{query_storm_track_years}},
-#'   \code{\link{generate_daily_hazard_impact}}
+#'   \code{\link{generate_daily_hazard_impact_spatial}}
 #' @export
 query_impact_years <- function(
     daily,
@@ -651,7 +651,7 @@ query_impact_years <- function(
 #' this delta is always \eqn{\ge 0}.
 #'
 #' @param daily Named list of tibbles returned by
-#'   \code{\link{generate_daily_hazard_impact}()}, or a single tibble.
+#'   \code{\link{generate_daily_hazard_impact_spatial}()}, or a single tibble.
 #' @param sim_years Optional filter applied before computing aftermath.
 #'   Either:
 #'   \itemize{

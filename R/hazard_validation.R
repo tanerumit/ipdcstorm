@@ -49,6 +49,16 @@ if (!exists("%||%", mode = "function")) {
 #'   **Note**: this quantifies estimation uncertainty in return levels given
 #'   the observed record length --- it is not a prediction interval for
 #'   future storm intensities.
+#' @param tier1_pass_rate Numeric; minimum fraction of return-period/location
+#'   comparisons that must fall within the CI for Tier 1 to show ✓ in the
+#'   summary (default: 0.80). A value of 1.0 restores the original strict
+#'   all-must-pass behaviour. Must be in `(0, 1]`.
+#' @param full_output Logical; when `FALSE` (default) `run_validation_suite()`
+#'   returns a concise list (`summary`, `comparison`, `rate_check`,
+#'   `wind_field`, `plots`). When `TRUE`, the full internal objects are also
+#'   returned (`hindcast`, `climate_response`, `artifacts`). The slim output
+#'   is sufficient for most diagnostics; use `full_output = TRUE` when you need
+#'   the per-island breakdown or to re-generate plots from the returned object.
 #' @param seed Integer; random seed for reproducibility.
 #' @param out_dir Character; output directory for saved plots and tables.
 #' @param save_plots Logical; whether to save standard validation figures.
@@ -87,20 +97,23 @@ if (!exists("%||%", mode = "function")) {
 #'   n_sim = 10000,
 #'   advanced = list(xi_bounds = c(-0.4, 0.5), base_size = 13)
 #' )
-make_validation_cfg <- function(holdout_years  = 10L,
-                                n_sim          = NULL,
-                                return_periods = c(5, 10, 25, 50),
-                                conf_level     = 0.90,
-                                seed           = 42L,
-                                out_dir        = "output/validation",
-                                save_plots     = TRUE,
-                                save_tables    = TRUE,
-                                advanced       = NULL) {
+make_validation_cfg <- function(holdout_years    = 10L,
+                                n_sim            = NULL,
+                                return_periods   = c(5, 10, 25, 50),
+                                conf_level       = 0.95,
+                                tier1_pass_rate  = 0.80,
+                                full_output      = FALSE,
+                                seed             = 42L,
+                                out_dir          = "output/validation",
+                                save_plots       = TRUE,
+                                save_tables      = TRUE,
+                                advanced         = NULL) {
 
   defaults <- list(
     xi_bounds = c(-0.3, 0.4),
     base_size = 11,
-    hindcast_use_raw_rates = TRUE
+    hindcast_use_raw_rates = TRUE,
+    n_boot_ci = 300L
   )
 
   if (is.null(advanced)) {
@@ -139,16 +152,24 @@ make_validation_cfg <- function(holdout_years  = 10L,
             "Are you sure?", call. = FALSE)
   }
 
+  tier1_pass_rate <- as.numeric(tier1_pass_rate)
+  if (length(tier1_pass_rate) != 1 || !is.finite(tier1_pass_rate) ||
+      tier1_pass_rate <= 0 || tier1_pass_rate > 1) {
+    stop("tier1_pass_rate must be a single number in (0, 1].", call. = FALSE)
+  }
+
   cfg <- list(
-    holdout_years  = holdout_years,
-    n_sim          = n_sim,
-    return_periods = return_periods,
-    conf_level     = conf_level,
-    seed           = seed,
-    out_dir        = as.character(out_dir),
-    save_plots     = isTRUE(save_plots),
-    save_tables    = isTRUE(save_tables),
-    advanced       = advanced
+    holdout_years   = holdout_years,
+    n_sim           = n_sim,
+    return_periods  = return_periods,
+    conf_level      = conf_level,
+    tier1_pass_rate = tier1_pass_rate,
+    full_output     = isTRUE(full_output),
+    seed            = seed,
+    out_dir         = as.character(out_dir),
+    save_plots      = isTRUE(save_plots),
+    save_tables     = isTRUE(save_tables),
+    advanced        = advanced
   )
   class(cfg) <- c("validation_cfg", "list")
   cfg
@@ -611,7 +632,7 @@ bootstrap_return_level_ci <- function(annual_max,
                                       return_periods = c(5, 10, 25, 50),
                                       n_boot = 500,
                                       xi_bounds = c(-0.3, 0.4),
-                                      conf_level = 0.90) {
+                                      conf_level = 0.95) {
 
   n <- length(annual_max)
   boot_rl <- matrix(NA_real_, nrow = n_boot, ncol = length(return_periods))
@@ -681,7 +702,7 @@ bootstrap_return_level_ci <- function(annual_max,
 .compute_obs_return_level_ci <- function(annual_max,
                                          return_periods = c(5, 10, 25, 50),
                                          xi_bounds = c(-0.3, 0.4),
-                                         conf_level = 0.90,
+                                         conf_level = 0.95,
                                          n_boot_fallback = 300L,
                                          min_n_pos_ci = 10L,
                                          seed = NULL,
@@ -2535,7 +2556,7 @@ bootstrap_return_level_ci <- function(annual_max,
                                holdout_years = 10,
                                n_sim = 5000,
                                return_periods = c(5, 10, 25, 50),
-                               conf_level = 0.90,
+                               conf_level = 0.95,
                                storm_classes = c("TS", "HUR"),
                                seed = 42,
                                beta_sst = 0,
@@ -2889,7 +2910,7 @@ bootstrap_return_level_ci <- function(annual_max,
                                    holdout_years = 10,
                                    n_sim = 5000,
                                    return_periods = c(5, 10, 25, 50),
-                                   conf_level = 0.90,
+                                   conf_level = 0.95,
                                    seed = 42,
                                    beta_sst = 0,
                                    gamma_intensity = 0,
@@ -3584,13 +3605,17 @@ validate_wind_field <- function(out, obs_table = NULL) {
   message("\n\u2500\u2500 ", title, " ", paste(rep("\u2500", max(1, pad)), collapse = ""))
 }
 
+.val_note <- function(...) {
+  message("  \u25b8 ", ...)
+}
+
 .val_table_row <- function(..., widths = NULL) {
   args <- list(...)
   if (is.null(widths)) {
     message("  ", paste(args, collapse = "  "))
   } else {
     parts <- mapply(function(a, w) {
-      formatC(a, width = w, flag = "-")
+      formatC(as.character(a), width = w, flag = "-")
     }, args, widths, SIMPLIFY = TRUE)
     message("  ", paste(parts, collapse = " "))
   }
@@ -3600,13 +3625,129 @@ validate_wind_field <- function(out, obs_table = NULL) {
   message("  ", paste(rep("\u2500", width), collapse = ""))
 }
 
-#' RUN VALIDATION SUITE
-#' @param out List returned by `run_hazard_model()`.
-#' @param cfg Validation configuration from `make_validation_cfg()`. If `NULL`,
-#'   default configuration is used.
+#' Run the three-tier hazard model validation suite
 #'
-#' @return List with elements: `hindcast`, `rate_check`, `wind_field`, `summary`,
-#'   and `artifacts` (paths of saved plots/tables, if any).
+#' @description
+#' Evaluates a stationary or climate-adjusted hazard model against the
+#' historical record using three complementary checks:
+#'
+#' \describe{
+#'   \item{Tier 1 — Hindcast (return levels)}{Withholds the most recent
+#'     `holdout_years` of the record, re-fits the model on the training
+#'     period, simulates `n_sim` synthetic years, and compares GEV-based
+#'     return levels against those estimated from the full observed record.
+#'     A location/return-period pair passes (\eqn{\checkmark}) when the
+#'     simulated return level falls within the observed `conf_level`
+#'     confidence interval.}
+#'   \item{Tier 2 — Storm rate check}{Compares calibrated annual TS and
+#'     hurricane passage rates per location against published
+#'     HURDAT2/IBTrACS reference bounds. Rates outside the reference range
+#'     are flagged and may indicate a search-radius or record-length issue.}
+#'   \item{Tier 3 — Wind field spot-checks}{Compares Holland wind-profile
+#'     site estimates against historical station observations for individual
+#'     storm passages. Each comparison is graded against an
+#'     observation-quality-dependent tolerance band (A: \eqn{\pm}15%,
+#'     B: \eqn{\pm}25%, C: \eqn{\pm}35%).}
+#' }
+#'
+#' Results are printed to the console and, when `cfg$save_plots` or
+#' `cfg$save_tables` is `TRUE`, written to `cfg$out_dir`.
+#'
+#' @param out Named list returned by \code{\link{run_hazard_model}()}. The
+#'   following elements are used:
+#'   \describe{
+#'     \item{`events`}{Tibble of historical storm events with columns
+#'       `location`, `year`, `V_max_kt`, and storm-class identifiers.
+#'       Required for all three tiers.}
+#'     \item{`fit`}{Tibble of fitted model parameters (lambda, GEV shape,
+#'       `beta_sst`, `gamma_intensity`). Used to replicate the model's
+#'       climate adjustments in the hindcast simulation.}
+#'     \item{`sim`}{Simulation output; its length sets `n_sim` when
+#'       `cfg$n_sim` is `NULL`.}
+#'     \item{`trackpoints`}{Named list of track-point tibbles per location,
+#'       used by the wind-field tier. Can be `NULL` if wind-field
+#'       validation is not needed.}
+#'     \item{`run_metadata`}{List of run-level metadata (seed, data ID,
+#'       etc.) used for provenance labelling in outputs.}
+#'   }
+#'
+#' @param cfg A `validation_cfg` object created by
+#'   \code{\link{make_validation_cfg}()}. Controls holdout length, return
+#'   periods, confidence level, simulation size, output paths, and expert
+#'   GEV bounds. Defaults to \code{make_validation_cfg()} when omitted.
+#'
+#' @return A named list with the following elements:
+#'   \describe{
+#'     \item{`hindcast`}{Results from Tier 1. A list with:
+#'       \describe{
+#'         \item{`comparison`}{Tibble with one row per
+#'           `(location, return_period)` combination and columns:
+#'           `location`, `return_period`, `obs_full_rl` (observed GEV
+#'           return level in kt), `sim_rl` (simulated GEV return level in
+#'           kt), `obs_ci_lo` / `obs_ci_hi` (lower/upper bounds of the
+#'           `conf_level` CI around the observed return level), `bias_pct`
+#'           (relative bias in %), `obs_in_ci` (logical pass/fail),
+#'           `sim_ci_lo` / `sim_ci_hi` (CI bounds from the simulation-side
+#'           bootstrap, for reference), and `obs_ci_method`
+#'           (`"delta"` or `"bootstrap"`).}
+#'         \item{`per_island`}{Named list of per-location diagnostic
+#'           objects, each containing training/test year splits, observed
+#'           and simulated GEV fits, and bias decomposition.}
+#'       }}
+#'     \item{`rate_check`}{Tibble from \code{\link{validate_rates}()} with
+#'       one row per `(location, storm_class)` and columns: `location`,
+#'       `storm_class`, `lambda_fitted`, `ref_lo`, `ref_hi`,
+#'       `flag` (`"OK"` or `"FLAG"`).}
+#'     \item{`wind_field`}{Tibble from \code{\link{validate_wind_field}()}
+#'       with one row per `(storm, location)` spot-check and columns:
+#'       `storm_name`, `location`, `obs_1min_equiv_kt`,
+#'       `model_V_site_kt`, `bias_kt`, `bias_pct`, `obs_quality`,
+#'       `bias_threshold_pct`, `bias_ok`.
+#'       `NULL` when no matching observations are found.}
+#'     \item{`summary`}{Compact tibble with one row per location
+#'       aggregating pass rates across return periods (Tier 1), rate-check
+#'       flags (Tier 2), and wind-field tolerances (Tier 3).}
+#'     \item{`climate_response`}{List of climate-sensitivity diagnostics
+#'       derived from the fitted model, including basin count ratios,
+#'       hurricane-fraction shifts, and intensity redistribution metrics.}
+#'     \item{`artifacts`}{Named list with two sub-lists:
+#'       \describe{
+#'         \item{`plots`}{Named character vector of PNG file paths written
+#'           when `cfg$save_plots = TRUE`: `hindcast_return_levels`,
+#'           `bias_decomposition`, `wind_field_scatter`, `qq_annual_max`,
+#'           `exceedance_comparison`.}
+#'         \item{`tables`}{Named character vector of CSV file paths written
+#'           when `cfg$save_tables = TRUE`: `hindcast_csv`,
+#'           `rate_check_csv`, `wind_field_csv`, `summary_csv`.}
+#'       }}
+#'   }
+#'
+#' @seealso
+#'   \code{\link{make_validation_cfg}} for configuring the validation run,
+#'   \code{\link{run_hazard_model}} for producing the required `out` object,
+#'   \code{\link{plot_hindcast_validation}} for standalone hindcast plots.
+#'
+#' @examples
+#' \dontrun{
+#' # Run with default settings
+#' val_out <- run_validation_suite(out_base)
+#'
+#' # Custom configuration: 15-yr holdout, 95% CI, save outputs
+#' val_cfg <- make_validation_cfg(
+#'   holdout_years  = 15L,
+#'   return_periods = c(5, 10, 25, 50),
+#'   conf_level     = 0.95,
+#'   save_plots     = TRUE,
+#'   out_dir        = "output/validation"
+#' )
+#' val_out <- run_validation_suite(out_base, cfg = val_cfg)
+#'
+#' # Inspect Tier 1 return-level comparison
+#' val_out$hindcast$comparison
+#'
+#' # Overall pass rate
+#' mean(val_out$hindcast$comparison$obs_in_ci, na.rm = TRUE)
+#' }
 #' @export
 run_validation_suite <- function(out, cfg = make_validation_cfg()) {
   if (!inherits(cfg, "validation_cfg")) {
@@ -3622,16 +3763,18 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
   xi_bounds      <- cfg$advanced$xi_bounds
   base_size      <- cfg$advanced$base_size
   use_raw_rates  <- isTRUE(cfg$advanced$hindcast_use_raw_rates)
+  n_boot_ci      <- as.integer(cfg$advanced$n_boot_ci %||% 300L)
   out_dir        <- cfg$out_dir
 
   ci_pct <- sprintf("%.0f%%", conf_level * 100)
 
-  # â”€â”€ Header â”€â”€
+  # Header
   .val_header("HAZARD MODEL VALIDATION SUITE")
-  message(sprintf("  CI: %s | Holdout: %d yr | Sim: %s yr (%s)",
-                  ci_pct, holdout_years,
+  message(sprintf("  Holdout: %d yr  |  Sim: %s yr  |  CI: %s  |  Seed: %d",
+                  holdout_years,
                   format(n_sim, big.mark = ",", scientific = FALSE, trim = TRUE),
-                  n_sim_info$source))
+                  ci_pct,
+                  seed))
   .val_header_close()
 
   # --- Extract climate info ---
@@ -3642,10 +3785,12 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     gamma_val <- out$fit$gamma_intensity[1]
   }
 
-  # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  # TIER 1A: HINDCAST
-  # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  .val_section("HINDCAST VALIDATION (return levels)")
+  # ===========================================================================
+  # TIER 1: HINDCAST
+  # ===========================================================================
+  .val_section("TIER 1  HINDCAST (return levels)")
+  message("  Simulated return levels are compared against observed GEV estimates;")
+  message("  \u2713 means the simulated value falls within the observed ", ci_pct, " confidence interval.")
 
   hc <- tryCatch(
     suppressMessages(.validate_hindcast_all(out,
@@ -3658,46 +3803,49 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
                                             gamma_intensity = gamma_val,
                                             use_raw_rates = use_raw_rates,
                                             xi_bounds = xi_bounds,
-                                            n_boot = 0L)),
+                                            n_boot = n_boot_ci)),
     error = function(e) { message("  ERROR: ", e$message); NULL }
   )
 
   if (!is.null(hc) && !is.null(hc$per_island) && length(hc$per_island) > 0) {
-    # Training splits summary
+
+    # Training / test split summary
     message("")
+    message("  Training periods and GEV fits:")
     for (isl in names(hc$per_island)) {
       hi <- hc$per_island[[isl]]
       if (is.null(hi) || isTRUE(hi$skipped)) next
       train_rng <- range(hi$train_years)
-      n_train <- length(hi$train_years)
-      n_test  <- length(hi$test_years %||% numeric(0))
-      end_yr  <- if (n_test > 0) max(hi$test_years) else max(hi$train_years)
-      # GEV summary
-      gev_obs <- hi$obs_gev
-      gev_sim <- hi$gev_fit
-      obs_str <- if (!is.null(gev_obs) && !is.null(gev_obs$gev_fit))
-        sprintf("\u03be=%.2f n=%d", gev_obs$gev_fit$xi, gev_obs$n_nonzero) else "NA"
-      sim_str <- if (!is.null(gev_sim) && !is.null(gev_sim$gev_fit))
-        sprintf("\u03be=%.2f n=%d", gev_sim$gev_fit$xi, gev_sim$n_nonzero) else "NA"
-      message(sprintf("  %-14s %d\u2013%d  obs GEV: %s | sim GEV: %s",
+      n_test    <- length(hi$test_years %||% numeric(0))
+      end_yr    <- if (n_test > 0) max(hi$test_years) else max(hi$train_years)
+      gev_obs   <- hi$obs_gev
+      gev_sim   <- hi$gev_fit
+      obs_str   <- if (!is.null(gev_obs) && !is.null(gev_obs$gev_fit))
+        sprintf("\u03be=%.2f, n=%d", gev_obs$gev_fit$xi, gev_obs$n_nonzero) else "n/a"
+      sim_str   <- if (!is.null(gev_sim) && !is.null(gev_sim$gev_fit))
+        sprintf("\u03be=%.2f, n=%d", gev_sim$gev_fit$xi, gev_sim$n_nonzero) else "n/a"
+      message(sprintf("    %-14s %d\u2013%d   obs: %-18s  sim: %s",
                       isl, train_rng[1], end_yr, obs_str, sim_str))
     }
 
-    # Return-level table
+    # Return-level comparison table
     if (nrow(hc$comparison) > 0) {
       message("")
-      w <- c(14, 4, 7, 7, 14, 6, 4)
-      .val_table_row("Location", "RP", "Obs kt", "Sim kt",
-                     paste0(ci_pct, " CI"), "Bias", "",
+      message("  Return-level comparison (kt):")
+      w <- c(14, 4, 7, 7, 14, 7, 4)
+      .val_table_row("Location", "RP", "Obs", "Sim",
+                     paste0(ci_pct, " CI (obs)"), "Bias", "",
                      widths = w)
-      .val_table_sep()
-
+      .val_table_sep(62)
+      prev_loc <- ""
       for (i in seq_len(nrow(hc$comparison))) {
         r <- hc$comparison[i, ]
+        if (r$location != prev_loc && prev_loc != "") message("")
+        prev_loc <- r$location
         ci_str <- if (is.finite(r$obs_ci_lo) && is.finite(r$obs_ci_hi)) {
           sprintf("[%3.0f, %3.0f]", r$obs_ci_lo, r$obs_ci_hi)
         } else {
-          "  [NA,  NA]"
+          "  [n/a, n/a]"
         }
         status <- if (!is.finite(r$obs_ci_lo) || !is.finite(r$obs_ci_hi)) {
           "\u2014"
@@ -3720,18 +3868,58 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     }
   }
 
-  # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  # TIER 2: RATE CHECK
-  # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  # ===========================================================================
+  # TIER 2: STORM RATE CHECK
+  # ===========================================================================
+  .val_section("TIER 2  STORM RATE CHECK")
+  message("  Calibrated annual passage rates are compared against published")
+  message("  HURDAT2/IBTrACS climatology bounds; rates outside range are flagged.")
+
   rc <- tryCatch(
     suppressMessages(validate_rates(out)),
     error = function(e) NULL
   )
 
-  # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  # TIER 3: WIND FIELD
-  # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  .val_section("WIND FIELD SPOT-CHECKS")
+  if (!is.null(rc) && nrow(rc) > 0) {
+    message("")
+    w_rc <- c(14, 6, 8, 8, 8, 8, 8)
+    .val_table_row("Location", "Class", "Fitted", "Ref", "Ratio", "Expected", "Status",
+                   widths = w_rc)
+    .val_table_sep(65)
+    prev_loc_rc <- ""
+    for (i in seq_len(nrow(rc))) {
+      r <- rc[i, ]
+      if (r$location != prev_loc_rc && prev_loc_rc != "") message("")
+      prev_loc_rc <- r$location
+      sym_rc <- if (r$flag == "OK") "\u2713" else "\u2717"
+      .val_table_row(
+        r$location,
+        r$storm_class,
+        sprintf("%.3f", r$lambda_model_raw),
+        sprintf("%.3f", r$lambda_ref),
+        sprintf("%.2f", r$raw_ratio),
+        sprintf("%.2f", r$expected_ratio),
+        sym_rc,
+        widths = w_rc
+      )
+    }
+    n_flagged <- sum(rc$flag != "OK", na.rm = TRUE)
+    if (n_flagged > 0) {
+      message("")
+      .val_note(n_flagged, " rate(s) outside reference bounds \u2014 consider adjusting",
+                " search_radius_km or historical_start_year.")
+    }
+  } else {
+    message("")
+    message("  Rate check results not available.")
+  }
+
+  # ===========================================================================
+  # TIER 3: WIND FIELD SPOT-CHECKS
+  # ===========================================================================
+  .val_section("TIER 3  WIND FIELD SPOT-CHECKS")
+  message("  Holland wind-profile estimates are compared against historical station")
+  message("  observations; \u2713 means the model wind is within the observational tolerance.")
 
   wf <- tryCatch(
     suppressMessages(validate_wind_field(out)),
@@ -3744,37 +3932,41 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
       mae  <- mean(abs(valid_wf$bias_kt))
       rmse <- sqrt(mean(valid_wf$bias_kt^2))
       mb   <- mean(valid_wf$bias_kt)
-      message(sprintf("  Mean bias: %+.1f kt | MAE: %.1f kt | RMSE: %.1f kt (%d storms)",
+      message("")
+      message(sprintf("  Mean bias: %+.1f kt   MAE: %.1f kt   RMSE: %.1f kt   (%d storms)",
                       mb, mae, rmse, nrow(valid_wf)))
       message("")
-      w_wf <- c(9, 14, 6, 6, 7, 6, 4)
-      .val_table_row("Storm", "Location", "Obs", "Model", "Bias", "Tol", "",
+      w_wf <- c(10, 14, 7, 7, 8, 9, 4)
+      .val_table_row("Storm", "Location", "Obs", "Model", "Bias", "Tolerance", "",
                      widths = w_wf)
-      .val_table_sep(55)
+      .val_table_sep(63)
       for (j in seq_len(nrow(valid_wf))) {
-        r <- valid_wf[j, ]
-        sym <- if (isTRUE(r$bias_ok)) "\u2713" else "\u2717"
-        tol_str <- sprintf("%s\u00b1%d%%", r$obs_quality, r$bias_threshold_pct)
+        r    <- valid_wf[j, ]
+        sym  <- if (isTRUE(r$bias_ok)) "\u2713" else "\u2717"
+        tol_str <- sprintf("%s \u00b1%d%%", r$obs_quality, r$bias_threshold_pct)
         .val_table_row(
           r$storm_name,
           r$location,
-          sprintf("%.0f", r$obs_1min_equiv_kt),
-          sprintf("%.0f", r$model_V_site_kt),
+          sprintf("%.0f kt", r$obs_1min_equiv_kt),
+          sprintf("%.0f kt", r$model_V_site_kt),
           sprintf("%+.0f%%", r$bias_pct),
           tol_str,
           sym,
           widths = w_wf
         )
       }
-      message("  Tol: A=direct station (\u00b115%) | B=converted/10-min (\u00b125%) | C=estimated (\u00b135%)")
+      message("")
+      .val_note("Quality tiers \u2014 A: direct station (\u00b115%)  ",
+                "B: 10-min converted (\u00b125%)  C: estimated (\u00b135%)")
     } else {
-      message("  No matching storms found.")
+      message("")
+      message("  No matching storm observations found for this domain.")
     }
   }
 
-  # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  # ===========================================================================
   # SUMMARY
-  # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  # ===========================================================================
   hc_comp_scored <- NULL
   if (!is.null(hc) && !is.null(hc$comparison) && nrow(hc$comparison) > 0) {
     hc_comp_scored <- hc$comparison
@@ -3782,87 +3974,102 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
 
   climate_diag <- .climate_response_diagnostics(out)
 
-  n_rl_ok <- if (!is.null(hc_comp_scored)) sum(hc_comp_scored$obs_in_ci, na.rm = TRUE) else 0
+  n_rl_ok    <- if (!is.null(hc_comp_scored)) sum(hc_comp_scored$obs_in_ci, na.rm = TRUE) else 0
   n_rl_total <- if (!is.null(hc_comp_scored)) sum(!is.na(hc_comp_scored$obs_in_ci)) else 0
 
-  n_rate_ok <- if (!is.null(rc)) sum(rc$flag == "OK", na.rm = TRUE) else 0
+  n_rate_ok    <- if (!is.null(rc)) sum(rc$flag == "OK", na.rm = TRUE) else 0
   n_rate_total <- if (!is.null(rc)) sum(!is.na(rc$flag)) else 0
 
-  n_wf_ok <- if (!is.null(wf)) {
-    sum(wf$bias_ok, na.rm = TRUE)
-  } else 0
+  n_wf_ok    <- if (!is.null(wf)) sum(wf$bias_ok, na.rm = TRUE) else 0
   n_wf_total <- if (!is.null(wf)) sum(!is.na(wf$bias_ok)) else 0
 
   summary_tbl <- .validation_summary_from_hindcast(hc)
 
-  rl_sym  <- if (n_rl_total > 0 && n_rl_ok == n_rl_total) "\u2713" else if (n_rl_total == 0) "\u2014" else "\u2717"
-  rc_sym  <- if (n_rate_total > 0 && n_rate_ok == n_rate_total) "\u2713" else if (n_rate_total == 0) "\u2014" else "\u2717"
-  wf_sym  <- if (n_wf_total > 0 && n_wf_ok == n_wf_total) "\u2713" else if (n_wf_total == 0) "\u2014" else "\u2717"
+  tier1_pass_rate <- cfg$tier1_pass_rate %||% 0.80
+  rl_sym <- if (n_rl_total == 0) "\u2014" else if ((n_rl_ok / n_rl_total) >= tier1_pass_rate) "\u2713" else "\u2717"
+  rc_sym <- if (n_rate_total > 0 && n_rate_ok == n_rate_total) "\u2713" else if (n_rate_total == 0) "\u2014" else "\u2717"
+  wf_sym <- if (n_wf_total > 0 && n_wf_ok == n_wf_total) "\u2713" else if (n_wf_total == 0) "\u2014" else "\u2717"
 
   message("")
   .val_header("SUMMARY")
-  message(sprintf("  Hindcast         : %2d / %2d within %s CI     %s",
+  message("  A model with failing tiers should be recalibrated before drawing")
+  message("  conclusions from climate scenario analyses.")
+  message("")
+  message(sprintf("  Tier 1  Hindcast      %2d / %2d  within %s CI      %s",
                   n_rl_ok, n_rl_total, ci_pct, rl_sym))
-  message(sprintf("  Rate check       : %2d / %2d flagged OK        %s",
+  message(sprintf("  Tier 2  Rate check    %2d / %2d  within bounds       %s",
                   n_rate_ok, n_rate_total, rc_sym))
-  message(sprintf("  Wind field       : %2d / %2d within tolerance  %s",
+  message(sprintf("  Tier 3  Wind field    %2d / %2d  within tolerance    %s",
                   n_wf_ok, n_wf_total, wf_sym))
   if (nrow(climate_diag$summary) > 0) {
     cs <- climate_diag$summary[1, , drop = FALSE]
-    message(sprintf(
-      "  Climate counts   : %.3fx basin | raw %.3fx | %s",
-      cs$basin_count_ratio,
-      cs$basin_rate_raw_multiplier,
-      cs$climate_regime
-    ))
-    message(sprintf(
-      "  Hurricane share  : %+.2f pp",
-      cs$hurricane_fraction_change_pp
-    ))
-    message(sprintf(
-      "  Redistribution   : RMSE %.2f pp | max %.2f pp",
-      cs$redistribution_rmse_share_pp,
-      cs$redistribution_max_abs_share_pp
-    ))
+    message("")
+    message(sprintf("  Climate  counts      %.3fx basin (raw %.3fx)  %s",
+                    cs$basin_count_ratio, cs$basin_rate_raw_multiplier, cs$climate_regime))
+    message(sprintf("           HUR share   %+.2f pp",
+                    cs$hurricane_fraction_change_pp))
+    message(sprintf("           redistrib.  RMSE %.2f pp  max %.2f pp",
+                    cs$redistribution_rmse_share_pp, cs$redistribution_max_abs_share_pp))
   }
+  message("")
   .val_header_close()
 
-  val <- list(
-    hindcast = hc,
-    rate_check = rc,
-    wind_field = wf,
-    summary = summary_tbl,
+  # Internal full val — needed by plot functions that require $hindcast$per_island
+  internal_val <- list(
+    hindcast         = hc,
+    rate_check       = rc,
+    wind_field       = wf,
+    summary          = summary_tbl,
     climate_response = climate_diag
   )
 
-  # --- Save artifacts ---
+  # --- Build plots (always) and optionally save to disk ---
+  do_save  <- isTRUE(cfg$save_plots)
+  if (do_save) .validate_dir_create(out_dir)
+
+  .extract_plot <- function(res, key) {
+    if (is.null(res)) return(NULL)
+    res$plot
+  }
+  .extract_path <- function(res, key) {
+    if (is.null(res) || length(res$paths) == 0) return(NULL)
+    res$paths[[key]]
+  }
+
+  res_hindcast   <- plot_hindcast_validation(internal_val, cfg = cfg, out_dir = out_dir,
+                                             base_size = base_size, save = do_save)
+  res_bias       <- plot_bias_diagnostics(internal_val,   cfg = cfg, out_dir = out_dir,
+                                          base_size = base_size, save = do_save)
+  res_wind       <- plot_wind_field_validation(internal_val, cfg = cfg, out_dir = out_dir,
+                                               base_size = base_size, save = do_save)
+  res_qq         <- plot_qq_validation(internal_val,      cfg = cfg, out_dir = out_dir,
+                                       base_size = base_size, save = do_save)
+  res_cdf        <- plot_cdf_comparison(internal_val,     cfg = cfg, out_dir = out_dir,
+                                        base_size = base_size, save = do_save)
+
+  plots <- list(
+    hindcast_return_levels = .extract_plot(res_hindcast),
+    bias_decomposition     = .extract_plot(res_bias),
+    wind_field_scatter     = .extract_plot(res_wind),
+    qq_annual_max          = .extract_plot(res_qq),
+    exceedance_comparison  = .extract_plot(res_cdf)
+  )
+  plots <- Filter(Negate(is.null), plots)
+
+  # --- Save tables and collect artifact paths (full_output only) ---
   artifacts <- list(plots = list(), tables = list())
 
-  if (isTRUE(cfg$save_plots)) {
-    .validate_dir_create(out_dir)
-    hindcast_plot <- plot_hindcast_validation(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
-    if (!is.null(hindcast_plot) && length(hindcast_plot) > 0) {
-      artifacts$plots$hindcast_return_levels <- unname(hindcast_plot[[1]])
-    }
-
-    bias_plot <- plot_bias_diagnostics(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
-    if (!is.null(bias_plot) && length(bias_plot) > 0) {
-      artifacts$plots$bias_decomposition <- unname(bias_plot[[1]])
-    }
-
-    wind_plot <- plot_wind_field_validation(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
-    if (!is.null(wind_plot) && length(wind_plot) > 0) {
-      artifacts$plots$wind_field_scatter <- unname(wind_plot[[1]])
-    }
-
-    qq_plot <- plot_qq_validation(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
-    if (!is.null(qq_plot) && length(qq_plot) > 0) {
-      artifacts$plots$qq_annual_max <- unname(qq_plot[[1]])
-    }
-
-    exceedance_plot <- plot_cdf_comparison(val, cfg = cfg, out_dir = out_dir, base_size = base_size)
-    if (!is.null(exceedance_plot) && length(exceedance_plot) > 0) {
-      artifacts$plots$exceedance_comparison <- unname(exceedance_plot[[1]])
+  if (do_save) {
+    for (key in c("hindcast_return_levels", "wind_field_scatter",
+                  "bias_decomposition", "qq_annual_max", "exceedance_comparison")) {
+      p <- switch(key,
+        hindcast_return_levels = .extract_path(res_hindcast, "hindcast_return_levels"),
+        wind_field_scatter     = .extract_path(res_wind,     "wind_field_scatter"),
+        bias_decomposition     = .extract_path(res_bias,     "bias_decomposition"),
+        qq_annual_max          = .extract_path(res_qq,       "qq_annual_max"),
+        exceedance_comparison  = .extract_path(res_cdf,      "exceedance_comparison")
+      )
+      if (!is.null(p)) artifacts$plots[[key]] <- p
     }
   }
 
@@ -3870,30 +4077,33 @@ run_validation_suite <- function(out, cfg = make_validation_cfg()) {
     .validate_dir_create(out_dir)
     artifacts$tables$hindcast_csv <- file.path(out_dir, "hindcast_return_levels.csv")
     .validate_write_csv(
-      if (!is.null(val$hindcast) && !is.null(val$hindcast$comparison)) val$hindcast$comparison else data.frame(),
+      if (!is.null(hc) && !is.null(hc$comparison)) hc$comparison else data.frame(),
       artifacts$tables$hindcast_csv
     )
-
     artifacts$tables$rate_check_csv <- file.path(out_dir, "rate_check.csv")
-    .validate_write_csv(
-      if (!is.null(val$rate_check)) val$rate_check else data.frame(),
-      artifacts$tables$rate_check_csv
-    )
-
+    .validate_write_csv(if (!is.null(rc)) rc else data.frame(), artifacts$tables$rate_check_csv)
     artifacts$tables$wind_field_csv <- file.path(out_dir, "wind_field.csv")
-    .validate_write_csv(
-      if (!is.null(val$wind_field)) val$wind_field else data.frame(),
-      artifacts$tables$wind_field_csv
-    )
-
+    .validate_write_csv(if (!is.null(wf)) wf else data.frame(), artifacts$tables$wind_field_csv)
     artifacts$tables$summary_csv <- file.path(out_dir, "validation_summary.csv")
-    .validate_write_csv(
-      if (!is.null(val$summary)) val$summary else data.frame(),
-      artifacts$tables$summary_csv
-    )
+    .validate_write_csv(if (!is.null(summary_tbl)) summary_tbl else data.frame(),
+                        artifacts$tables$summary_csv)
   }
 
-  val$artifacts <- artifacts
+  # --- Construct return value ---
+  val <- list(
+    summary    = summary_tbl,
+    comparison = if (!is.null(hc)) hc$comparison else NULL,
+    rate_check = rc,
+    wind_field = wf,
+    plots      = plots
+  )
+
+  if (isTRUE(cfg$full_output)) {
+    val$hindcast         <- hc
+    val$climate_response <- climate_diag
+    val$artifacts        <- artifacts
+  }
+
   val
 }
 
@@ -4005,7 +4215,7 @@ validate_hazard_model <- function(cfg,
 
   val <- run_validation_suite(out = out, cfg = validation_cfg)
 
-  list(out = out, val = val, artifacts = val$artifacts)
+  list(out = out, val = val, artifacts = val$artifacts %||% list())
 }
 
 
@@ -4155,7 +4365,7 @@ validate_hazard_model <- function(cfg,
                                              holdout_years = 10L,
                                              n_sim = 500L,
                                              return_periods = c(5, 10, 25, 50),
-                                             conf_level = 0.90,
+                                             conf_level = 0.95,
                                              seed = 42L,
                                               save_plots = FALSE,
                                               save_tables = FALSE
@@ -4323,7 +4533,8 @@ validate_hazard_model <- function(cfg,
   invisible(path)
 }
 
-.validate_save_plot <- function(p, path, width, height, dpi = 150) {
+.validate_save_plot <- function(p, path, width, height, dpi = 150, save = TRUE) {
+  if (!isTRUE(save)) return(invisible(NULL))
   if (is.null(p)) return(invisible(NULL))
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
   ggsave(filename = path, plot = p, width = width, height = height, dpi = dpi)
@@ -4351,7 +4562,8 @@ validate_hazard_model <- function(cfg,
 plot_hindcast_validation <- function(val,
                                      cfg = NULL,
                                      out_dir = NULL,
-                                     base_size = NULL) {
+                                     base_size = NULL,
+                                     save = TRUE) {
   plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
   out_dir <- plot_cfg$out_dir
   ggtheme <- plot_cfg$theme
@@ -4361,7 +4573,7 @@ plot_hindcast_validation <- function(val,
   }
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
 
-  .validate_dir_create(out_dir)
+  if (isTRUE(save)) .validate_dir_create(out_dir)
 
   comp <- val$hindcast$comparison
   p_rl <- ggplot(comp, aes(x = factor(return_period))) +
@@ -4377,7 +4589,7 @@ plot_hindcast_validation <- function(val,
     ) +
     ggtheme
   if (any(is.finite(comp$obs_ci_lo) & is.finite(comp$obs_ci_hi))) {
-    ci_pct <- attr(comp, "conf_level") %||% 0.90
+    ci_pct <- attr(comp, "conf_level") %||% 0.95
     ci_label <- sprintf("%.0f%%", ci_pct * 100)
     p_rl <- p_rl +
       geom_errorbar(
@@ -4390,10 +4602,12 @@ plot_hindcast_validation <- function(val,
   }
 
   paths <- character(0)
-  paths["hindcast_return_levels"] <- file.path(out_dir, "hindcast_return_levels.png")
-  .validate_save_plot(p_rl, paths[["hindcast_return_levels"]], width = 12, height = 7, dpi = 150)
+  if (isTRUE(save)) {
+    paths["hindcast_return_levels"] <- file.path(out_dir, "hindcast_return_levels.png")
+    .validate_save_plot(p_rl, paths[["hindcast_return_levels"]], width = 12, height = 7, dpi = 150)
+  }
 
-  invisible(paths)
+  invisible(list(plot = p_rl, paths = paths))
 }
 
 #' Plot rate-check validation figure
@@ -4470,7 +4684,8 @@ plot_wind_field_validation <- function(val,
                                        out = NULL,
                                        cfg = NULL,
                                        out_dir = NULL,
-                                       base_size = NULL) {
+                                       base_size = NULL,
+                                       save = TRUE) {
   plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
   out_dir <- plot_cfg$out_dir
   ggtheme <- plot_cfg$theme
@@ -4480,7 +4695,7 @@ plot_wind_field_validation <- function(val,
   }
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
 
-  .validate_dir_create(out_dir)
+  if (isTRUE(save)) .validate_dir_create(out_dir)
 
   wf <- dplyr::filter(val$wind_field, is.finite(model_V_site_kt))
   if (nrow(wf) == 0) return(invisible(NULL))
@@ -4505,10 +4720,12 @@ plot_wind_field_validation <- function(val,
     ggtheme
 
   paths <- character(0)
-  paths[["wind_field_scatter"]] <- file.path(out_dir, "wind_field_scatter.png")
-  .validate_save_plot(p_wf, paths[["wind_field_scatter"]], width = 8, height = 6, dpi = 150)
+  if (isTRUE(save)) {
+    paths[["wind_field_scatter"]] <- file.path(out_dir, "wind_field_scatter.png")
+    .validate_save_plot(p_wf, paths[["wind_field_scatter"]], width = 8, height = 6, dpi = 150)
+  }
 
-  invisible(paths)
+  invisible(list(plot = p_wf, paths = paths))
 }
 
 
@@ -4524,16 +4741,16 @@ plot_wind_field_validation <- function(val,
 plot_bias_diagnostics <- function(val,
                                   cfg = NULL,
                                   out_dir = NULL,
-                                  base_size = NULL) {
+                                  base_size = NULL,
+                                  save = TRUE) {
   plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
   out_dir <- plot_cfg$out_dir
   ggtheme <- plot_cfg$theme
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
-
-  .validate_dir_create(out_dir)
-
   if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
+
+  if (isTRUE(save)) .validate_dir_create(out_dir)
   paths <- character(0)
 
   # --- Collect per-location bias decomposition ---
@@ -4596,10 +4813,12 @@ plot_bias_diagnostics <- function(val,
     ggtheme +
     theme(axis.text.x = element_text(angle = 30, hjust = 1))
 
-  paths[["bias_decomposition"]] <- file.path(out_dir, "bias_decomposition.png")
-  .validate_save_plot(p_decomp, paths[["bias_decomposition"]], width = 8, height = 5, dpi = 150)
+  if (isTRUE(save)) {
+    paths[["bias_decomposition"]] <- file.path(out_dir, "bias_decomposition.png")
+    .validate_save_plot(p_decomp, paths[["bias_decomposition"]], width = 8, height = 5, dpi = 150)
+  }
 
-  invisible(paths)
+  invisible(list(plot = p_decomp, paths = paths))
 }
 
 
@@ -4615,7 +4834,8 @@ plot_bias_diagnostics <- function(val,
 plot_qq_validation <- function(val,
                                cfg = NULL,
                                out_dir = NULL,
-                               base_size = NULL) {
+                               base_size = NULL,
+                               save = TRUE) {
   plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
   out_dir <- plot_cfg$out_dir
   ggtheme <- plot_cfg$theme
@@ -4623,7 +4843,7 @@ plot_qq_validation <- function(val,
   if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
 
-  .validate_dir_create(out_dir)
+  if (isTRUE(save)) .validate_dir_create(out_dir)
 
   qq_rows <- list()
   for (isl in names(val$hindcast$per_island)) {
@@ -4661,9 +4881,13 @@ plot_qq_validation <- function(val,
     ) +
     ggtheme
 
-  path <- file.path(out_dir, "qq_annual_max.png")
-  .validate_save_plot(p_qq, path, width = 12, height = 7, dpi = 150)
-  invisible(path)
+  paths <- character(0)
+  if (isTRUE(save)) {
+    paths[["qq_annual_max"]] <- file.path(out_dir, "qq_annual_max.png")
+    .validate_save_plot(p_qq, paths[["qq_annual_max"]], width = 12, height = 7, dpi = 150)
+  }
+
+  invisible(list(plot = p_qq, paths = paths))
 }
 
 
@@ -4679,7 +4903,8 @@ plot_qq_validation <- function(val,
 plot_cdf_comparison <- function(val,
                                 cfg = NULL,
                                 out_dir = NULL,
-                                base_size = NULL) {
+                                base_size = NULL,
+                                save = TRUE) {
   plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
   out_dir <- plot_cfg$out_dir
   ggtheme <- plot_cfg$theme
@@ -4687,7 +4912,7 @@ plot_cdf_comparison <- function(val,
   if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
   if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
 
-  .validate_dir_create(out_dir)
+  if (isTRUE(save)) .validate_dir_create(out_dir)
 
   cdf_rows <- list()
   gev_rows <- list()
@@ -4761,8 +4986,10 @@ plot_cdf_comparison <- function(val,
   }
 
   paths <- character(0)
-  paths[["exceedance_comparison"]] <- file.path(out_dir, "exceedance_comparison.png")
-  .validate_save_plot(p_cdf, paths[["exceedance_comparison"]], width = 12, height = 7, dpi = 150)
+  if (isTRUE(save)) {
+    paths[["exceedance_comparison"]] <- file.path(out_dir, "exceedance_comparison.png")
+    .validate_save_plot(p_cdf, paths[["exceedance_comparison"]], width = 12, height = 7, dpi = 150)
+  }
 
-  invisible(paths)
+  invisible(list(plot = p_cdf, paths = paths))
 }

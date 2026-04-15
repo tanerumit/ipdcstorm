@@ -9,7 +9,8 @@ plot_wind_field_validation(
   out = NULL,
   cfg = NULL,
   out_dir = NULL,
-  base_size = NULL
+  base_size = NULL,
+  save = TRUE
 )
 }
 \arguments{

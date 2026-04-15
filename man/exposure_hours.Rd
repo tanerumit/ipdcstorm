@@ -8,7 +8,7 @@ exposure_hours(daily, threshold_kt, use_gust = FALSE)
 }
 \arguments{
 \item{daily}{Tibble/data.frame returned by
-\code{generate_daily_hazard_impact()}.}
+\code{generate_daily_hazard_impact_spatial()}.}
 
 \item{threshold_kt}{Numeric scalar wind threshold (kt).}
 

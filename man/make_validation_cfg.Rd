@@ -8,7 +8,9 @@ make_validation_cfg(
   holdout_years = 10L,
   n_sim = NULL,
   return_periods = c(5, 10, 25, 50),
-  conf_level = 0.9,
+  conf_level = 0.95,
+  tier1_pass_rate = 0.8,
+  full_output = FALSE,
   seed = 42L,
   out_dir = "output/validation",
   save_plots = TRUE,
@@ -35,6 +37,18 @@ Common choices: 0.90 (standard), 0.95 (stricter), 0.80 (exploratory).
 \strong{Note}: this quantifies estimation uncertainty in return levels given
 the observed record length --- it is not a prediction interval for
 future storm intensities.}
+
+\item{tier1_pass_rate}{Numeric; minimum fraction of return-period/location
+comparisons that must fall within the CI for Tier 1 to show ✓ in the
+summary (default: 0.80). A value of 1.0 restores the original strict
+all-must-pass behaviour. Must be in \verb{(0, 1]}.}
+
+\item{full_output}{Logical; when \code{FALSE} (default) \code{run_validation_suite()}
+returns a concise list (\code{summary}, \code{comparison}, \code{rate_check},
+\code{wind_field}, \code{plots}). When \code{TRUE}, the full internal objects are also
+returned (\code{hindcast}, \code{climate_response}, \code{artifacts}). The slim output
+is sufficient for most diagnostics; use \code{full_output = TRUE} when you need
+the per-island breakdown or to re-generate plots from the returned object.}
 
 \item{seed}{Integer; random seed for reproducibility.}
 

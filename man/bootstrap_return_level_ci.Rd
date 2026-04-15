@@ -9,7 +9,7 @@ bootstrap_return_level_ci(
   return_periods = c(5, 10, 25, 50),
   n_boot = 500,
   xi_bounds = c(-0.3, 0.4),
-  conf_level = 0.9
+  conf_level = 0.95
 )
 }
 \arguments{

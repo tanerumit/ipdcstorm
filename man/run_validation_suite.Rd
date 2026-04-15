@@ -2,20 +2,131 @@
 % Please edit documentation in R/hazard_validation.R
 \name{run_validation_suite}
 \alias{run_validation_suite}
-\title{RUN VALIDATION SUITE}
+\title{Run the three-tier hazard model validation suite}
 \usage{
 run_validation_suite(out, cfg = make_validation_cfg())
 }
 \arguments{
-\item{out}{List returned by \code{run_hazard_model()}.}
+\item{out}{Named list returned by \code{\link{run_hazard_model}()}. The
+following elements are used:
+\describe{
+\item{\code{events}}{Tibble of historical storm events with columns
+\code{location}, \code{year}, \code{V_max_kt}, and storm-class identifiers.
+Required for all three tiers.}
+\item{\code{fit}}{Tibble of fitted model parameters (lambda, GEV shape,
+\code{beta_sst}, \code{gamma_intensity}). Used to replicate the model's
+climate adjustments in the hindcast simulation.}
+\item{\code{sim}}{Simulation output; its length sets \code{n_sim} when
+\code{cfg$n_sim} is \code{NULL}.}
+\item{\code{trackpoints}}{Named list of track-point tibbles per location,
+used by the wind-field tier. Can be \code{NULL} if wind-field
+validation is not needed.}
+\item{\code{run_metadata}}{List of run-level metadata (seed, data ID,
+etc.) used for provenance labelling in outputs.}
+}}
 
-\item{cfg}{Validation configuration from \code{make_validation_cfg()}. If \code{NULL},
-default configuration is used.}
+\item{cfg}{A \code{validation_cfg} object created by
+\code{\link{make_validation_cfg}()}. Controls holdout length, return
+periods, confidence level, simulation size, output paths, and expert
+GEV bounds. Defaults to \code{make_validation_cfg()} when omitted.}
 }
 \value{
-List with elements: \code{hindcast}, \code{rate_check}, \code{wind_field}, \code{summary},
-and \code{artifacts} (paths of saved plots/tables, if any).
+A named list with the following elements:
+\describe{
+\item{\code{hindcast}}{Results from Tier 1. A list with:
+\describe{
+\item{\code{comparison}}{Tibble with one row per
+\verb{(location, return_period)} combination and columns:
+\code{location}, \code{return_period}, \code{obs_full_rl} (observed GEV
+return level in kt), \code{sim_rl} (simulated GEV return level in
+kt), \code{obs_ci_lo} / \code{obs_ci_hi} (lower/upper bounds of the
+\code{conf_level} CI around the observed return level), \code{bias_pct}
+(relative bias in \%), \code{obs_in_ci} (logical pass/fail),
+\code{sim_ci_lo} / \code{sim_ci_hi} (CI bounds from the simulation-side
+bootstrap, for reference), and \code{obs_ci_method}
+(\code{"delta"} or \code{"bootstrap"}).}
+\item{\code{per_island}}{Named list of per-location diagnostic
+objects, each containing training/test year splits, observed
+and simulated GEV fits, and bias decomposition.}
+}}
+\item{\code{rate_check}}{Tibble from \code{\link{validate_rates}()} with
+one row per \verb{(location, storm_class)} and columns: \code{location},
+\code{storm_class}, \code{lambda_fitted}, \code{ref_lo}, \code{ref_hi},
+\code{flag} (\code{"OK"} or \code{"FLAG"}).}
+\item{\code{wind_field}}{Tibble from \code{\link{validate_wind_field}()}
+with one row per \verb{(storm, location)} spot-check and columns:
+\code{storm_name}, \code{location}, \code{obs_1min_equiv_kt},
+\code{model_V_site_kt}, \code{bias_kt}, \code{bias_pct}, \code{obs_quality},
+\code{bias_threshold_pct}, \code{bias_ok}.
+\code{NULL} when no matching observations are found.}
+\item{\code{summary}}{Compact tibble with one row per location
+aggregating pass rates across return periods (Tier 1), rate-check
+flags (Tier 2), and wind-field tolerances (Tier 3).}
+\item{\code{climate_response}}{List of climate-sensitivity diagnostics
+derived from the fitted model, including basin count ratios,
+hurricane-fraction shifts, and intensity redistribution metrics.}
+\item{\code{artifacts}}{Named list with two sub-lists:
+\describe{
+\item{\code{plots}}{Named character vector of PNG file paths written
+when \code{cfg$save_plots = TRUE}: \code{hindcast_return_levels},
+\code{bias_decomposition}, \code{wind_field_scatter}, \code{qq_annual_max},
+\code{exceedance_comparison}.}
+\item{\code{tables}}{Named character vector of CSV file paths written
+when \code{cfg$save_tables = TRUE}: \code{hindcast_csv},
+\code{rate_check_csv}, \code{wind_field_csv}, \code{summary_csv}.}
+}}
+}
 }
 \description{
-RUN VALIDATION SUITE
+Evaluates a stationary or climate-adjusted hazard model against the
+historical record using three complementary checks:
+
+\describe{
+\item{Tier 1 — Hindcast (return levels)}{Withholds the most recent
+\code{holdout_years} of the record, re-fits the model on the training
+period, simulates \code{n_sim} synthetic years, and compares GEV-based
+return levels against those estimated from the full observed record.
+A location/return-period pair passes (\eqn{\checkmark}) when the
+simulated return level falls within the observed \code{conf_level}
+confidence interval.}
+\item{Tier 2 — Storm rate check}{Compares calibrated annual TS and
+hurricane passage rates per location against published
+HURDAT2/IBTrACS reference bounds. Rates outside the reference range
+are flagged and may indicate a search-radius or record-length issue.}
+\item{Tier 3 — Wind field spot-checks}{Compares Holland wind-profile
+site estimates against historical station observations for individual
+storm passages. Each comparison is graded against an
+observation-quality-dependent tolerance band (A: \eqn{\pm}15\%,
+B: \eqn{\pm}25\%, C: \eqn{\pm}35\%).}
+}
+
+Results are printed to the console and, when \code{cfg$save_plots} or
+\code{cfg$save_tables} is \code{TRUE}, written to \code{cfg$out_dir}.
+}
+\examples{
+\dontrun{
+# Run with default settings
+val_out <- run_validation_suite(out_base)
+
+# Custom configuration: 15-yr holdout, 95\% CI, save outputs
+val_cfg <- make_validation_cfg(
+  holdout_years  = 15L,
+  return_periods = c(5, 10, 25, 50),
+  conf_level     = 0.95,
+  save_plots     = TRUE,
+  out_dir        = "output/validation"
+)
+val_out <- run_validation_suite(out_base, cfg = val_cfg)
+
+# Inspect Tier 1 return-level comparison
+val_out$hindcast$comparison
+
+# Overall pass rate
+mean(val_out$hindcast$comparison$obs_in_ci, na.rm = TRUE)
+}
+}
+\seealso{
+\code{\link{make_validation_cfg}} for configuring the validation run,
+\code{\link{run_hazard_model}} for producing the required \code{out} object,
+\code{\link{plot_hindcast_validation}} for standalone hindcast plots.
 }

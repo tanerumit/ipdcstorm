@@ -119,7 +119,7 @@ test_that("lookup_storm_id min_wind_kt filter returns only storms above threshol
 })
 
 test_that("lookup_storm_id returns empty tibble with correct schema when no matches", {
-  res <- lookup_storm_id(.out_fixture(), year = 1900L)
+  res <- suppressMessages(lookup_storm_id(.out_fixture(), year = 1900L))
 
   expect_equal(nrow(res), 0L)
   expect_true("storm_id" %in% names(res))

@@ -14,7 +14,9 @@ generate_daily_hazard_impact_spatial(
   pulse_shape = "cosine",
   scenario = NA_character_,
   seed = NULL,
-  verbose = TRUE
+  pinned_sids = NULL,
+  background_wind = NULL,
+  verbose = FALSE
 )
 }
 \arguments{
@@ -29,7 +31,7 @@ generate_daily_hazard_impact_spatial(
 \item{gust_factor}{Numeric scalar gust multiplier applied to \code{wind_kt}.}
 
 \item{damage}{Named list defining the daily damage model; same specification
-as \code{\link{generate_daily_hazard_impact}()}.}
+as \code{\link{generate_daily_hazard_impact_spatial}()}.}
 
 \item{pulse_shape}{Character scalar pulse shape; \code{"cosine"} or
 \code{"triangle"}.}
@@ -42,10 +44,10 @@ offset by location index for reproducibility.}
 }
 \value{
 Named list of tibbles — one per requested location — with the same
-column schema as \code{\link{generate_daily_hazard_impact}()}.
+column schema as \code{\link{generate_daily_hazard_impact_spatial}()}.
 }
 \description{
-Drop-in replacement for \code{\link{generate_daily_hazard_impact}()} that
+Drop-in replacement for \code{\link{generate_daily_hazard_impact_spatial}()} that
 enforces spatial coherence across locations by sampling storms once at the
 basin level per simulated year and assigning each drawn storm to every
 location whose event library contains it (Option 1 — shared event pool).
@@ -91,7 +93,7 @@ lapply(daily_spatial, function(loc_tbl) {
 }
 }
 \seealso{
-\code{\link{generate_daily_hazard_impact}},
+\code{\link{generate_daily_hazard_impact_spatial}},
 \code{\link{build_event_library_from_out}},
 \code{\link{generate_daily_year_extended}}
 }

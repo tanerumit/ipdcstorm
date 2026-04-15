@@ -628,7 +628,7 @@ run_hazard_model <- function(cfg, targets,
       dplyr::group_by(.data$storm_class) |>
       dplyr::summarise(lambda = sum(.data$lambda), .groups = "drop"),
     min_year = cfg$start_year,
-    verbose = verbose
+    verbose = FALSE
   )
   delta_sst <- climate_resolved$delta_sst
   beta_sst <- climate_resolved$beta_sst
@@ -729,16 +729,16 @@ run_hazard_model <- function(cfg, targets,
     perturb_state <- climate_info$perturb_state
     intensity_pct <- 100 * gamma_intensity
     .cli_info(sprintf(
-      "Climate mode      : %s",
+      "Climate mode     : %s",
       switch(
         climate_info$climate_mode,
-        baseline = "baseline climate run (delta_sst = 0)",
-        future = sprintf("future climate run (delta_sst = %+.2f C)", delta_sst),
+        baseline = "baseline (delta_sst = 0)",
+        future = sprintf("future (delta_sst = %+.2f\u00B0C)", delta_sst),
         "climate run"
       )
     ))
     .cli_info(sprintf(
-      "Climate input     : %s",
+      "Climate input    : %s",
       switch(
         climate_info$input_mode,
         scenario_helper = "scenario helper",
@@ -746,22 +746,23 @@ run_hazard_model <- function(cfg, targets,
         climate_info$input_mode
       )
     ))
-    .cli_info(sprintf("Climate scenario  : %s", scenario_label))
+    .cli_info(sprintf("Climate scenario : %s", scenario_label))
     has_target_year <- !is.null(climate_info$target_year) &&
       length(climate_info$target_year) == 1L &&
       is.numeric(climate_info$target_year) &&
       !is.na(climate_info$target_year) &&
       is.finite(climate_info$target_year)
     if (has_target_year) {
-      .cli_info(sprintf("Target year       : %.1f", climate_info$target_year))
+      .cli_info(sprintf("Target year      : %.1f", climate_info$target_year))
     }
-    .cli_info(sprintf("SST baseline     : %d-%d", min(bl_range), max(bl_range)))
+    .cli_info(sprintf("SST baseline     : %d\u2013%d", min(bl_range), max(bl_range)))
     .cli_info(sprintf("Sensitivity mode : %s", climate_info$sensitivity_mode))
     .cli_info(sprintf(
-      "Rate effect      : beta_0=%.2f -> beta=%.2f (%+.0f%% per +1\u00B0C)",
+      "Rate effect      : beta_0=%.2f -> beta=%.2f (%+.0f%% per +1\u00B0C)%s",
       climate_info$beta_0,
       climate_info$beta_sst_raw,
-      100 * (exp(climate_info$beta_sst_raw) - 1)
+      100 * (exp(climate_info$beta_sst_raw) - 1),
+      if (isTRUE(climate_info$beta_guardrail$triggered)) " [guardrail]" else ""
     ))
     .cli_info(sprintf(
       "Count regime     : %s | raw %.3fx -> basin %.3fx",
@@ -774,16 +775,15 @@ run_hazard_model <- function(cfg, targets,
       climate_info$gamma_0, gamma_intensity, intensity_pct
     ))
     .cli_info(sprintf(
-      "Local response   : redistribution %.3f | range %.3fx-%.3fx",
+      "Local response   : redistribution %.3f | range %.3fx\u2013%.3fx",
       climate_info$response_regime$redistribution_strength,
       min(climate_info$location_occurrence_scale, na.rm = TRUE),
       max(climate_info$location_occurrence_scale, na.rm = TRUE)
     ))
     .cli_info(sprintf(
-      "Storm perturbation: %s",
+      "Perturbation     : %s",
       .fmt_perturb_status(perturb_state, perturb_cfg)
     ))
-    .cli_info(sprintf("seed              : %s", as.character(seed)))
   }
 
   # =========================================================================
@@ -829,9 +829,10 @@ run_hazard_model <- function(cfg, targets,
 
   # Print simulation summary
   if (verbose) {
+    .cli_info(sprintf("Random seed      : %d", seed))
     if (beta_sst != 0 || delta_sst != 0) {
       rs <- climate_info$rate_scale
-      .cli_info(sprintf("Rate scaling      : %.3fx", rs))
+      .cli_info(sprintf("Rate scaling     : %.3fx", rs))
     }
     .cli_ok("Done")
   }
@@ -919,12 +920,8 @@ run_hazard_model <- function(cfg, targets,
     )
   )
   if (verbose) {
-    meta_parts <- c(
-      sprintf("seed=%s", as.character(run_metadata$seed)),
-      sprintf("lambda_mode=%s", run_metadata$lambda_scaling_mode)
-    )
     .cli_h("Run metadata")
-    .cli_info(paste(meta_parts, collapse = " "))
+    .cli_info(sprintf("Rate scaling     : %s", run_metadata$lambda_scaling_mode))
   }
 
   list(

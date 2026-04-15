@@ -17,7 +17,7 @@ Tibble with at least the columns present in the daily schema.
 }
 \description{
 Accepts either a named list of tibbles (as returned by
-\code{\link{generate_daily_hazard_impact}()}) or a single tibble, and
+\code{\link{generate_daily_hazard_impact_spatial}()}) or a single tibble, and
 returns a flat tibble filtered to the requested location(s).
 }
 \keyword{internal}

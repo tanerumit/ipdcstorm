@@ -14,7 +14,7 @@ disruption_flags(
 }
 \arguments{
 \item{daily}{Tibble/data.frame returned by
-\code{generate_daily_hazard_impact()}.}
+\code{generate_daily_hazard_impact_spatial()}.}
 
 \item{thr_port}{Numeric scalar wind threshold (kt) for port disruption.}
 
@@ -42,5 +42,5 @@ daily <- tibble::tibble(
 disruption_flags(daily, thr_port = 34, thr_infra = 50, thr_surge = 0.5)
 }
 \seealso{
-\code{\link{generate_daily_hazard_impact}}
+\code{\link{generate_daily_hazard_impact_spatial}}
 }

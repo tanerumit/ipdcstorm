@@ -9,7 +9,7 @@
   holdout_years = 10,
   n_sim = 5000,
   return_periods = c(5, 10, 25, 50),
-  conf_level = 0.9,
+  conf_level = 0.95,
   seed = 42,
   beta_sst = 0,
   gamma_intensity = 0,

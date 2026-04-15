@@ -6,7 +6,7 @@
 #
 # Typical workflow — portfolio mode (single set of years across all locations)
 # ─────────────────────────────────────────────────────────────────────────────
-#   daily_out  <- generate_daily_hazard_impact(...)          # full ensemble
+#   daily_out  <- generate_daily_hazard_impact_spatial(...)          # full ensemble
 #   filtered   <- query_impact_years(daily_out, ...)         # candidate set
 #
 #   metrics    <- compute_stress_year_metrics(               # step 1: per (location, sim_year)
@@ -98,7 +98,7 @@
 #' }
 #'
 #' @param daily Named list of tibbles returned by
-#'   \code{\link{generate_daily_hazard_impact}()}, or a single tibble.
+#'   \code{\link{generate_daily_hazard_impact_spatial}()}, or a single tibble.
 #' @param sim_years Optional filter. Either:
 #'   \itemize{
 #'     \item An integer vector of \code{sim_year} values applied to all

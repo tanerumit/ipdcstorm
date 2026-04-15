@@ -14,7 +14,7 @@ query_aftermath_impact(
 }
 \arguments{
 \item{daily}{Named list of tibbles returned by
-\code{\link{generate_daily_hazard_impact}()}, or a single tibble.}
+\code{\link{generate_daily_hazard_impact_spatial}()}, or a single tibble.}
 
 \item{sim_years}{Optional filter applied before computing aftermath.
 Either:

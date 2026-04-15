@@ -491,6 +491,16 @@ test_that("downscale hazard-impact wrapper executes intensity and powerlaw paths
   )
 
   sample_lib <- list(
+    events = tibble::tibble(
+      SID           = c("TS_1", "HUR_1"),
+      storm_class   = c("TS", "HUR"),
+      V_site_max_kt = c(45, 80),
+      doy           = c(220L, 250L),
+      dur_days      = c(3L, 4L),
+      Pc_min_hPa    = c(995, 970),
+      dP_max_hPa    = c(18, 40),
+      RMW_mean_km   = c(40, 25)
+    ),
     sample_doy = function(sev) if (identical(sev, "TS")) 220L else 250L,
     sample_event = function(sev) {
       tibble::tibble(
@@ -509,7 +519,7 @@ test_that("downscale hazard-impact wrapper executes intensity and powerlaw paths
     .package = "ipdcstorm"
   )
 
-  intensity <- ipdcstorm::generate_daily_hazard_impact(
+  intensity <- ipdcstorm::generate_daily_hazard_impact_spatial(
     out = out_stub,
     location = "Saba",
     sim_years = 1:2,
@@ -520,7 +530,7 @@ test_that("downscale hazard-impact wrapper executes intensity and powerlaw paths
     scenario = "baseline",
     seed = 4
   )
-  powerlaw <- ipdcstorm::generate_daily_hazard_impact(
+  powerlaw <- ipdcstorm::generate_daily_hazard_impact_spatial(
     out = out_stub,
     location = "Saba",
     sim_years = 1:2,

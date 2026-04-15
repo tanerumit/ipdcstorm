@@ -11,7 +11,7 @@ is_hur_day(daily)
 }
 \arguments{
 \item{daily}{Tibble/data.frame returned by
-\code{generate_daily_hazard_impact()}.}
+\code{generate_daily_hazard_impact_spatial()}.}
 }
 \value{
 Logical vector identifying tropical-storm or hurricane days.
@@ -26,5 +26,5 @@ is_tc_day(daily)
 is_hur_day(daily)
 }
 \seealso{
-\code{\link{generate_daily_hazard_impact}}
+\code{\link{generate_daily_hazard_impact_spatial}}
 }

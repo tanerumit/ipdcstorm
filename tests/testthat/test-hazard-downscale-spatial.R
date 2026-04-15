@@ -35,7 +35,7 @@
 
 # Helper: suppress warnings from internal event-sampling/damage steps
 # (e.g. empty Poisson draws, pressure NA coercions in very short sim runs).
-.spatial_gen <- function(...) suppressWarnings(.spatial_gen(...))
+.spatial_gen <- function(...) suppressWarnings(suppressMessages(generate_daily_hazard_impact_spatial(...)))
 
 # =============================================================================
 # generate_daily_hazard_impact_spatial

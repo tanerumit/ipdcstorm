@@ -6,7 +6,7 @@
 # Run: Rscript -e "testthat::test_file('tests/testthat/test-hazard-stress-select.R')"
 
 # =============================================================================
-# Shared fixture: minimal daily hazard tibble (generate_daily_hazard_impact schema)
+# Shared fixture: minimal daily hazard tibble (generate_daily_hazard_impact_spatial schema)
 # =============================================================================
 
 # Five synthetic years, one location ("Saba").

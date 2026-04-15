@@ -48,7 +48,7 @@ KNMI_SCENARIOS <- c("knmi_Ld", "knmi_Hd")
 # KNMI'23 provides distinct delta_sst values for each horizon:
 #   knmi_Ld / knmi_Hd at 2050 → moderate forcing
 #   knmi_Ld / knmi_Hd at 2100 → full end-of-century forcing (knmi_Hd reaches ~2.6 °C)
-TARGET_YEAR <- 2050   # switch to 2100 for end-of-century analysis
+TARGET_YEAR <- 2100   # switch to 2100 for end-of-century analysis
 
 # Controlled experiment mode (TRUE / FALSE).
 #
@@ -65,14 +65,16 @@ TARGET_YEAR <- 2050   # switch to 2100 for end-of-century analysis
 #   shifted upward in intensity by the scenario's delta_sst. Use this mode
 #   to isolate the pure intensity signal and produce directly comparable
 #   traces across baseline and scenarios.
-FREEZE_FREQUENCY <- TRUE
+FREEZE_FREQUENCY <- FALSE
 
-# Target locations (Dutch Caribbean)
+# Target locations (Dutch Caribbean + Puerto Rico + Miami)
 targets <- tibble::tribble(
-  ~name,       ~lat,     ~lon,
-  "St_Martin", 18.0708, -63.0501,
-  "Saba",      17.6350, -63.2300,
-  "Statia",    17.4890, -62.9740
+  ~name,         ~lat,     ~lon,
+  "St_Martin",   18.0708, -63.0501,
+  "Saba",        17.6350, -63.2300,
+  "Statia",      17.4890, -62.9740,
+  "Puerto_Rico", 18.4655, -66.1057,
+  "Miami",       25.7617, -80.1918
 )
 
 # Data: packaged demo subset — replace with full IBTrACS CSV for production runs
@@ -200,17 +202,56 @@ baseline_stress <- lapply(daily_base_list, function(df) {
   df[df$sim_year %in% selected_ids, ]
 })
 
+# --- Identify focal SID for each selected year (basin-level peak HUR event) ---
+#
+# The event_id in the daily output is formatted as "{SID}_y{cal_year}_{counter}".
+# Stripping the suffix recovers the original IBTrACS SID.
+#
+# Basin-level: pool all target locations, pick the SID driving the highest
+# single-day wind reading across all sites in that year. This SID will be
+# pinned into every scenario run so the focal event always appears, with its
+# intensity and duration perturbed by the scenario's delta_sst.
+
+message("\nExtracting basin-level focal SIDs for selected years ...")
+
+focal_sids <- stats::setNames(vector("list", length(selected_ids)),
+                               as.character(selected_ids))
+
+for (yr in selected_ids) {
+  yr_hur <- dplyr::bind_rows(lapply(baseline_stress, function(df) {
+    df[df$sim_year == yr & !is.na(df$event_class) & df$event_class == "HUR", ]
+  }))
+  if (nrow(yr_hur) == 0L) {
+    warning("No HUR-class days found in baseline for year ", yr, ". Focal pin skipped.")
+    focal_sids[[as.character(yr)]] <- NA_character_
+    next
+  }
+  peak_row <- yr_hur[which.max(yr_hur$wind_kt), ]
+  focal_sids[[as.character(yr)]] <- sub("_y[0-9]+_[0-9]+$", "", peak_row$event_id[1L])
+}
+
+message("  Focal SIDs:")
+for (i in seq_along(selected_ids)) {
+  yr  <- selected_ids[i]
+  sid <- focal_sids[[as.character(yr)]]
+  message(sprintf("    Q%02d (year %4d): %s",
+                  round(QUANTILE_PROBS[i] * 100), yr,
+                  if (is.na(sid)) "<none>" else sid))
+}
+
 # =============================================================================
 # Part 2: KNMI'23 climate scenarios — same seed, same year indices
 #
-# Two experiment modes controlled by FREEZE_FREQUENCY:
+# Experiment mode: focal event pinned across all scenarios.
 #
-#   FALSE — full climate response: both storm frequency (out_cc$sim) and
-#           event intensity (perturb_event) vary with the scenario.
+#   The dominant HUR event from each baseline stress-test year is guaranteed
+#   to appear in both KNMI scenario runs (same SID → same calendar timing).
+#   perturb_event() shifts its intensity and duration by the scenario delta_sst.
+#   All other storm slots are drawn freely from the climate-adjusted pool, so
+#   compound-event frequency varies naturally between scenarios.
 #
-#   TRUE  — intensity-only: out_base$sim is substituted so every scenario
-#           year has the same storm counts as the baseline; only
-#           perturb_event() shifts individual event intensities upward.
+# FREEZE_FREQUENCY is retained for reference but is no longer the primary
+# mechanism — set it TRUE only if you want to also lock non-focal storm counts.
 # =============================================================================
 
 message("\nPart 2: KNMI'23 scenarios at target year ", TARGET_YEAR)
@@ -228,7 +269,9 @@ for (scen in KNMI_SCENARIOS) {
   cfg_cc <- make_hazard_cfg(
     data_path        = data_path,
     simulation_years = N_SIM,
-    climate          = make_climate_cfg(scenario = scen, target_year = TARGET_YEAR)
+    climate          = make_climate_cfg(scenario = scen,
+                                        target_year = TARGET_YEAR,
+                                        perturb = TRUE)
   )
 
   # Same seed → common random numbers; differences isolate climate forcing only.
@@ -250,7 +293,6 @@ for (scen in KNMI_SCENARIOS) {
   # baseline reached those same year indices after consuming hundreds of prior
   # draws — resulting in completely different event sampling that has nothing
   # to do with climate forcing.
-  message("  [", scen, "] Generating ", N_SIM, " years of daily hazard ...")
   cc_daily_all <- generate_daily_hazard_impact_spatial(
     out         = out_cc,
     location    = targets$name,
@@ -260,7 +302,8 @@ for (scen in KNMI_SCENARIOS) {
     damage      = list(method = "intensity"),
     pulse_shape = "cosine",
     scenario    = scen,
-    seed        = SEED
+    seed        = SEED,
+    pinned_sids = focal_sids
   )
 
   # Retain only the 5 selected stress-test years for downstream use
@@ -287,5 +330,6 @@ message("Freeze frequency  : ", FREEZE_FREQUENCY)
 message("")
 message("Objects in workspace:")
 message("  selected_ids      — integer[5]: year indices for all scenario comparisons")
+message("  focal_sids        — list[sim_year]: basin-level focal SID pinned across scenarios")
 message("  baseline_stress   — list[location]: daily tibbles for 5 baseline years")
 message("  cc_stress         — list[scenario][location]: daily tibbles for 5 CC years")

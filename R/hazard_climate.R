@@ -353,7 +353,7 @@ estimate_beta_sst <- function(annual_counts,
   }
 
   if (n_years < 5) {
-    message("[I2_SST] Insufficient data (", n_years, " years). Using literature fallback: I2 = 0.6")
+    if (verbose) message("[I2_SST] Insufficient data (", n_years, " years). Using literature fallback: I2 = 0.6")
     return(list(
       beta_sst = 0.6,
       beta_se = NA_real_,
@@ -422,7 +422,7 @@ estimate_beta_sst <- function(annual_counts,
     w <- w_n * w_se
     beta_final <- w * beta_mle + (1 - w) * beta_prior
     if (verbose) {
-      message(sprintf("[I2_SST] Shrinkage: I2_MLE=%.3f, I2_prior=%.3f, w=%.2f a?' I2_final=%.3f",
+      message(sprintf("[I2_SST] Shrinkage: I2_MLE=%.3f, I2_prior=%.3f, w=%.2f -> I2_final=%.3f",
                       beta_mle, beta_prior, w, beta_final))
     }
   }
@@ -453,7 +453,7 @@ estimate_beta_sst <- function(annual_counts,
   if (verbose) {
     message(sprintf("[I2_SST] Method: %s | n_years: %d | I2_SST: %.3f (SE: %.3f) | pseudo-RA2: %.3f",
                     method, n_years, beta_final, se, r2_dev))
-    message(sprintf("[I2_SST] Interpretation: +1A?C SST a?' %.0f%% change in annual rate",
+    message(sprintf("[I2_SST] Interpretation: +1\u00B0C SST -> %.0f%% change in annual rate",
                     100 * (exp(beta_final) - 1)))
   }
 
@@ -1167,12 +1167,16 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 .normalize_climate_perturb <- function(perturb,
                                        scenario,
                                        allow_knmi = TRUE) {
+  # Accept TRUE (enable with defaults) and FALSE (disable) as readable shortcuts.
+  if (isTRUE(perturb))  perturb <- list()
+  if (isFALSE(perturb)) perturb <- NULL
+
   if (is.null(perturb)) {
     if (allow_knmi && grepl("^knmi_", scenario)) {
       warning(
         "Storm perturbation is disabled for KNMI scenario '", scenario, "'. ",
         "Individual storm intensities will NOT be shifted by delta_sst. ",
-        "Pass perturb = list() to enable scenario-appropriate intensity perturbation.",
+        "Pass perturb = TRUE to enable scenario-appropriate intensity perturbation.",
         call. = FALSE
       )
     }
@@ -1182,7 +1186,8 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
     ))
   }
   if (!is.list(perturb)) {
-    stop("perturb must be NULL or a named list of storm-perturbation settings.", call. = FALSE)
+    stop("perturb must be TRUE, FALSE, NULL, or a named list of storm-perturbation parameters.",
+         call. = FALSE)
   }
 
   resolved <- perturb
@@ -1302,8 +1307,9 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 #'
 #' `gamma = gamma_0 * (1 + k_gamma * delta_sst)`
 #'
-#' Optional storm perturbation is available as an expert sensitivity and is
-#' disabled unless `perturb` is supplied explicitly.
+#' Optional storm perturbation shifts individual event intensity, duration, and
+#' wind radii by `delta_sst`. It is disabled by default; pass `perturb = TRUE`
+#' to enable scenario-appropriate defaults.
 #'
 #' Climate can be specified in two equivalent ways:
 #' 1. Scenario helper mode: provide `scenario` plus `target_year` to derive
@@ -1336,10 +1342,11 @@ perturb_event <- function(events, delta_sst, cc_params = NULL) {
 #'   to `beta_0` when `sensitivity_mode = "linear_shifted"`.
 #' @param k_gamma Numeric scalar; linear sensitivity-shift coefficient applied
 #'   to `gamma_0` when `sensitivity_mode = "linear_shifted"`.
-#' @param perturb Optional storm-perturbation settings.
-#'   - `NULL`: disable storm perturbation.
-#'   - `list()`: enable storm perturbation with defaults from `default_cc_params()`.
-#'   - named list: enable storm perturbation with user overrides.
+#' @param perturb Controls storm-perturbation of individual event properties
+#'   (intensity, duration, wind radii) by `delta_sst`.
+#'   - `TRUE`: enable with scenario-appropriate defaults (recommended for KNMI scenarios).
+#'   - `FALSE` or `NULL`: disable (default).
+#'   - named list: enable with explicit parameter overrides (see `default_cc_params()`).
 #'
 #' @return A list with class "climate_cfg" containing climate configuration parameters.
 #'

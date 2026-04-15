@@ -66,16 +66,17 @@
       "r34_ne_nm", "r34_se_nm", "r34_sw_nm", "r34_nw_nm"
     )
     if (all(cleaned_required_cols %in% names(df))) {
+      available_basins <- sort(unique(toupper(trimws(as.character(df$BASIN)))))
+      available_basins <- available_basins[!is.na(available_basins)]
+
       if (!is.null(basin))  df <- dplyr::filter(df, .data$BASIN %in% basin)
       if (!is.null(season)) df <- dplyr::filter(df, .data$SEASON %in% season)
 
       if (nrow(df) == 0) {
-        present <- sort(unique(toupper(trimws(as.character(df$BASIN)))))
-        present <- present[!is.na(present)]
         stop("After filtering, 0 rows remain. Requested basin=",
              paste(basin, collapse = ", "),
              ". File BASIN values include: ",
-             paste(utils::head(present, 20), collapse = ", "))
+             paste(utils::head(available_basins, 20), collapse = ", "))
       }
 
       df2 <- df |>

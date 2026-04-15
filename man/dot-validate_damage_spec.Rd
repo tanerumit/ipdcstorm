@@ -7,7 +7,7 @@
 .validate_damage_spec(damage)
 }
 \arguments{
-\item{damage}{Named list supplied to \code{generate_daily_hazard_impact()}.}
+\item{damage}{Named list supplied to \code{generate_daily_hazard_impact_spatial()}.}
 }
 \value{
 Named list with validated method-specific defaults filled in.

@@ -4,7 +4,13 @@
 \alias{plot_cdf_comparison}
 \title{Plot CDF comparison of simulated vs observed annual maxima}
 \usage{
-plot_cdf_comparison(val, cfg = NULL, out_dir = NULL, base_size = NULL)
+plot_cdf_comparison(
+  val,
+  cfg = NULL,
+  out_dir = NULL,
+  base_size = NULL,
+  save = TRUE
+)
 }
 \arguments{
 \item{val}{Output from \code{run_validation_suite()}.}

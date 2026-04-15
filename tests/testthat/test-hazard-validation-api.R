@@ -40,10 +40,8 @@ test_that("validation suite inherits n_sim only from model output config", {
   )
 
   cfg_inherit <- make_validation_cfg(n_sim = NULL, save_plots = FALSE, save_tables = FALSE)
-  expect_message(
-    run_validation_suite(out_stub, cfg = cfg_inherit),
-    "Sim: 250 yr \\(model output config\\$n_sim\\)"
-  )
+  msgs <- testthat::capture_messages(run_validation_suite(out_stub, cfg = cfg_inherit))
+  expect_true(any(grepl("Sim: 250 yr \\(model output config\\$n_sim\\)", msgs)))
 })
 
 test_that("run_validation_suite honors explicit validation n_sim overrides", {
@@ -68,16 +66,12 @@ test_that("run_validation_suite honors explicit validation n_sim overrides", {
   )
 
   cfg_inherit <- make_validation_cfg(n_sim = NULL, save_plots = FALSE, save_tables = FALSE)
-  expect_message(
-    run_validation_suite(out_stub, cfg = cfg_inherit),
-    "Sim: 250 yr \\(model output config\\$n_sim\\)"
-  )
+  msgs_inherit <- testthat::capture_messages(run_validation_suite(out_stub, cfg = cfg_inherit))
+  expect_true(any(grepl("Sim: 250 yr \\(model output config\\$n_sim\\)", msgs_inherit)))
 
   cfg_override <- make_validation_cfg(n_sim = 180L, save_plots = FALSE, save_tables = FALSE)
-  expect_message(
-    run_validation_suite(out_stub, cfg = cfg_override),
-    "Sim: 180 yr \\(validation_cfg\\$n_sim\\)"
-  )
+  msgs_override <- testthat::capture_messages(run_validation_suite(out_stub, cfg = cfg_override))
+  expect_true(any(grepl("Sim: 180 yr \\(validation_cfg\\$n_sim\\)", msgs_override)))
 })
 
 test_that("storm-class helpers no longer normalize legacy aliases", {
@@ -90,7 +84,7 @@ test_that("storm-class helpers no longer normalize legacy aliases", {
     lambda_ref = c(2.0, 0.55),
     expected_ratio = c(0.55, 0.30)
   )
-  scalers <- ipdcstorm:::.lambda_scalers_from_rate_check(rate_tbl)
+  scalers <- suppressMessages(ipdcstorm:::.lambda_scalers_from_rate_check(rate_tbl))
   expect_false(any(scalers$storm_class == "TS34plus"))
 
   rate_check <- ipdcstorm:::.build_rate_check_table(list(

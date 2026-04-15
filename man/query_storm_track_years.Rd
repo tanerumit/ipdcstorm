@@ -8,7 +8,7 @@ query_storm_track_years(daily, storm_id, location = NULL)
 }
 \arguments{
 \item{daily}{Named list of tibbles returned by
-\code{\link{generate_daily_hazard_impact}()}, or a single tibble for one
+\code{\link{generate_daily_hazard_impact_spatial}()}, or a single tibble for one
 location.}
 
 \item{storm_id}{Character scalar IBTrACS SID of the target storm (e.g.
@@ -52,5 +52,5 @@ query_storm_track_years(daily_out, storm_id = "2017242N16333", location = "Saba"
 }
 \seealso{
 \code{\link{query_impact_years}},
-\code{\link{generate_daily_hazard_impact}}
+\code{\link{generate_daily_hazard_impact_spatial}}
 }

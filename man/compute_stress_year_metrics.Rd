@@ -8,7 +8,7 @@ compute_stress_year_metrics(daily, sim_years = NULL, location = NULL)
 }
 \arguments{
 \item{daily}{Named list of tibbles returned by
-\code{\link{generate_daily_hazard_impact}()}, or a single tibble.}
+\code{\link{generate_daily_hazard_impact_spatial}()}, or a single tibble.}
 
 \item{sim_years}{Optional filter. Either:
 \itemize{

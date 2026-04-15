@@ -4,7 +4,13 @@
 \alias{plot_hindcast_validation}
 \title{Plot hindcast validation figures}
 \usage{
-plot_hindcast_validation(val, cfg = NULL, out_dir = NULL, base_size = NULL)
+plot_hindcast_validation(
+  val,
+  cfg = NULL,
+  out_dir = NULL,
+  base_size = NULL,
+  save = TRUE
+)
 }
 \arguments{
 \item{val}{Output from \code{run_validation_suite()}.}

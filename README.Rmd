@@ -18,4 +18,133 @@ knitr::opts_chunk$set(
 <!-- badges: start -->
 <!-- badges: end -->
 
-[placeholder]
+`ipdcstorm` is an R package for stochastic tropical-cyclone wind hazard
+modelling at point locations in the North Atlantic basin. It was developed
+to support climate stress testing of supply-chain infrastructure on the
+Dutch Caribbean islands (St. Martin, Saba, Statia), but it works for any
+site in the basin.
+
+The package combines NOAA's IBTrACS historical track database with a
+parametric wind model and a stochastic event generator to produce long
+synthetic records of daily site-level wind exposure under both stationary
+and climate-change conditions.
+
+## What it does
+
+The workflow has three stages:
+
+1. **Historical calibration.** Reads IBTrACS tracks, computes site-level
+   winds with a Holland (1980) parametric profile (with forward-motion
+   asymmetry and directional radii), and estimates per-site annual storm
+   rates and Gamma overdispersion by severity class.
+2. **Stochastic simulation.** Draws synthetic seasons from a
+   Gamma–Poisson–Binomial process that reproduces observed burstiness and
+   the tropical-storm/hurricane split. Climate change enters through SST
+   forcing — affecting both annual rates and the hurricane fraction —
+   with KNMI'23 and IPCC AR6 scenarios built in.
+3. **Temporal downscaling.** Resamples historical events from a
+   severity-stratified library, places them on the calendar via empirical
+   day-of-year distributions, and spreads each event over its duration
+   with a smooth wind envelope to produce a daily wind (kt) time series
+   per location.
+
+It also ships validation utilities (rates, return levels, wind-field
+diagnostics, QQ/CDF/bias plots) and a hindcast suite for checking the
+calibrated model against the historical record.
+
+## Installation
+
+Install the development version from GitHub:
+
+```{r, eval = FALSE}
+# install.packages("devtools")
+devtools::install_github("tanerumit/ipdcstorm")
+```
+
+## Quick start
+
+A minimal end-to-end run for three Dutch Caribbean sites using the
+packaged IBTrACS demo subset:
+
+```{r, eval = FALSE}
+library(ipdcstorm)
+
+targets <- tibble::tribble(
+  ~name,       ~lat,     ~lon,
+  "St_Martin", 18.0708, -63.0501,
+  "Saba",      17.6350, -63.2300,
+  "Statia",    17.4890, -62.9740
+)
+
+cfg <- make_hazard_cfg(
+  data_path        = system.file("extdata", "ibtracs_demo.csv",
+                                 package = "ipdcstorm"),
+  simulation_years = 1000,
+  climate          = make_climate_cfg(scenario = "stationary")
+)
+
+out <- run_hazard_model(cfg, targets = targets, seed = 42)
+
+daily <- generate_daily_hazard_impact_spatial(
+  out         = out,
+  location    = targets$name,
+  sim_years   = seq_len(1000),
+  year0       = 2000L,
+  damage      = list(method = "intensity"),
+  pulse_shape = "cosine",
+  scenario    = "baseline",
+  seed        = 42
+)
+```
+
+For production runs, replace `data_path` with the full IBTrACS North
+Atlantic CSV (`ibtracs.NA.list.v04r01.csv`), available from NOAA NCEI.
+
+## Climate scenarios
+
+Climate forcing is configured through `make_climate_cfg()` and supports:
+
+- **Stationary** baseline (no warming).
+- **KNMI'23** scenarios at 2050 and 2100 horizons (`knmi_Ld`, `knmi_Hd`).
+- **IPCC AR6** SST scenarios.
+- **Direct** `delta_sst` for custom forcing.
+
+Scenarios shift annual storm rates, the hurricane share, and (optionally)
+individual event intensities, while preserving common random numbers
+between baseline and scenario runs so differences isolate the climate
+signal.
+
+## Tutorials
+
+Three Quarto tutorials walk through the full workflow:
+
+- `vignettes/tutorial_1_setup.qmd` — model overview, setup, single-site
+  baseline.
+- `vignettes/tutorial_2_validation.qmd` — validation suite and
+  hindcasting.
+- `vignettes/tutorial_3_climate_change.qmd` — multi-site climate-change
+  analysis.
+
+Worked example scripts live in `inst/extcode/`, including a
+stress-test experiment (`05-stress-test-experiment.R`) that selects
+representative high-impact years and replays them under KNMI'23
+scenarios.
+
+## Key entry points
+
+| Function | Purpose |
+|---|---|
+| `make_hazard_cfg()` / `run_hazard_model()` | Configure and run the hazard simulation |
+| `make_climate_cfg()` / `resolve_climate_inputs()` | Build a climate scenario |
+| `generate_daily_hazard_impact_spatial()` | Daily downscaling for one or more sites |
+| `make_validation_cfg()` / `run_validation_suite()` | Validate against the historical record |
+| `plot_*()` / `save_hazard_viz_plots()` | Diagnostic and reporting plots |
+
+## License
+
+MIT. See `LICENSE`.
+
+## Issues
+
+Please report bugs at
+<https://github.com/tanerumit/ipdcstorm/issues>.

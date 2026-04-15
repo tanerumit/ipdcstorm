@@ -7,7 +7,7 @@ test_that("lambda scalers handle clamping and missing references deterministical
     expected_ratio = c(0.55, 0.30, 0.75)
   )
 
-  scalers <- ipdcstorm:::.lambda_scalers_from_rate_check(rate_tbl)
+  scalers <- suppressMessages(ipdcstorm:::.lambda_scalers_from_rate_check(rate_tbl))
 
   saba_ts <- dplyr::filter(scalers, location == "Saba", storm_class == "TS")
   saba_hur <- dplyr::filter(scalers, location == "Saba", storm_class == "HUR")

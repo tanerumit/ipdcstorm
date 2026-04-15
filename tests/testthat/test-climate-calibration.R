@@ -165,7 +165,7 @@ test_that("estimate_beta_sst verbose=FALSE produces no console output", {
   sst    <- .beta_sst_fixture()
 
   out_text <- capture.output(
-    suppressWarnings(estimate_beta_sst(counts, sst, verbose = FALSE)),
+    invisible(suppressWarnings(estimate_beta_sst(counts, sst, verbose = FALSE))),
     type = "message"
   )
   expect_length(out_text, 0L)

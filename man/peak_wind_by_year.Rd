@@ -8,7 +8,7 @@ peak_wind_by_year(daily)
 }
 \arguments{
 \item{daily}{Tibble/data.frame returned by
-\code{generate_daily_hazard_impact()}.}
+\code{generate_daily_hazard_impact_spatial()}.}
 }
 \value{
 Tibble with one row per location and simulation year and a
