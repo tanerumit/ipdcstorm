@@ -23,3 +23,4 @@ scenario targets in \code{sst_scenario_info("all")} at \code{target_year}.
 \examples{
 get_scenario_delta("ssp585", target_year = 2050)
 }
+\keyword{internal}

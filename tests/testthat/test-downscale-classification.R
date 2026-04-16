@@ -10,7 +10,7 @@ test_that("generate_daily_year_extended classifies daily event_class from realiz
     RMW_mean_km = c(20, 35, 50)
   )
 
-  daily <- generate_daily_year_extended(
+  daily <- ipdcstorm:::generate_daily_year_extended(
     year = 2001,
     sampled_events = sampled_events,
     pulse_shape = "cosine"

@@ -27,3 +27,4 @@ requiring users to download and process NetCDF files.
 Source: NOAA/NCEI ERSST v5, accessed 2024.
 Reference: Huang et al. (2017), J. Climate, 30, 8179-8205.
 }
+\keyword{internal}

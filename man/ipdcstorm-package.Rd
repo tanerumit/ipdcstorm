@@ -11,6 +11,7 @@ What the package does (one paragraph).
 \seealso{
 Useful links:
 \itemize{
+  \item \url{https://tanerumit.github.io/ipdcstorm}
   \item \url{https://github.com/tanerumit/ipdcstorm}
   \item Report bugs at \url{https://github.com/tanerumit/ipdcstorm/issues}
 }

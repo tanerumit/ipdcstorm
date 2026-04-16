@@ -31,3 +31,4 @@ P(annual_max <= v) = p0 + (1 - p0) * F_GEV(v)
 where p0 is the probability of a zero-event year, and F_GEV is the GEV CDF
 fitted to nonzero annual maxima.
 }
+\keyword{internal}

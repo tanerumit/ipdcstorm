@@ -113,3 +113,4 @@ aftermath_90  <- query_aftermath_impact(
 \code{\link{query_storm_track_years}}, \code{\link{query_impact_years}},
 \code{\link{compute_stress_year_metrics}}
 }
+\keyword{internal}

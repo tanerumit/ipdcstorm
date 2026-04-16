@@ -17,3 +17,4 @@ These are deliberately simple, stakeholder-facing targets used for the
 piecewise-linear SST anomaly generator (to 2050 and 2100, then held constant).
 They are not intended to reproduce a particular CMIP6 model member.
 }
+\keyword{internal}

@@ -11,7 +11,8 @@ make_hazard_cfg(
   simulation_years = 1000L,
   preset = "default",
   climate = make_climate_cfg(scenario = "stationary"),
-  advanced = NULL
+  advanced = NULL,
+  background_wind = NULL
 )
 }
 \arguments{
@@ -35,6 +36,12 @@ leave this as \code{NULL}. Supported names:
 \code{ts_threshold_kt}, \code{strong_storm_threshold_kt}, \code{hurricane_threshold_kt},
 \code{r34_cap_nm}, \code{r50_cap_nm}, \code{r64_cap_nm},
 \code{lambda_scaling_mode} (\code{"target"} or \code{"down_only"}).}
+
+\item{background_wind}{Optional \code{background_wind_cfg} object created by
+\code{make_background_wind_cfg()}. When supplied, non-storm days in the daily
+downscaling step receive wind speeds sampled from Weibull marginals with
+optional spatial copula correlation and AR(1) persistence, rather than
+being set to zero. Defaults to \code{NULL} (zero background wind).}
 }
 \value{
 A list with class \code{c("hazard_cfg", "list")}.

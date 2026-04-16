@@ -4,7 +4,13 @@
 \alias{plot_rate_validation}
 \title{Plot rate-check validation figure}
 \usage{
-plot_rate_validation(val, cfg = NULL, out_dir = NULL, base_size = NULL)
+plot_rate_validation(
+  val,
+  cfg = NULL,
+  out_dir = NULL,
+  base_size = NULL,
+  save = TRUE
+)
 }
 \arguments{
 \item{val}{Output from \code{run_validation_suite()}.}
@@ -16,8 +22,9 @@ plot_rate_validation(val, cfg = NULL, out_dir = NULL, base_size = NULL)
 \item{base_size}{Base font size for plots. Overrides \code{cfg$advanced$base_size}.}
 }
 \value{
-Path of saved plot (invisibly) or \code{NULL}.
+Validation plot object with optional saved path metadata, or \code{NULL}.
 }
 \description{
 Plot rate-check validation figure
 }
+\keyword{internal}

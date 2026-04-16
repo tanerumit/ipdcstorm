@@ -22,3 +22,4 @@ have at minimum a \code{year} column and an SST column (name specified by
 \code{sst_col}). This allows users to supply their own ERSST v5 extractions
 or alternative SST products.
 }
+\keyword{internal}

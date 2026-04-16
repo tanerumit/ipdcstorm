@@ -13,3 +13,4 @@ Named list with elements v_scale, r_scale, speed_scale, precip_scale.
 Returns a named list of per-degC scaling factors for storm-property
 perturbation.
 }
+\keyword{internal}

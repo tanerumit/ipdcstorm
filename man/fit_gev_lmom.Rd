@@ -28,3 +28,4 @@ small samples (n < 50) and requires no optimization. The sign convention
 follows the standard meteorological form: \eqn{\xi > 0} = heavy tail
 (Frechet), \eqn{\xi < 0} = bounded tail (Weibull), \eqn{\xi = 0} = Gumbel.
 }
+\keyword{internal}

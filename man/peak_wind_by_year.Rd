@@ -27,3 +27,4 @@ daily <- tibble::tibble(
 )
 peak_wind_by_year(daily)
 }
+\keyword{internal}

@@ -123,20 +123,11 @@
 #' }
 #' @seealso \code{\link{aggregate_stress_metrics}}, \code{\link{select_stress_years}},
 #'   \code{\link{query_impact_years}}, \code{\link{query_storm_track_years}}
+#' @keywords internal
 #' @export
 compute_stress_year_metrics <- function(daily, sim_years = NULL, location = NULL) {
 
   tbl <- .resolve_daily_tbl(daily, location)
-
-  required <- c("location", "sim_year", "wind_kt", "event_id", "cum_damage", "damage_rate")
-  missing_cols <- setdiff(required, names(tbl))
-  if (length(missing_cols) > 0L) {
-    stop(
-      "`daily` is missing required columns: ",
-      paste(missing_cols, collapse = ", "), ".",
-      call. = FALSE
-    )
-  }
 
   # --- Apply sim_years filter (supports vector or query-output tibble) -------
   locs <- unique(tbl$location)
@@ -161,46 +152,7 @@ compute_stress_year_metrics <- function(daily, sim_years = NULL, location = NULL
     ))
   }
 
-  # --- Max duration of a single event (days with same event_id) --------------
-  event_dur <- tbl |>
-    dplyr::filter(!is.na(.data$event_id)) |>
-    dplyr::count(.data$location, .data$sim_year, .data$event_id, name = "dur_days") |>
-    dplyr::group_by(.data$location, .data$sim_year) |>
-    dplyr::summarise(max_event_dur_days = as.integer(max(.data$dur_days)), .groups = "drop")
-
-  # --- Main per-year aggregation ---------------------------------------------
-  base <- tbl |>
-    dplyr::group_by(.data$location, .data$sim_year) |>
-    dplyr::summarise(
-      peak_wind_kt    = max(.data$wind_kt,      na.rm = TRUE),
-      n_ts_days       = as.integer(sum(.data$wind_kt >= 34, na.rm = TRUE)),
-      n_hur_days      = as.integer(sum(.data$wind_kt >= 64, na.rm = TRUE)),
-      n_events        = as.integer(dplyr::n_distinct(
-                          .data$event_id[!is.na(.data$event_id)]
-                        )),
-      cum_damage      = max(.data$cum_damage,    na.rm = TRUE),
-      max_damage_rate = max(.data$damage_rate,   na.rm = TRUE),
-      .groups = "drop"
-    ) |>
-    # Replace non-finite values in calm (no-TC) years with 0
-    dplyr::mutate(
-      peak_wind_kt    = dplyr::if_else(is.finite(.data$peak_wind_kt),    .data$peak_wind_kt,    0),
-      cum_damage      = dplyr::if_else(is.finite(.data$cum_damage),      .data$cum_damage,      0),
-      max_damage_rate = dplyr::if_else(is.finite(.data$max_damage_rate), .data$max_damage_rate, 0)
-    )
-
-  # Join event-duration back in, filling 0 for calm years
-  base |>
-    dplyr::left_join(event_dur, by = c("location", "sim_year")) |>
-    dplyr::mutate(
-      max_event_dur_days = dplyr::coalesce(.data$max_event_dur_days, 0L)
-    ) |>
-    dplyr::select(
-      "location", "sim_year",
-      "peak_wind_kt", "n_ts_days", "n_hur_days",
-      "n_events", "max_event_dur_days",
-      "cum_damage", "max_damage_rate"
-    )
+  .summarise_daily_year_metrics(tbl)
 }
 
 
@@ -272,6 +224,7 @@ compute_stress_year_metrics <- function(daily, sim_years = NULL, location = NULL
 #' )
 #' }
 #' @seealso \code{\link{compute_stress_year_metrics}}, \code{\link{select_stress_years}}
+#' @keywords internal
 #' @export
 aggregate_stress_metrics <- function(
     metrics,
@@ -497,6 +450,7 @@ aggregate_stress_metrics <- function(
 #' }
 #' @seealso \code{\link{compute_stress_year_metrics}},
 #'   \code{\link{aggregate_stress_metrics}}
+#' @keywords internal
 #' @export
 select_stress_years <- function(
     metrics,

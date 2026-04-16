@@ -54,3 +54,4 @@ sample_events_for_year_extended(sample_lib, year = 2000, n_ts = 1, n_hur = 1)
 \seealso{
 \code{\link{generate_daily_year_extended}}
 }
+\keyword{internal}

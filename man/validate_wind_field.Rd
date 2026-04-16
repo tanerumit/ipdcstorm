@@ -21,3 +21,4 @@ data, extracts the model's peak site wind for that storm at the target location,
 and compares against the observed wind. Each observation carries a quality tier
 (A/B/C) that determines the acceptable bias threshold.
 }
+\keyword{internal}

@@ -28,3 +28,4 @@ compute_annual_counts(events)
 \seealso{
 \code{\link{compute_lambda_table}}, \code{\link{get_annual_counts}}
 }
+\keyword{internal}

@@ -138,3 +138,25 @@ test_that("generate_daily_hazard_impact_spatial shares storm SIDs across locatio
   shared <- intersect(sids_saba, sids_statia)
   expect_gt(length(shared), 0L)
 })
+
+test_that("generate_daily_hazard_impact_spatial resolves duplicate library SIDs consistently", {
+  out <- .spatial_out()
+  dup_sid <- out$events$storm_id[1L]
+  dup_row <- out$events[1L, , drop = FALSE]
+  dup_row$peak_wind_kt <- dup_row$peak_wind_kt + 25
+  dup_row$storm_intensity_kt <- dup_row$storm_intensity_kt + 25
+  dup_row$min_pressure_hpa <- dup_row$min_pressure_hpa - 10
+  out$events <- dplyr::bind_rows(out$events, dup_row)
+
+  res <- .spatial_gen(
+    out, location = "Saba",
+    sim_years = 1L:30L, seed = 42L
+  )$Saba
+
+  dup_days <- dplyr::filter(res, !is.na(.data$event_id), grepl(paste0("^", dup_sid, "_y"), .data$event_id))
+  if (nrow(dup_days) > 0L) {
+    expect_true(any(dup_days$pressure_hpa == dup_row$min_pressure_hpa, na.rm = TRUE))
+  } else {
+    succeed()
+  }
+})

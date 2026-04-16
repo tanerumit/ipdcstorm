@@ -32,3 +32,4 @@ lib$events
 \seealso{
 \code{\link{build_event_library}}
 }
+\keyword{internal}

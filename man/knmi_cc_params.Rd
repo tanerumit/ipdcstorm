@@ -19,3 +19,4 @@ Named list of cc_params with adjusted precip_scale.
 Returns the default cc_params list with the precipitation scaling factor
 adjusted for the dry (d) or wet (n) variant of the KNMI'23 scenarios.
 }
+\keyword{internal}

@@ -54,6 +54,7 @@
 #'   \item `year`: integer calendar year.
 #'   \item `sst_mdr_aso`: MDR ASO seasonal mean SST (degC).
 #' }
+#' @keywords internal
 #' @export
 get_mdr_sst_builtin <- function() {
   # MDR (10-20N, 80-20W) ASO mean SST from ERSST v5
@@ -95,6 +96,7 @@ get_mdr_sst_builtin <- function() {
 #' @param year_col Character; name of the year column (default: "year").
 #'
 #' @return Tibble with columns: year, sst_mdr_aso.
+#' @keywords internal
 #' @export
 read_mdr_sst_csv <- function(csv_path,
                              sst_col = "sst_mdr_aso",
@@ -132,6 +134,7 @@ read_mdr_sst_csv <- function(csv_path,
 #' @param aso_months Integer vector of months for seasonal average (default: 8:10).
 #'
 #' @return Tibble with columns: year, sst_mdr_aso.
+#' @keywords internal
 #' @export
 read_mdr_sst_ersst <- function(nc_path,
                                mdr_lat = c(10, 20),
@@ -224,6 +227,7 @@ read_mdr_sst_ersst <- function(nc_path,
 #' sst_anom <- compute_sst_anomaly(sst, baseline_years = 1991:2020)
 #' head(sst_anom)
 #'
+#' @keywords internal
 #' @export
 compute_sst_anomaly <- function(sst_df, baseline_years = 1991L:2020L) {
   if (!all(c("year", "sst_mdr_aso") %in% names(sst_df))) {
@@ -308,6 +312,7 @@ compute_sst_anomaly <- function(sst_df, baseline_years = 1991L:2020L) {
 #' # annual_counts should come from compute_annual_counts()
 #' # beta_info <- estimate_beta_sst(annual_counts, sst_df)
 #'
+#' @keywords internal
 #' @export
 estimate_beta_sst <- function(annual_counts,
                               sst_df,
@@ -509,6 +514,7 @@ estimate_beta_sst <- function(annual_counts,
 #'   "TS" and "HUR".
 #'
 #' @return Numeric scalar: baseline hurricane fraction p_HUR_base.
+#' @keywords internal
 #' @export
 compute_p_hur_base <- function(lambda_table) {
   lam <- .extract_lambdas(lambda_table)
@@ -550,6 +556,7 @@ compute_p_hur_base <- function(lambda_table) {
 #'   \item{n_years}{Number of years in fit.}
 #'   \item{fit_data}{Tibble used for fitting.}
 #'
+#' @keywords internal
 #' @export
 estimate_gamma_intensity <- function(annual_counts,
                                      sst_df,
@@ -695,6 +702,7 @@ estimate_gamma_intensity <- function(annual_counts,
 #' @param p_hur_base Optional numeric; if NULL, computed from lambda_table.
 #'
 #' @return Tibble with columns: sim_year, sst_anomaly, p_hur, lam_TS, lam_HUR.
+#' @keywords internal
 #' @export
 compute_severity_split <- function(lambda_table,
                                    sst_anomaly,
@@ -739,6 +747,7 @@ compute_severity_split <- function(lambda_table,
 #' They are not intended to reproduce a particular CMIP6 model member.
 #'
 #' @return Tibble with columns: scenario, source, delta_sst_2050, delta_sst_2100, description.
+#' @keywords internal
 #' @export
 ipcc_ar6_sst_scenario_info <- function() {
   tibble::tibble(
@@ -764,6 +773,7 @@ ipcc_ar6_sst_scenario_info <- function() {
 #' @param source Character; one of "all", "ipcc_ar6", "knmi23".
 #'
 #' @return Tibble with at least: scenario, source, delta_sst_2050, delta_sst_2100.
+#' @keywords internal
 #' @export
 sst_scenario_info <- function(source = c("all", "ipcc_ar6", "knmi23")) {
 
@@ -845,6 +855,7 @@ sst_scenario_info <- function(source = c("all", "ipcc_ar6", "knmi23")) {
 #' @return Numeric scalar `delta_sst` in degC.
 #' @examples
 #' get_scenario_delta("ssp585", target_year = 2050)
+#' @keywords internal
 #' @export
 get_scenario_delta <- function(scenario,
                                target_year,
@@ -933,6 +944,7 @@ get_scenario_delta <- function(scenario,
 #' @return Tibble with columns: sim_year, activity_factor, climate_scale,
 #'   activity_combined, p_hurricane, n_total, n_ts, n_hur. The applied
 #'   `delta_sst` is recorded as an attribute on the returned tibble.
+#' @keywords internal
 #' @export
 simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
                                      delta_sst = 0,
@@ -1070,6 +1082,7 @@ simulate_twolevel_counts <- function(lambda_table, k_hat, n_years_sim,
 #' perturbation.
 #'
 #' @return Named list with elements v_scale, r_scale, speed_scale, precip_scale.
+#' @keywords internal
 #' @export
 default_cc_params <- function() {
   list(
@@ -1101,6 +1114,7 @@ default_cc_params <- function() {
 #'
 #' @return The input tibble with perturbed columns plus precip_scaling and
 #'   delta_sst columns.
+#' @keywords internal
 #' @export
 perturb_event <- function(events, delta_sst, cc_params = NULL) {
   # --- trivial early-returns ---
@@ -1851,6 +1865,7 @@ resolve_climate_inputs <- function(climate_cfg,
 #'
 #' @return Tibble with columns: scenario, ssp, variant, delta_sst_2050,
 #'   delta_sst_2100, precip_scale, air_temp_2050, air_temp_2100, description.
+#' @keywords internal
 #' @export
 knmi_scenario_info <- function() {
   tibble::tibble(
@@ -1886,6 +1901,7 @@ knmi_scenario_info <- function() {
 #'   If NULL, uses `default_cc_params()`.
 #'
 #' @return Named list of cc_params with adjusted precip_scale.
+#' @keywords internal
 #' @export
 knmi_cc_params <- function(scenario, base_params = NULL) {
   info <- knmi_scenario_info()

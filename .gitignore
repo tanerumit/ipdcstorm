@@ -30,5 +30,3 @@ temp/
 # Optional local tooling scratch
 .agents/
 .claude/
-
-docs

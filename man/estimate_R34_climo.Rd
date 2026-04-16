@@ -26,3 +26,4 @@ estimate_R34_climo(Vmax_kt = c(30, 50, 100), lat = c(18, 18, 20))
 \seealso{
 \code{\link{estimate_RMW_knaff}}, \code{\link{compute_site_winds_full}}
 }
+\keyword{internal}

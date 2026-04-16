@@ -49,3 +49,4 @@ Kossin et al. 2020).
 Uses a binomial GLM: cbind(n_HUR, n_TS) ~ sst_anomaly, then converts the
 logistic coefficient to the linear I3 parameterization.
 }
+\keyword{internal}

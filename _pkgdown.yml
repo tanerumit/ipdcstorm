@@ -3,12 +3,6 @@ title: ipdcstorm
 
 template:
   bootstrap: 5
-  light-switch: true
-  bslib:
-    bootswatch: flatly
-    base_font: {google: "Inter"}
-    heading_font: {google: "Source Sans 3"}
-    code_font: {google: "JetBrains Mono"}
 
 navbar:
   structure:
@@ -37,23 +31,44 @@ reference:
     contents:
       - make_hazard_cfg
       - run_hazard_model
-      - validate_hazard_model
 
   - title: Climate scenario tools
     contents:
       - make_climate_cfg
-      - starts_with("resolve_climate")
-      - starts_with("apply_climate")
+      - resolve_climate_inputs
+
+  - title: Validation
+    contents:
+      - make_validation_cfg
+      - validate_hazard_model
 
   - title: IBTrACS and storm inputs
     contents:
-      - contains("ibtracs")
-      - contains("storm")
+      - ibtracs_demo
+      - read_ibtracs_clean
+      - query_storm_track_years
+      - lookup_storm_id
+      - make_storm_events
+      - compute_storm_heading
+
+  - title: Downscaling and Impact
+    contents:
+      - build_event_library
+      - make_background_wind_cfg
+      - generate_daily_hazard_impact_spatial
+
+  - title: Query and Stress Testing
+    contents:
+      - query_impact_years
+      - query_aftermath_impact
+      - compute_stress_year_metrics
+      - aggregate_stress_metrics
+      - select_stress_years
 
   - title: Visualization
     contents:
       - starts_with("plot_")
-      - contains("viz")
+      - save_hazard_viz_plots
 
 repo:
   url:

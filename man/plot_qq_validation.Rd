@@ -22,8 +22,9 @@ plot_qq_validation(
 \item{base_size}{Base font size for plots. Overrides \code{cfg$advanced$base_size}.}
 }
 \value{
-Path of saved plot (invisibly) or \code{NULL}.
+Validation plot object with optional saved path metadata, or \code{NULL}.
 }
 \description{
 Plot QQ plots comparing simulated vs observed annual maxima
 }
+\keyword{internal}

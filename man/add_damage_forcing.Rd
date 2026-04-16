@@ -32,3 +32,4 @@ add_damage_forcing(daily)
 \seealso{
 \code{\link{damage_rate_from_wind}}
 }
+\keyword{internal}

@@ -110,6 +110,8 @@ daily_base_list <- generate_daily_hazard_impact_spatial(
   seed        = SEED
 )
 
+
+
 # Combine into a single tibble (location column already present in each element)
 daily_base <- dplyr::bind_rows(daily_base_list)
 

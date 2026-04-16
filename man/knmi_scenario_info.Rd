@@ -25,3 +25,4 @@ MDR SST anomalies are relative to the 1991-2020 baseline, derived from:
 \item Cross-validated against Hibbert et al. (2025) Caribbean CMIP6 SST study
 }
 }
+\keyword{internal}

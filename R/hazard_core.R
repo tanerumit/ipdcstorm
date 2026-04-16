@@ -31,6 +31,7 @@
 #' dist_to_target(lat = c(18, 18.1), lon = c(-63, -63.1), t_lat = 18.05, t_lon = -63.05)
 #' @seealso \code{\link{calculate_bearing}}
 #' @importFrom geosphere distHaversine
+#' @keywords internal
 #' @export
 dist_to_target <- function(lat, lon, t_lat, t_lon) {
   lat <- as.numeric(lat)
@@ -62,6 +63,7 @@ dist_to_target <- function(lat, lon, t_lat, t_lon) {
 #' calculate_bearing(lat = c(18, 18.1), lon = c(-63, -63.1), t_lat = 18.05, t_lon = -63.05)
 #' @seealso \code{\link{dist_to_target}}
 #' @importFrom geosphere bearing
+#' @keywords internal
 #' @export
 
 calculate_bearing <- function(lat, lon, t_lat, t_lon) {
@@ -153,6 +155,7 @@ calculate_bearing <- function(lat, lon, t_lat, t_lon) {
 #' estimate_R34_climo(Vmax_kt = c(30, 50, 100), lat = c(18, 18, 20))
 #' @seealso \code{\link{estimate_RMW_knaff}}, \code{\link{compute_site_winds_full}}
 #' @note This is used as a fallback when directional 34-kt radii are unavailable.
+#' @keywords internal
 #' @export
 estimate_R34_climo <- function(Vmax_kt, lat = 18) {
   # Knaff et al. (2015) approximate fit for Atlantic basin:
@@ -319,6 +322,7 @@ estimate_R34_climo <- function(Vmax_kt, lat = 18) {
 #' @examples
 #' estimate_RMW_knaff(Vmax_kt = c(40, 80, 120), lat = c(15, 18, 22))
 #' @seealso \code{\link{estimate_R34_climo}}, \code{\link{compute_site_winds_full}}
+#' @keywords internal
 #' @export
 estimate_RMW_knaff <- function(Vmax_kt, lat = 18) {
   # Knaff & Zehr (2007) Eq. 1 (simplified, Atlantic):
@@ -732,6 +736,7 @@ compute_storm_heading <- function(df) {
 #' compute_site_winds_full(df, target_lat = 18.05, target_lon = -63.05)
 #' @seealso \code{\link{compute_storm_heading}}, \code{\link{estimate_R34_climo}}, \code{\link{estimate_RMW_knaff}}
 #' @note Input data must already contain the expected IBTrACS-derived fields used in the internal wind solver.
+#' @keywords internal
 #' @export
 compute_site_winds_full <- function(df, target_lat, target_lon) {
   mean_radius_nm <- function(r_ne, r_se, r_sw, r_nw) {
@@ -874,6 +879,7 @@ compute_site_winds_full <- function(df, target_lat, target_lon) {
 #' @examples
 #' classify_severity(c(20, 40, 80, NA_real_))
 #' @seealso \code{\link{make_storm_events}}, \code{\link{compute_annual_counts}}
+#' @keywords internal
 #' @export
 classify_severity <- function(V_site_max_kt,
                               ts_threshold_kt = 34,
@@ -987,6 +993,7 @@ make_storm_events <- function(track_df) {
 #' )
 #' compute_annual_counts(events)
 #' @seealso \code{\link{compute_lambda_table}}, \code{\link{get_annual_counts}}
+#' @keywords internal
 #' @export
 compute_annual_counts <- function(events,
                                   storm_classes = c("TS", "HUR")) {
@@ -1016,6 +1023,7 @@ compute_annual_counts <- function(events,
 #' )
 #' compute_lambda_table(annual_counts)
 #' @seealso \code{\link{compute_annual_counts}}, \code{\link{estimate_k_hat}}
+#' @keywords internal
 #' @export
 compute_lambda_table <- function(annual_counts) {
 
@@ -1043,6 +1051,7 @@ compute_lambda_table <- function(annual_counts) {
 #' ))
 #' get_annual_counts(out)
 #' @seealso \code{\link{compute_annual_counts}}, \code{\link{compute_lambda_table}}
+#' @keywords internal
 #' @export
 get_annual_counts <- function(out) {
   if (is.null(out$events)) stop("out$events is required.", call. = FALSE)
@@ -1076,6 +1085,7 @@ get_annual_counts <- function(out) {
 #' )
 #' estimate_k_hat(annual_counts)
 #' @seealso \code{\link{compute_annual_counts}}, \code{\link{compute_lambda_table}}
+#' @keywords internal
 #' @export
 estimate_k_hat <- function(annual_counts) {
 

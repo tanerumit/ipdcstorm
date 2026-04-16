@@ -31,3 +31,4 @@ averages spatially, then computes ASO (Aug-Sep-Oct) seasonal means per year.
 Requires the \code{ncdf4} package. If not available, falls back to the built-in
 reference data with a warning.
 }
+\keyword{internal}

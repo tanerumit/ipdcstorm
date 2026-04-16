@@ -28,3 +28,4 @@ is_hur_day(daily)
 \seealso{
 \code{\link{generate_daily_hazard_impact_spatial}}
 }
+\keyword{internal}

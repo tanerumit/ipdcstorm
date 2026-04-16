@@ -1,5 +1,5 @@
 ---
-title: "Tutorial 2 — Multi-Site Baseline & Climate Change Analysis"
+title: "Tutorial 3 - Climate Impact Analysis"
 subtitle: "Hurricane Wind Hazard Model for the Caribbean"
 author: ""
 date: today
@@ -310,6 +310,40 @@ daily_plot_data |>
 | `ts_days` | Number of days reaching at least 34 kt. |
 | `hur_days` | Number of days reaching at least 64 kt. |
 | `mean_annual_damage` | Average annual damage-rate total across the 200 simulated years. |
+
+::: callout-tip
+## Adding trade-wind background across both scenarios
+The daily series above have zero wind on all non-TC days.
+For continuous-wind applications (energy, chronic exposure, port disruption), embed a `make_background_wind_cfg()` object in each hazard config so it flows through automatically to `generate_daily_hazard_impact_spatial()`:
+
+```r
+bg_cfg <- make_background_wind_cfg(
+  weibull_params = list(
+    Saba = tibble::tibble(month = 1:12, shape = 2.0, scale = 13)
+  ),
+  ar1 = 0.4
+)
+
+cfg_baseline_bg <- make_hazard_cfg(
+  data_path = ibtracs_demo,
+  historical_start_year = 1970L,
+  simulation_years = simulation_years,
+  climate = make_climate_cfg(scenario = "stationary"),
+  background_wind = bg_cfg            # <-- attach once to each cfg
+)
+
+cfg_future_bg <- make_hazard_cfg(
+  data_path = ibtracs_demo,
+  historical_start_year = 1970L,
+  simulation_years = simulation_years,
+  climate = make_climate_cfg(delta_sst = 1.5, sensitivity_mode = "fixed"),
+  background_wind = bg_cfg
+)
+```
+
+After `run_hazard_model()`, call `generate_daily_hazard_impact_spatial()` without a `background_wind` argument — it reads the setting from `out$cfg$background_wind` automatically, keeping the same seed and CRN pattern so the climate comparison remains clean.
+See [Tutorial 1 §Background Wind](tutorial_1_setup.qmd#sec-background-wind) for parameter guidance and a worked example.
+:::
 
 ::: callout-note
 ## About Level 3 perturbation

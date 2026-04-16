@@ -32,7 +32,6 @@ editor:
 knitr::opts_chunk$set(comment = "#>")
 ```
 
-This tutorial mirrors the production baseline pipeline in `inst/extcode/01-baseline-analysis.R`.
 We introduce the model, set up the configuration, fit the stationary baseline, and generate the daily wind series for three Dutch Caribbean targets.
 
 ## Model Overview {#sec-overview}
@@ -143,6 +142,7 @@ hazard_cfg
 | `simulation_years` | Number of synthetic years to generate. |
 | `climate` | A `climate_cfg` object. `make_climate_cfg(scenario = "stationary")` switches off all SST forcing. |
 | `preset` / `advanced` | Hooks for tuning class thresholds, wind-radii caps, and the lambda-scaling mode. Defaults follow WMO conventions (TS ≥ 34 kt, HUR ≥ 64 kt). |
+| `background_wind` | Optional `background_wind_cfg` object (see @sec-background-wind). Fills non-storm days with trade-wind speeds sampled from site-specific Weibull distributions. `NULL` (default) sets all non-storm days to 0 kt. |
 
 See `?make_hazard_cfg` for the full parameter list.
 :::
@@ -193,8 +193,7 @@ out_base$rates |>
 
 The return value is a named list with one tidy table per stage.
 
-::: panel-tabset
-#### `rates`
+#### Rates
 
 ```{r}
 #| label: inspect-rates
@@ -212,7 +211,7 @@ out_base$rates
 
 A `lambda` of 1.2 for TS means roughly 1.2 tropical-storm impacts per year on average; the actual count varies because of the Gamma-distributed activity multiplier.
 
-#### `fit`
+#### Fit
 
 ```{r}
 #| label: inspect-fit
@@ -228,7 +227,7 @@ out_base$fit
 | `gamma_intensity` | Intensity / class-share shift coefficient (0 in stationary mode). |
 | `p_hurricane_base` | Baseline probability that an impactful event is HUR-class. |
 
-#### `sim`
+#### Sim
 
 ```{r}
 #| label: inspect-sim
@@ -247,7 +246,7 @@ head(out_base$sim)
 
 This table drives the daily downscaling and all downstream return-period and exceedance work.
 
-#### `events`
+#### Events
 
 ```{r}
 #| label: inspect-events
@@ -269,7 +268,7 @@ One row per (historical storm × site) with site-attenuated wind:
 
 The distinction between `peak_wind_kt` and `storm_intensity_kt` matters: a Cat-5 storm (≈ 155 kt) passing 400 km from a site might only produce Cat-1 winds (~ 70 kt) there. The Holland profile captures that attenuation.
 
-#### `trackpoints`
+#### Trackpoints
 
 ```{r}
 #| label: inspect-trackpoints
@@ -277,7 +276,6 @@ head(out_base$trackpoints[["Saba"]])
 ```
 
 The lowest-level output: every gated 6-hourly IBTrACS track point per site, with all computed wind-field columns (`site_wind_kt`, `dist_km`, `bearing_deg`, `RMW_km`, etc.). Useful for diagnostics and spot-checking individual storms.
-:::
 
 ## Stage 3 — Daily Wind Time Series {#sec-daily}
 
@@ -302,13 +300,13 @@ The returned object is a named list of daily tibbles — one per location.
 
 ### What the function does
 
-**Step 1 — Build event libraries** (`build_event_library_from_out()`). For each location, build a stratified empirical library of historical events with their physical attributes paired (peak wind, duration, pressure, RMW). A shared basin-level event pool is constructed across locations to keep multi-site sampling consistent.
+**Step 1 — Build event libraries.** For each location, the model builds a stratified empirical library of historical events with their physical attributes paired (peak wind, duration, pressure, RMW). A shared basin-level event pool is constructed across locations to keep multi-site sampling consistent.
 
-**Step 2 — Sample events for each simulated year** (`sample_events_for_year_extended()`). For each `sim_year`, draw the prescribed number of TS and HUR events from the library. Attribute pairing is preserved so wind, duration, pressure, and RMW remain physically consistent.
+**Step 2 — Sample events for each simulated year.** For each `sim_year`, draw the prescribed number of TS and HUR events from the library. Attribute pairing is preserved so wind, duration, pressure, and RMW remain physically consistent.
 
 **Step 3 — Place events on the calendar.** Each sampled event gets a start date drawn from the empirical day-of-year distribution, concentrating events in the August–October peak.
 
-**Step 4 — Spread each event into a daily wind pulse** (`event_pulse()`). The `cosine` pulse shape gives a smooth bell-shaped envelope rising to the event peak and decaying over the event duration. `pulse_shape = "uniform"` is also available for a flat box.
+**Step 4 — Spread each event into a daily wind pulse.** The `cosine` pulse shape gives a smooth bell-shaped envelope rising to the event peak and decaying over the event duration. `pulse_shape = "uniform"` is also available for a flat box.
 
 **Step 5 — Combine overlapping events.** Multiple events that overlap in calendar time are reduced to the daily maximum sustained wind. This avoids double-counting while still capturing compound seasons.
 
@@ -320,9 +318,8 @@ Pass the same `seed` and the same `sim_years` vector across baseline and scenari
 :::
 
 ::: callout-note
-## Optional inputs
-* `pinned_sids` lets you force specific historical SIDs into the sampled event slots — used by the stress-test workflow to keep a focal event present across all scenarios.
-* `background_wind` adds a daily background wind field (e.g. a climatological non-TC envelope from `make_background_wind_cfg()`) to the daily series.
+## Pinned events
+`pinned_sids` lets you force a specific historical SID into one or more sampled event slots — used by the stress-test workflow in Tutorial 4 to keep a focal storm (e.g. Irma) present across every scenario year.
 :::
 
 ### Daily output schema
@@ -347,6 +344,132 @@ head(daily_by_loc[["Saba"]])
 | `damage_intensity` | Normalised hazard intensity on a 0–1 scale. |
 | `damage_rate` | Daily fractional damage rate from the damage function. |
 | `cum_damage` | Cumulative damage within each simulated year. |
+
+### Background Wind {#sec-background-wind}
+
+By default, every day without a TC event has `wind_kt = 0`.
+This is intentional for hazard-return-period work (zeros represent TC-free days cleanly), but it makes the daily series unsuitable for applications that need a realistic non-storm wind envelope — energy yield modelling, chronic-exposure assessments, port disruption studies.
+
+`make_background_wind_cfg()` specifies Weibull marginal distributions for the trade-wind background, with an optional Gaussian copula for spatial correlation across sites and an AR(1) coefficient for day-to-day persistence.
+On each simulated day, a background wind speed is drawn from the site- and month-specific Weibull distribution; the storm-day wind from the TC pulse then replaces it via `pmax()`, so the TC signal always dominates on active days.
+
+#### Configuring background wind
+
+```{r}
+#| label: bg-wind-cfg
+# Helper: constant Weibull parameters across all months for one location.
+# In production, fit shape/scale separately for each month from observed
+# non-TC wind records (e.g. airport anemometer or reanalysis data).
+make_months <- function(shape, scale) {
+  tibble::tibble(month = 1:12, shape = shape, scale = scale)
+}
+
+# Representative Dutch Caribbean trade-wind climatology.
+# shape = 2.0 (Rayleigh-like), scale = 13 kt -> mean ~ 11.5 kt year-round.
+bg_cfg <- make_background_wind_cfg(
+  weibull_params = list(
+    St_Martin = make_months(shape = 2.0, scale = 13),
+    Saba      = make_months(shape = 2.0, scale = 13),
+    Statia    = make_months(shape = 2.0, scale = 13)
+  ),
+  ar1 = 0.4   # moderate day-to-day persistence
+)
+```
+
+The `ar1` coefficient controls how strongly today's background wind predicts tomorrow's in standardised normal space.
+`ar1 = 0` gives independent daily draws; `ar1 = 0.4` introduces realistic multi-day persistence similar to synoptic trade-wind patterns.
+For multi-site runs, `cor_matrix` lets you specify site-to-site Pearson correlations so that calm or windy spells are spatially coherent.
+
+#### Embedding in the hazard configuration (recommended)
+
+The cleanest production pattern attaches the background wind configuration to `make_hazard_cfg()`.
+It is then stored in `out$cfg` and picked up automatically by `generate_daily_hazard_impact_spatial()` without any extra argument:
+
+```{r}
+#| label: hazard-cfg-bg
+#| eval: false
+hazard_cfg_bg <- make_hazard_cfg(
+  data_path             = DATA_PATH,
+  search_radius_km      = SEARCH_RADIUS_KM,
+  historical_start_year = HIST_START_YEAR,
+  simulation_years      = N_SIM,
+  climate               = make_climate_cfg(scenario = "stationary"),
+  background_wind       = bg_cfg          # <-- attach here once
+)
+
+out_bg <- run_hazard_model(
+  cfg     = hazard_cfg_bg,
+  targets = targets,
+  seed    = SEED,
+  verbose = FALSE
+)
+
+# background_wind is picked up from out_bg$cfg automatically
+daily_bg_list <- generate_daily_hazard_impact_spatial(
+  out         = out_bg,
+  location    = targets$name,
+  sim_years   = seq_len(N_SIM),
+  year0       = YEAR0,
+  gust_factor = GUST_FACTOR,
+  damage      = list(method = "intensity"),
+  pulse_shape = "cosine",
+  scenario    = "stationary",
+  seed        = SEED
+)
+```
+
+#### Passing background wind directly (exploratory use)
+
+If you already have a model output object and want to try different background configurations without re-running the full calibration, pass `background_wind` directly to `generate_daily_hazard_impact_spatial()`.
+An explicit argument always overrides anything stored in `out$cfg`:
+
+```{r}
+#| label: daily-bg-direct
+daily_bg_list <- generate_daily_hazard_impact_spatial(
+  out             = out_base,
+  location        = targets$name,
+  sim_years       = 1:50,
+  year0           = YEAR0,
+  gust_factor     = GUST_FACTOR,
+  damage          = list(method = "intensity"),
+  pulse_shape     = "cosine",
+  scenario        = "stationary",
+  background_wind = bg_cfg,
+  seed            = SEED
+)
+```
+
+#### Effect on the daily series
+
+Comparing 50 simulated years for Saba shows the reduction in zero-wind days and the resulting uplift in non-storm-period mean wind:
+
+```{r}
+#| label: bg-wind-compare
+bind_rows(
+  daily_by_loc[["Saba"]] |>
+    dplyr::filter(sim_year <= 50) |>
+    dplyr::mutate(run = "No background"),
+  daily_bg_list[["Saba"]] |>
+    dplyr::mutate(run = "With background")
+) |>
+  dplyr::group_by(run) |>
+  dplyr::summarise(
+    pct_zero_wind      = round(mean(wind_kt == 0) * 100, 1),
+    mean_wind_all_kt   = round(mean(wind_kt), 2),
+    mean_wind_nonzero  = round(mean(wind_kt[wind_kt > 0]), 2),
+    .groups = "drop"
+  )
+```
+
+`pct_zero_wind` drops to near zero once background wind is active.
+`mean_wind_all_kt` rises to reflect the trade-wind baseline; `mean_wind_nonzero` stays close to the TC-period mean because those days are dominated by the storm pulse, not the background.
+
+::: callout-note
+## TC-day winds are unaffected
+Background wind is applied via `pmax(bg, tc_pulse)`.
+On days when the TC pulse exceeds the background draw, the TC value is kept unchanged.
+Return-level statistics for TS and HUR thresholds are therefore unaffected by the background wind setting.
+:::
 
 ## Annual Activity Summary {#sec-annual}
 
@@ -391,6 +514,7 @@ activity_means
 - **`gust_factor`.** Sustained-to-gust conversion. Use 1.0 when comparing model output to IBTrACS sustained wind; ~1.3 when the downstream model wants gust forcing.
 - **`damage`.** `list(method = "intensity")` returns a normalised wind-intensity damage proxy; `"powerlaw"` exposes a configurable wind-cubed-style damage curve.
 - **`pulse_shape`.** `"cosine"` gives a smooth bell envelope; `"uniform"` is a flat-top alternative useful for sensitivity testing.
+- **`background_wind`.** Pass a `make_background_wind_cfg()` object to fill non-storm days with realistic trade-wind speeds. Keep `NULL` for return-level work (zeros represent TC-free days unambiguously); use a non-`NULL` value for energy yield, chronic exposure, or port disruption analyses that need a continuous wind record. See @sec-background-wind for the full workflow.
 
 ## Where to Go Next {#sec-next}
 

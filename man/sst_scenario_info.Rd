@@ -17,3 +17,4 @@ Returns a combined scenario table for all available climate-information sources.
 If KNMI'23 support is available (knmi_scenario_info()), those scenarios are
 included as well.
 }
+\keyword{internal}

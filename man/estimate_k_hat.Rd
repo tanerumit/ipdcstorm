@@ -26,3 +26,4 @@ estimate_k_hat(annual_counts)
 \seealso{
 \code{\link{compute_annual_counts}}, \code{\link{compute_lambda_table}}
 }
+\keyword{internal}

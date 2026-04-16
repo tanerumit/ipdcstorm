@@ -62,10 +62,141 @@
   #' @param x Numeric vector.
   #' @return Scalar numeric; NA if no finite values.
   #' @keywords internal
-  .mean_na <- function(x) {
-    x <- x[is.finite(x)]
-    if (length(x) == 0L) NA_real_ else mean(x)
+.mean_na <- function(x) {
+  x <- x[is.finite(x)]
+  if (length(x) == 0L) NA_real_ else mean(x)
+}
+
+#' Coerce daily hazard output to a flat tibble
+#'
+#' @description
+#' Accepts either a named list of tibbles from
+#' \code{generate_daily_hazard_impact_spatial()} or a single tibble and returns
+#' one flat tibble, optionally filtered to the requested locations.
+#'
+#' @param daily Named list of tibbles or single tibble.
+#' @param location Character vector of locations to retain, or \code{NULL}.
+#'
+#' @return Tibble with the resolved daily rows.
+#'
+#' @keywords internal
+.resolve_daily_tbl <- function(daily, location = NULL) {
+  if (is.data.frame(daily)) {
+    tbl <- tibble::as_tibble(daily)
+  } else if (is.list(daily) && !is.data.frame(daily)) {
+    if (!is.null(location)) {
+      missing_locs <- setdiff(location, names(daily))
+      if (length(missing_locs) > 0L) {
+        stop(
+          "location(s) not found in daily output: ",
+          paste(missing_locs, collapse = ", "),
+          call. = FALSE
+        )
+      }
+      tbl <- dplyr::bind_rows(daily[location])
+    } else {
+      tbl <- dplyr::bind_rows(daily)
+    }
+    tbl <- tibble::as_tibble(tbl)
+  } else {
+    stop(
+      "`daily` must be a tibble or a named list from generate_daily_hazard_impact_spatial().",
+      call. = FALSE
+    )
   }
+
+  if (is.data.frame(daily) && !is.null(location) && "location" %in% names(tbl)) {
+    tbl <- dplyr::filter(tbl, .data$location %in% !!location)
+  }
+
+  if (nrow(tbl) == 0L) {
+    warning("No rows remain after resolving daily input and location filter.", call. = FALSE)
+  }
+
+  tbl
+}
+
+#' Summarise daily hazard output to annual metrics
+#'
+#' @description
+#' Produces one row per \code{(location, sim_year)} with the annual metrics used
+#' by the query and stress-selection workflows.
+#'
+#' @param daily_tbl Flat tibble from \code{.resolve_daily_tbl()}.
+#'
+#' @return Tibble with annual hazard and impact summaries.
+#'
+#' @keywords internal
+.summarise_daily_year_metrics <- function(daily_tbl) {
+  required <- c("location", "sim_year", "wind_kt", "event_id", "cum_damage", "damage_rate")
+  missing_cols <- setdiff(required, names(daily_tbl))
+  if (length(missing_cols) > 0L) {
+    stop(
+      "`daily` is missing required columns: ",
+      paste(missing_cols, collapse = ", "),
+      ".",
+      call. = FALSE
+    )
+  }
+
+  event_dur <- daily_tbl |>
+    dplyr::filter(!is.na(.data$event_id)) |>
+    dplyr::count(.data$location, .data$sim_year, .data$event_id, name = "dur_days") |>
+    dplyr::group_by(.data$location, .data$sim_year) |>
+    dplyr::summarise(max_event_dur_days = as.integer(max(.data$dur_days)), .groups = "drop")
+
+  daily_tbl |>
+    dplyr::group_by(.data$location, .data$sim_year) |>
+    dplyr::summarise(
+      peak_wind_kt = max(.data$wind_kt, na.rm = TRUE),
+      n_ts_days = as.integer(sum(.data$wind_kt >= 34, na.rm = TRUE)),
+      n_hur_days = as.integer(sum(.data$wind_kt >= 64, na.rm = TRUE)),
+      n_events = as.integer(dplyr::n_distinct(.data$event_id[!is.na(.data$event_id)])),
+      cum_damage = max(.data$cum_damage, na.rm = TRUE),
+      max_damage_rate = max(.data$damage_rate, na.rm = TRUE),
+      .groups = "drop"
+    ) |>
+    dplyr::left_join(event_dur, by = c("location", "sim_year")) |>
+    dplyr::mutate(
+      peak_wind_kt = dplyr::coalesce(.data$peak_wind_kt, 0),
+      n_ts_days = dplyr::coalesce(.data$n_ts_days, 0L),
+      n_hur_days = dplyr::coalesce(.data$n_hur_days, 0L),
+      n_events = dplyr::coalesce(.data$n_events, 0L),
+      max_event_dur_days = dplyr::coalesce(.data$max_event_dur_days, 0L),
+      cum_damage = dplyr::coalesce(.data$cum_damage, 0),
+      max_damage_rate = dplyr::coalesce(.data$max_damage_rate, 0)
+    )
+}
+
+#' Extract one annual metric from shared daily-year summaries
+#'
+#' @param daily_tbl Flat tibble from \code{.resolve_daily_tbl()}.
+#' @param metric Character scalar naming the annual metric to extract.
+#'
+#' @return Tibble with \code{location}, \code{sim_year}, and \code{annual_metric}.
+#'
+#' @keywords internal
+.annual_metric_tbl <- function(daily_tbl, metric) {
+  metric_map <- c(
+    peak_wind_kt = "peak_wind_kt",
+    cum_damage = "cum_damage",
+    max_damage_rate = "max_damage_rate"
+  )
+  if (!(metric %in% names(metric_map))) {
+    stop(
+      "Unknown metric '", metric, "'. Use 'peak_wind_kt', 'cum_damage', or 'max_damage_rate'.",
+      call. = FALSE
+    )
+  }
+
+  annual_tbl <- .summarise_daily_year_metrics(daily_tbl)
+  annual_tbl |>
+    dplyr::transmute(
+      .data$location,
+      .data$sim_year,
+      annual_metric = .data[[metric_map[[metric]]]]
+    )
+}
 
   #' Parse IBTrACS wind radii fields (nautical miles) with caps and sentinels
   #'

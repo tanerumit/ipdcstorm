@@ -40,8 +40,9 @@ test_that("validation suite inherits n_sim only from model output config", {
   )
 
   cfg_inherit <- make_validation_cfg(n_sim = NULL, save_plots = FALSE, save_tables = FALSE)
-  msgs <- testthat::capture_messages(run_validation_suite(out_stub, cfg = cfg_inherit))
-  expect_true(any(grepl("Sim: 250 yr \\(model output config\\$n_sim\\)", msgs)))
+  resolved <- ipdcstorm:::.resolve_validation_n_sim(cfg_inherit, out_stub)
+  expect_identical(resolved$n_sim, 250L)
+  expect_identical(resolved$source, "model output config$n_sim")
 })
 
 test_that("run_validation_suite honors explicit validation n_sim overrides", {
@@ -66,12 +67,24 @@ test_that("run_validation_suite honors explicit validation n_sim overrides", {
   )
 
   cfg_inherit <- make_validation_cfg(n_sim = NULL, save_plots = FALSE, save_tables = FALSE)
-  msgs_inherit <- testthat::capture_messages(run_validation_suite(out_stub, cfg = cfg_inherit))
-  expect_true(any(grepl("Sim: 250 yr \\(model output config\\$n_sim\\)", msgs_inherit)))
+  resolved_inherit <- ipdcstorm:::.resolve_validation_n_sim(cfg_inherit, out_stub)
+  expect_identical(resolved_inherit$n_sim, 250L)
+  expect_identical(resolved_inherit$source, "model output config$n_sim")
 
   cfg_override <- make_validation_cfg(n_sim = 180L, save_plots = FALSE, save_tables = FALSE)
-  msgs_override <- testthat::capture_messages(run_validation_suite(out_stub, cfg = cfg_override))
-  expect_true(any(grepl("Sim: 180 yr \\(validation_cfg\\$n_sim\\)", msgs_override)))
+  resolved_override <- ipdcstorm:::.resolve_validation_n_sim(cfg_override, out_stub)
+  expect_identical(resolved_override$n_sim, 180L)
+  expect_identical(resolved_override$source, "validation_cfg$n_sim")
+})
+
+test_that("validation return-level helpers remain stable for internal callers", {
+  rl_emp <- ipdcstorm:::compute_return_levels(c(0, 30, 40, 50, 60, 70), return_periods = c(2, 5))
+  gev_fit <- ipdcstorm:::fit_gev_lmom(c(20, 25, 30, 35, 40, 45))
+  rl_gev <- ipdcstorm:::compute_return_levels_gev(c(0, 0, 35, 40, 60, 80, 90), return_periods = c(2, 5))
+
+  expect_equal(names(rl_emp), c("RL_2yr", "RL_5yr"))
+  expect_true(isTRUE(gev_fit$converged))
+  expect_true(all(c("return_levels", "p_zero", "n_total", "n_nonzero") %in% names(rl_gev)))
 })
 
 test_that("storm-class helpers no longer normalize legacy aliases", {

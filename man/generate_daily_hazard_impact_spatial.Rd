@@ -97,3 +97,4 @@ lapply(daily_spatial, function(loc_tbl) {
 \code{\link{build_event_library_from_out}},
 \code{\link{generate_daily_year_extended}}
 }
+\keyword{internal}

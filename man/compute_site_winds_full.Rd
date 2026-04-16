@@ -41,3 +41,4 @@ compute_site_winds_full(df, target_lat = 18.05, target_lon = -63.05)
 \seealso{
 \code{\link{compute_storm_heading}}, \code{\link{estimate_R34_climo}}, \code{\link{estimate_RMW_knaff}}
 }
+\keyword{internal}

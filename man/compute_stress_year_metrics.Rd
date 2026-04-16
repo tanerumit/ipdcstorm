@@ -63,3 +63,4 @@ metrics    <- compute_stress_year_metrics(daily_out, sim_years = filtered)
 \code{\link{aggregate_stress_metrics}}, \code{\link{select_stress_years}},
 \code{\link{query_impact_years}}, \code{\link{query_storm_track_years}}
 }
+\keyword{internal}

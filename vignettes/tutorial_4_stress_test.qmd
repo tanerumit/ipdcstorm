@@ -114,6 +114,14 @@ daily_base_list <- generate_daily_hazard_impact_spatial(
 )
 ```
 
+::: callout-tip
+## Including trade-wind background in stress tests
+Pass a `make_background_wind_cfg()` object to `make_hazard_cfg()` to fill non-storm days with realistic wind speeds across all stress-test replays.
+Because it is stored in `cfg`, it is embedded in every `out` object and picked up automatically by each `generate_daily_hazard_impact_spatial()` call — both the baseline above and all scenario replays below — with no extra arguments required.
+This keeps the CRN isolation intact: the background wind is generated with `seed + 1`, so the storm-sampling RNG is unaffected.
+See [Tutorial 1 §Background Wind](tutorial_1_setup.qmd#sec-background-wind) for a full example.
+:::
+
 ### Annual metrics across all sites {#sec-annual-metrics}
 
 Each year is summarised on basin-wide metrics: peak site-level wind, hurricane- and storm-day counts, and integrated damage across all sites.

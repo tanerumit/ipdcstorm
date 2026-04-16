@@ -246,7 +246,7 @@ print.validation_cfg <- function(x, ...) {
 #' @param return_periods Numeric vector of return periods (years) to compute.
 #'
 #' @return Named numeric vector of return levels at requested periods.
-#' @export
+#' @keywords internal
 compute_return_levels <- function(annual_max,
                                   return_periods = c(5, 10, 25, 50)) {
   x <- sort(annual_max[is.finite(annual_max)])
@@ -425,7 +425,7 @@ compute_return_levels <- function(annual_max,
 #'   \item{l_moments}{Named vector of L1, L2, L3, tau3.}
 #'   \item{converged}{Logical; whether estimation produced valid parameters.}
 #'
-#' @export
+#' @keywords internal
 fit_gev_lmom <- function(x, xi_bounds = c(-0.4, 0.5)) {
   x <- sort(x[is.finite(x)])
   n <- length(x)
@@ -552,7 +552,7 @@ fit_gev_lmom <- function(x, xi_bounds = c(-0.4, 0.5)) {
 #'   \item{p_zero}{Fraction of zero-event years.}
 #'   \item{n_total, n_nonzero}{Sample sizes.}
 #'
-#' @export
+#' @keywords internal
 compute_return_levels_gev <- function(annual_max,
                                       return_periods = c(5, 10, 25, 50),
                                       xi_bounds = c(-0.3, 0.4)) {
@@ -627,7 +627,7 @@ compute_return_levels_gev <- function(annual_max,
 #' @return Tibble with columns: `return_period`, `sim_median`, `sim_ci_lo`,
 #'   `sim_ci_hi`, `sim_lo_50`, `sim_hi_50`. The `ci_lo`/`ci_hi` columns
 #'   correspond to the specified `conf_level`.
-#' @export
+#' @keywords internal
 bootstrap_return_level_ci <- function(annual_max,
                                       return_periods = c(5, 10, 25, 50),
                                       n_boot = 500,
@@ -2990,7 +2990,7 @@ bootstrap_return_level_ci <- function(annual_max,
 #' for comparison against model-fitted lambdas.
 #'
 #' @return Tibble with columns: region, storm_class, lambda_ref, source, gate_approx_nm, period.
-#' @export
+#' @keywords internal
 get_reference_rates <- function() {
   tibble::tribble(
     ~region,            ~storm_class,    ~lambda_ref, ~source,                           ~gate_approx_nm, ~period,
@@ -3205,7 +3205,7 @@ get_reference_rates <- function() {
 #' @param ref_rates Optional tibble of reference rates (default: `get_reference_rates()`).
 #'
 #' @return Tibble with model vs reference rate comparison.
-#' @export
+#' @keywords internal
 validate_rates <- function(out, ref_rates = NULL) {
   comp <- .build_rate_check_table(out = out, ref_rates = ref_rates)
 
@@ -3247,7 +3247,7 @@ validate_rates <- function(out, ref_rates = NULL) {
 #'
 #' @return Tibble with columns: storm_sid, storm_name, year, target_island,
 #'   station, obs_wind_kt, obs_type, obs_quality, obs_source, notes.
-#' @export
+#' @keywords internal
 get_wind_observations <- function() {
   tibble::tribble(
     ~storm_sid,          ~storm_name, ~year, ~target_island, ~station,
@@ -3309,7 +3309,7 @@ get_wind_observations <- function() {
 #'
 #' @return Tibble with model vs observed comparison per storm-station pair,
 #'   including `obs_quality`, `bias_threshold_pct`, and `bias_ok` columns.
-#' @export
+#' @keywords internal
 validate_wind_field <- function(out, obs_table = NULL) {
 
   if (is.null(obs_table)) obs_table <- get_wind_observations()
@@ -3748,7 +3748,7 @@ validate_wind_field <- function(out, obs_table = NULL) {
 #' # Overall pass rate
 #' mean(val_out$hindcast$comparison$obs_in_ci, na.rm = TRUE)
 #' }
-#' @export
+#' @keywords internal
 run_validation_suite <- function(out, cfg = make_validation_cfg()) {
   if (!inherits(cfg, "validation_cfg")) {
     stop("cfg must be created by make_validation_cfg().", call. = FALSE)
@@ -4523,6 +4523,29 @@ validate_hazard_model <- function(cfg,
   )
 }
 
+.validation_plot_prepare <- function(cfg, out_dir, base_size, save = TRUE) {
+  plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
+  if (!requireNamespace("ggplot2", quietly = TRUE)) return(NULL)
+  if (isTRUE(save)) .validate_dir_create(plot_cfg$out_dir)
+  list(
+    out_dir = plot_cfg$out_dir,
+    ggtheme = plot_cfg$theme,
+    save = isTRUE(save)
+  )
+}
+
+.validation_plot_result <- function(plot, out_dir, filename, width, height,
+                                    dpi = 150, save = TRUE, key = NULL) {
+  if (is.null(plot)) return(invisible(NULL))
+  paths <- character(0)
+  if (isTRUE(save)) {
+    plot_key <- key %||% tools::file_path_sans_ext(basename(filename))
+    paths[[plot_key]] <- file.path(out_dir, filename)
+    .validate_save_plot(plot, paths[[plot_key]], width = width, height = height, dpi = dpi)
+  }
+  invisible(list(plot = plot, paths = paths))
+}
+
 .validate_dir_create <- function(path) {
   if (!dir.exists(path)) dir.create(path, recursive = TRUE, showWarnings = FALSE)
   invisible(path)
@@ -4557,23 +4580,20 @@ validate_hazard_model <- function(cfg,
 #' @param out_dir Directory to save plots in. Overrides `cfg$out_dir`.
 #' @param base_size Base font size for plots. Overrides `cfg$advanced$base_size`.
 #'
-#' @return Named character vector of saved plot paths (invisibly) or `NULL`.
-#' @export
+#' @return Validation plot object with optional saved path metadata, or `NULL`.
+#' @keywords internal
 plot_hindcast_validation <- function(val,
                                      cfg = NULL,
                                      out_dir = NULL,
                                      base_size = NULL,
                                      save = TRUE) {
-  plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
-  out_dir <- plot_cfg$out_dir
-  ggtheme <- plot_cfg$theme
-
   if (is.null(val$hindcast) || is.null(val$hindcast$comparison) || nrow(val$hindcast$comparison) == 0) {
     return(invisible(NULL))
   }
-  if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
-
-  if (isTRUE(save)) .validate_dir_create(out_dir)
+  prep <- .validation_plot_prepare(cfg = cfg, out_dir = out_dir, base_size = base_size, save = save)
+  if (is.null(prep)) return(invisible(NULL))
+  out_dir <- prep$out_dir
+  ggtheme <- prep$ggtheme
 
   comp <- val$hindcast$comparison
   p_rl <- ggplot(comp, aes(x = factor(return_period))) +
@@ -4601,13 +4621,16 @@ plot_hindcast_validation <- function(val,
       )
   }
 
-  paths <- character(0)
-  if (isTRUE(save)) {
-    paths["hindcast_return_levels"] <- file.path(out_dir, "hindcast_return_levels.png")
-    .validate_save_plot(p_rl, paths[["hindcast_return_levels"]], width = 12, height = 7, dpi = 150)
-  }
-
-  invisible(list(plot = p_rl, paths = paths))
+  .validation_plot_result(
+    plot = p_rl,
+    out_dir = out_dir,
+    filename = "hindcast_return_levels.png",
+    width = 12,
+    height = 7,
+    dpi = 150,
+    save = prep$save,
+    key = "hindcast_return_levels"
+  )
 }
 
 #' Plot rate-check validation figure
@@ -4617,20 +4640,19 @@ plot_hindcast_validation <- function(val,
 #' @param out_dir Directory to save plots in. Overrides `cfg$out_dir`.
 #' @param base_size Base font size for plots. Overrides `cfg$advanced$base_size`.
 #'
-#' @return Path of saved plot (invisibly) or `NULL`.
-#' @export
+#' @return Validation plot object with optional saved path metadata, or `NULL`.
+#' @keywords internal
 plot_rate_validation <- function(val,
                                  cfg = NULL,
                                  out_dir = NULL,
-                                 base_size = NULL) {
-  plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
-  out_dir <- plot_cfg$out_dir
-  ggtheme <- plot_cfg$theme
+                                 base_size = NULL,
+                                 save = TRUE) {
+  prep <- .validation_plot_prepare(cfg = cfg, out_dir = out_dir, base_size = base_size, save = save)
+  if (is.null(prep)) return(invisible(NULL))
+  out_dir <- prep$out_dir
+  ggtheme <- prep$ggtheme
 
   if (is.null(val$rate_check) || nrow(val$rate_check) == 0) return(invisible(NULL))
-  if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
-
-  .validate_dir_create(out_dir)
 
   rc <- dplyr::filter(val$rate_check, !is.na(lambda_ref))
   if (nrow(rc) == 0) return(invisible(NULL))
@@ -4665,9 +4687,16 @@ plot_rate_validation <- function(val,
     ) +
     ggtheme
 
-  path <- file.path(out_dir, "rate_comparison.png")
-  .validate_save_plot(p_rate, path, width = 8, height = 6, dpi = 150)
-  invisible(path)
+  .validation_plot_result(
+    plot = p_rate,
+    out_dir = out_dir,
+    filename = "rate_comparison.png",
+    width = 8,
+    height = 6,
+    dpi = 150,
+    save = prep$save,
+    key = "rate_comparison"
+  )
 }
 
 #' Plot wind-field validation figures
@@ -4678,24 +4707,21 @@ plot_rate_validation <- function(val,
 #' @param out_dir Directory to save plots in. Overrides `cfg$out_dir`.
 #' @param base_size Base font size for plots. Overrides `cfg$advanced$base_size`.
 #'
-#' @return Named character vector of saved plot paths (invisibly) or `NULL`.
-#' @export
+#' @return Validation plot object with optional saved path metadata, or `NULL`.
+#' @keywords internal
 plot_wind_field_validation <- function(val,
                                        out = NULL,
                                        cfg = NULL,
                                        out_dir = NULL,
                                        base_size = NULL,
                                        save = TRUE) {
-  plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
-  out_dir <- plot_cfg$out_dir
-  ggtheme <- plot_cfg$theme
-
   if (is.null(val$wind_field) || !any(is.finite(val$wind_field$model_V_site_kt))) {
     return(invisible(NULL))
   }
-  if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
-
-  if (isTRUE(save)) .validate_dir_create(out_dir)
+  prep <- .validation_plot_prepare(cfg = cfg, out_dir = out_dir, base_size = base_size, save = save)
+  if (is.null(prep)) return(invisible(NULL))
+  out_dir <- prep$out_dir
+  ggtheme <- prep$ggtheme
 
   wf <- dplyr::filter(val$wind_field, is.finite(model_V_site_kt))
   if (nrow(wf) == 0) return(invisible(NULL))
@@ -4719,13 +4745,16 @@ plot_wind_field_validation <- function(val,
     ) +
     ggtheme
 
-  paths <- character(0)
-  if (isTRUE(save)) {
-    paths[["wind_field_scatter"]] <- file.path(out_dir, "wind_field_scatter.png")
-    .validate_save_plot(p_wf, paths[["wind_field_scatter"]], width = 8, height = 6, dpi = 150)
-  }
-
-  invisible(list(plot = p_wf, paths = paths))
+  .validation_plot_result(
+    plot = p_wf,
+    out_dir = out_dir,
+    filename = "wind_field_scatter.png",
+    width = 8,
+    height = 6,
+    dpi = 150,
+    save = prep$save,
+    key = "wind_field_scatter"
+  )
 }
 
 
@@ -4736,22 +4765,18 @@ plot_wind_field_validation <- function(val,
 #' @param out_dir Directory to save plots in. Overrides `cfg$out_dir`.
 #' @param base_size Base font size for plots. Overrides `cfg$advanced$base_size`.
 #'
-#' @return Named character vector of saved plot paths (invisibly) or `NULL`.
-#' @export
+#' @return Validation plot object with optional saved path metadata, or `NULL`.
+#' @keywords internal
 plot_bias_diagnostics <- function(val,
                                   cfg = NULL,
                                   out_dir = NULL,
                                   base_size = NULL,
                                   save = TRUE) {
-  plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
-  out_dir <- plot_cfg$out_dir
-  ggtheme <- plot_cfg$theme
-
-  if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
   if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
-
-  if (isTRUE(save)) .validate_dir_create(out_dir)
-  paths <- character(0)
+  prep <- .validation_plot_prepare(cfg = cfg, out_dir = out_dir, base_size = base_size, save = save)
+  if (is.null(prep)) return(invisible(NULL))
+  out_dir <- prep$out_dir
+  ggtheme <- prep$ggtheme
 
   # --- Collect per-location bias decomposition ---
   bias_rows <- list()
@@ -4813,12 +4838,16 @@ plot_bias_diagnostics <- function(val,
     ggtheme +
     theme(axis.text.x = element_text(angle = 30, hjust = 1))
 
-  if (isTRUE(save)) {
-    paths[["bias_decomposition"]] <- file.path(out_dir, "bias_decomposition.png")
-    .validate_save_plot(p_decomp, paths[["bias_decomposition"]], width = 8, height = 5, dpi = 150)
-  }
-
-  invisible(list(plot = p_decomp, paths = paths))
+  .validation_plot_result(
+    plot = p_decomp,
+    out_dir = out_dir,
+    filename = "bias_decomposition.png",
+    width = 8,
+    height = 5,
+    dpi = 150,
+    save = prep$save,
+    key = "bias_decomposition"
+  )
 }
 
 
@@ -4829,21 +4858,18 @@ plot_bias_diagnostics <- function(val,
 #' @param out_dir Directory to save plots in. Overrides `cfg$out_dir`.
 #' @param base_size Base font size for plots. Overrides `cfg$advanced$base_size`.
 #'
-#' @return Path of saved plot (invisibly) or `NULL`.
-#' @export
+#' @return Validation plot object with optional saved path metadata, or `NULL`.
+#' @keywords internal
 plot_qq_validation <- function(val,
                                cfg = NULL,
                                out_dir = NULL,
                                base_size = NULL,
                                save = TRUE) {
-  plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
-  out_dir <- plot_cfg$out_dir
-  ggtheme <- plot_cfg$theme
-
   if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
-  if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
-
-  if (isTRUE(save)) .validate_dir_create(out_dir)
+  prep <- .validation_plot_prepare(cfg = cfg, out_dir = out_dir, base_size = base_size, save = save)
+  if (is.null(prep)) return(invisible(NULL))
+  out_dir <- prep$out_dir
+  ggtheme <- prep$ggtheme
 
   qq_rows <- list()
   for (isl in names(val$hindcast$per_island)) {
@@ -4881,13 +4907,16 @@ plot_qq_validation <- function(val,
     ) +
     ggtheme
 
-  paths <- character(0)
-  if (isTRUE(save)) {
-    paths[["qq_annual_max"]] <- file.path(out_dir, "qq_annual_max.png")
-    .validate_save_plot(p_qq, paths[["qq_annual_max"]], width = 12, height = 7, dpi = 150)
-  }
-
-  invisible(list(plot = p_qq, paths = paths))
+  .validation_plot_result(
+    plot = p_qq,
+    out_dir = out_dir,
+    filename = "qq_annual_max.png",
+    width = 12,
+    height = 7,
+    dpi = 150,
+    save = prep$save,
+    key = "qq_annual_max"
+  )
 }
 
 
@@ -4898,21 +4927,18 @@ plot_qq_validation <- function(val,
 #' @param out_dir Directory to save plots in. Overrides `cfg$out_dir`.
 #' @param base_size Base font size for plots. Overrides `cfg$advanced$base_size`.
 #'
-#' @return Path of saved plot (invisibly) or `NULL`.
-#' @export
+#' @return Validation plot object with optional saved path metadata, or `NULL`.
+#' @keywords internal
 plot_cdf_comparison <- function(val,
                                 cfg = NULL,
                                 out_dir = NULL,
                                 base_size = NULL,
                                 save = TRUE) {
-  plot_cfg <- .resolve_plot_cfg(cfg = cfg, out_dir = out_dir, base_size = base_size)
-  out_dir <- plot_cfg$out_dir
-  ggtheme <- plot_cfg$theme
-
   if (is.null(val$hindcast) || is.null(val$hindcast$per_island)) return(invisible(NULL))
-  if (!requireNamespace("ggplot2", quietly = TRUE)) return(invisible(NULL))
-
-  if (isTRUE(save)) .validate_dir_create(out_dir)
+  prep <- .validation_plot_prepare(cfg = cfg, out_dir = out_dir, base_size = base_size, save = save)
+  if (is.null(prep)) return(invisible(NULL))
+  out_dir <- prep$out_dir
+  ggtheme <- prep$ggtheme
 
   cdf_rows <- list()
   gev_rows <- list()
@@ -4985,11 +5011,14 @@ plot_cdf_comparison <- function(val,
       )
   }
 
-  paths <- character(0)
-  if (isTRUE(save)) {
-    paths[["exceedance_comparison"]] <- file.path(out_dir, "exceedance_comparison.png")
-    .validate_save_plot(p_cdf, paths[["exceedance_comparison"]], width = 12, height = 7, dpi = 150)
-  }
-
-  invisible(list(plot = p_cdf, paths = paths))
+  .validation_plot_result(
+    plot = p_cdf,
+    out_dir = out_dir,
+    filename = "exceedance_comparison.png",
+    width = 12,
+    height = 7,
+    dpi = 150,
+    save = prep$save,
+    key = "exceedance_comparison"
+  )
 }

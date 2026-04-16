@@ -25,8 +25,9 @@ plot_wind_field_validation(
 \item{base_size}{Base font size for plots. Overrides \code{cfg$advanced$base_size}.}
 }
 \value{
-Named character vector of saved plot paths (invisibly) or \code{NULL}.
+Validation plot object with optional saved path metadata, or \code{NULL}.
 }
 \description{
 Plot wind-field validation figures
 }
+\keyword{internal}

@@ -76,3 +76,4 @@ names(lib)
 \seealso{
 \code{\link{build_event_library_from_out}}
 }
+\keyword{internal}

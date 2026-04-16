@@ -129,7 +129,7 @@ hindcast_retention_fixture <- function() {
   )
 }
 
-test_that("validation configs and return-level helpers expose stable public results", {
+test_that("validation config constructor exposes stable public results", {
   old_opt <- options(
     ipdcstorm.wind_field_mode = NULL,
     ipdcstorm.hindcast_sampler_mode = NULL
@@ -137,18 +137,12 @@ test_that("validation configs and return-level helpers expose stable public resu
   on.exit(options(old_opt), add = TRUE)
 
   cfg <- make_validation_cfg(n_sim = 120L, save_plots = FALSE, save_tables = FALSE)
-  rl_emp <- compute_return_levels(c(0, 30, 40, 50, 60, 70), return_periods = c(2, 5))
-  gev_fit <- fit_gev_lmom(c(20, 25, 30, 35, 40, 45))
-  rl_gev <- compute_return_levels_gev(c(0, 0, 35, 40, 60, 80, 90), return_periods = c(2, 5))
 
   expect_s3_class(cfg, "validation_cfg")
   expect_output(print(cfg), "Validation configuration")
   expect_true(cfg$advanced$hindcast_use_raw_rates)
   expect_equal(getOption("ipdcstorm.wind_field_mode", "legacy"), "legacy")
   expect_equal(ipdcstorm:::.hindcast_sampler_mode(), "legacy")
-  expect_equal(names(rl_emp), c("RL_2yr", "RL_5yr"))
-  expect_true(isTRUE(gev_fit$converged))
-  expect_true(all(c("return_levels", "p_zero", "n_total", "n_nonzero") %in% names(rl_gev)))
 })
 
 test_that("hindcast bias decomposition exposes frequency, intensity, and metadata fields", {
@@ -482,13 +476,13 @@ test_that("hindcast attribution grid records mode metadata from workspace reruns
 
 test_that("bootstrap and reference data helpers return expected schema", {
   set.seed(1)
-  ci <- bootstrap_return_level_ci(
+  ci <- ipdcstorm:::bootstrap_return_level_ci(
     annual_max = c(0, 20, 30, 40, 50, 60, 75),
     return_periods = c(2, 5),
     n_boot = 20
   )
-  ref_rates <- get_reference_rates()
-  obs <- get_wind_observations()
+  ref_rates <- ipdcstorm:::get_reference_rates()
+  obs <- ipdcstorm:::get_wind_observations()
 
   expect_equal(ci$return_period, c(2, 5))
   expect_true(all(c("sim_ci_lo", "sim_ci_hi", "sim_lo_50", "sim_hi_50") %in% names(ci)))
@@ -512,11 +506,11 @@ test_that("rate and wind-field validation work with lightweight fixtures", {
   )
 
   expect_message(
-    rates <- validate_rates(out),
+    rates <- ipdcstorm:::validate_rates(out),
     "\\[Rate Check\\] Summary:"
   )
   expect_message(
-    wf <- validate_wind_field(out, obs_table = obs_tbl),
+    wf <- ipdcstorm:::validate_wind_field(out, obs_table = obs_tbl),
     "\\[Wind Field Check\\]"
   )
 
@@ -534,19 +528,19 @@ test_that("plot exporters save validation artifacts", {
     save_tables = FALSE
   )
 
-  paths_hindcast <- plot_hindcast_validation(val, cfg = cfg)
-  path_rate <- plot_rate_validation(val, cfg = cfg)
-  paths_wind <- plot_wind_field_validation(val, cfg = cfg)
-  paths_bias <- plot_bias_diagnostics(val, cfg = cfg)
-  path_qq <- plot_qq_validation(val, cfg = cfg)
-  path_cdf <- plot_cdf_comparison(val, cfg = cfg)
+  paths_hindcast <- ipdcstorm:::plot_hindcast_validation(val, cfg = cfg)
+  path_rate <- ipdcstorm:::plot_rate_validation(val, cfg = cfg)
+  paths_wind <- ipdcstorm:::plot_wind_field_validation(val, cfg = cfg)
+  paths_bias <- ipdcstorm:::plot_bias_diagnostics(val, cfg = cfg)
+  path_qq <- ipdcstorm:::plot_qq_validation(val, cfg = cfg)
+  path_cdf <- ipdcstorm:::plot_cdf_comparison(val, cfg = cfg)
 
-  expect_true(file.exists(unname(paths_hindcast[[1]])))
-  expect_true(file.exists(path_rate))
-  expect_true(file.exists(unname(paths_wind[[1]])))
-  expect_true(file.exists(unname(paths_bias[[1]])))
-  expect_true(file.exists(path_qq))
-  expect_true(file.exists(path_cdf))
+  expect_true(file.exists(unname(paths_hindcast$paths[[1]])))
+  expect_true(file.exists(unname(path_rate$paths[[1]])))
+  expect_true(file.exists(unname(paths_wind$paths[[1]])))
+  expect_true(file.exists(unname(paths_bias$paths[[1]])))
+  expect_true(file.exists(unname(path_qq$paths[[1]])))
+  expect_true(file.exists(unname(path_cdf$paths[[1]])))
 })
 
 test_that("validation wrappers return structured outputs and normalize forwarded storm classes", {
@@ -554,10 +548,10 @@ test_that("validation wrappers return structured outputs and normalize forwarded
   cfg <- make_validation_cfg(n_sim = NULL, save_plots = FALSE, save_tables = FALSE)
 
   expect_message(
-    val <- run_validation_suite(out_stub, cfg = cfg),
+    val <- ipdcstorm:::run_validation_suite(out_stub, cfg = cfg),
     "HAZARD MODEL VALIDATION SUITE"
   )
-  expect_true(all(c("hindcast", "rate_check", "wind_field", "summary", "artifacts") %in% names(val)))
+  expect_true(all(c("summary", "comparison", "rate_check", "wind_field", "plots") %in% names(val)))
 
   local_mocked_bindings(
     run_hazard_model = function(cfg, targets, storm_classes) {

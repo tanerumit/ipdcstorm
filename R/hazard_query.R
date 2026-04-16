@@ -13,57 +13,6 @@
 # 0) Internal helpers
 # =============================================================================
 
-#' Coerce daily input to a single flat tibble
-#'
-#' @description
-#' Accepts either a named list of tibbles (as returned by
-#' \code{\link{generate_daily_hazard_impact_spatial}()}) or a single tibble, and
-#' returns a flat tibble filtered to the requested location(s).
-#'
-#' @param daily Named list of tibbles or single tibble.
-#' @param location Character scalar/vector or \code{NULL}. When \code{NULL}
-#'   and \code{daily} is a list, all locations are bound together.
-#' @return Tibble with at least the columns present in the daily schema.
-#' @keywords internal
-.resolve_daily_tbl <- function(daily, location = NULL) {
-  if (is.data.frame(daily)) {
-    tbl <- tibble::as_tibble(daily)
-  } else if (is.list(daily) && !is.data.frame(daily)) {
-    if (!is.null(location)) {
-      missing_locs <- setdiff(location, names(daily))
-      if (length(missing_locs) > 0L) {
-        stop(
-          "location(s) not found in daily output: ",
-          paste(missing_locs, collapse = ", "),
-          call. = FALSE
-        )
-      }
-      tbl <- dplyr::bind_rows(daily[location])
-    } else {
-      tbl <- dplyr::bind_rows(daily)
-    }
-    tbl <- tibble::as_tibble(tbl)
-  } else {
-    stop(
-      "`daily` must be a tibble or a named list from generate_daily_hazard_impact_spatial().",
-      call. = FALSE
-    )
-  }
-
-  # Apply location filter when daily was a plain tibble and location is specified
-  if (is.data.frame(daily) && !is.null(location)) {
-    if ("location" %in% names(tbl)) {
-      tbl <- dplyr::filter(tbl, .data$location %in% !!location)
-    }
-  }
-
-  if (nrow(tbl) == 0L) {
-    warning("No rows remain after resolving daily input and location filter.", call. = FALSE)
-  }
-  tbl
-}
-
-
 #' Derive an impact threshold for a reference storm
 #'
 #' @description
@@ -148,46 +97,6 @@
   }
 
   thresholds
-}
-
-
-#' Compute per-sim_year aggregate metric for one location's daily series
-#'
-#' @param loc_daily Tibble of daily rows for a single location.
-#' @param metric Character scalar; one of \code{"peak_wind_kt"},
-#'   \code{"cum_damage"}, or \code{"max_damage_rate"}.
-#' @return Tibble with columns \code{location}, \code{sim_year},
-#'   \code{annual_metric}.
-#' @keywords internal
-.annual_metric_tbl <- function(loc_daily, metric) {
-  if (metric == "peak_wind_kt") {
-    if (!("wind_kt" %in% names(loc_daily))) {
-      stop("`daily` must contain a `wind_kt` column for metric 'peak_wind_kt'.", call. = FALSE)
-    }
-    loc_daily |>
-      dplyr::group_by(.data$location, .data$sim_year) |>
-      dplyr::summarise(annual_metric = max(.data$wind_kt, na.rm = TRUE), .groups = "drop")
-
-  } else if (metric == "cum_damage") {
-    if (!("cum_damage" %in% names(loc_daily))) {
-      stop("`daily` must contain a `cum_damage` column for metric 'cum_damage'.", call. = FALSE)
-    }
-    loc_daily |>
-      dplyr::group_by(.data$location, .data$sim_year) |>
-      dplyr::summarise(annual_metric = max(.data$cum_damage, na.rm = TRUE), .groups = "drop")
-
-  } else if (metric == "max_damage_rate") {
-    if (!("damage_rate" %in% names(loc_daily))) {
-      stop("`daily` must contain a `damage_rate` column for metric 'max_damage_rate'.", call. = FALSE)
-    }
-    loc_daily |>
-      dplyr::group_by(.data$location, .data$sim_year) |>
-      dplyr::summarise(annual_metric = max(.data$damage_rate, na.rm = TRUE), .groups = "drop")
-
-  } else {
-    stop("Unknown metric '", metric, "'. Use 'peak_wind_kt', 'cum_damage', or 'max_damage_rate'.",
-         call. = FALSE)
-  }
 }
 
 
@@ -508,6 +417,7 @@ query_storm_track_years <- function(daily, storm_id, location = NULL) {
 #' }
 #' @seealso \code{\link{query_storm_track_years}},
 #'   \code{\link{generate_daily_hazard_impact_spatial}}
+#' @keywords internal
 #' @export
 query_impact_years <- function(
     daily,
@@ -716,6 +626,7 @@ query_impact_years <- function(
 #' }
 #' @seealso \code{\link{query_storm_track_years}}, \code{\link{query_impact_years}},
 #'   \code{\link{compute_stress_year_metrics}}
+#' @keywords internal
 #' @export
 query_aftermath_impact <- function(
     daily,

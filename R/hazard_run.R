@@ -114,6 +114,11 @@
 #'   `ts_threshold_kt`, `strong_storm_threshold_kt`, `hurricane_threshold_kt`,
 #'   `r34_cap_nm`, `r50_cap_nm`, `r64_cap_nm`,
 #'   `lambda_scaling_mode` (`"target"` or `"down_only"`).
+#' @param background_wind Optional `background_wind_cfg` object created by
+#'   `make_background_wind_cfg()`. When supplied, non-storm days in the daily
+#'   downscaling step receive wind speeds sampled from Weibull marginals with
+#'   optional spatial copula correlation and AR(1) persistence, rather than
+#'   being set to zero. Defaults to `NULL` (zero background wind).
 #'
 #' @return A list with class `c("hazard_cfg", "list")`.
 #' @export
@@ -123,7 +128,8 @@ make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv
                             simulation_years = 1000L,
                             preset = "default",
                             climate = make_climate_cfg(scenario = "stationary"),
-                            advanced = NULL) {
+                            advanced = NULL,
+                            background_wind = NULL) {
 
   preset <- match.arg(preset, choices = c("default"))
   if (is.null(climate)) {
@@ -133,6 +139,9 @@ make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv
     stop("climate must be created by make_climate_cfg().", call. = FALSE)
   }
   climate <- .normalize_climate_cfg(climate)
+  if (!is.null(background_wind) && !inherits(background_wind, "background_wind_cfg")) {
+    stop("background_wind must be NULL or a background_wind_cfg object from make_background_wind_cfg().", call. = FALSE)
+  }
 
   defaults <- list(
     ts_threshold_kt = 34,
@@ -168,7 +177,8 @@ make_hazard_cfg <- function(data_path = "data/ibtracs/ibtracs.NA.list.v04r01.csv
     resampling_method = "stratified",
     copula_min_n = 30L,
     copula_k = 1L,
-    copula_robust_scale = TRUE
+    copula_robust_scale = TRUE,
+    background_wind = background_wind
   )
   class(cfg) <- c("hazard_cfg", "list")
   cfg$advanced$lambda_scaling_mode <- .normalize_lambda_scaling_mode(cfg$advanced$lambda_scaling_mode)
@@ -921,7 +931,8 @@ run_hazard_model <- function(cfg, targets,
   )
   if (verbose) {
     .cli_h("Run metadata")
-    .cli_info(sprintf("Rate scaling     : %s", run_metadata$lambda_scaling_mode))
+    .cli_info(sprintf("seed=%d", run_metadata$seed))
+    .cli_info(sprintf("lambda_mode=%s", run_metadata$lambda_scaling_mode))
   }
 
   list(

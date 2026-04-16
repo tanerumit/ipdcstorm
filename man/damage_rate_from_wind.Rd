@@ -40,3 +40,4 @@ damage_rate_from_wind(c(20, 40, 80))
 \seealso{
 \code{\link{add_damage_forcing}}
 }
+\keyword{internal}

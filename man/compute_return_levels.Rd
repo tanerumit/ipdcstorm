@@ -19,3 +19,4 @@ Extracts return levels from a sample of annual maxima using the plotting-positio
 approach: sort values, assign return periods T = (n+1)/rank, interpolate to
 requested return periods.
 }
+\keyword{internal}

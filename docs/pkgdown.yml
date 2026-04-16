@@ -1,0 +1,12 @@
+pandoc: 3.6.3
+pkgdown: 2.2.0
+pkgdown_sha: ~
+articles:
+  tutorial_1_setup: tutorial_1_setup.html
+  tutorial_2_validation: tutorial_2_validation.html
+  tutorial_3_climate_change: tutorial_3_climate_change.html
+  tutorial_4_stress_test: tutorial_4_stress_test.html
+last_built: 2026-04-16T19:19Z
+urls:
+  reference: https://tanerumit.github.io/ipdcstorm/reference
+  article: https://tanerumit.github.io/ipdcstorm/articles

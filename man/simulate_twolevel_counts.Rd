@@ -62,3 +62,4 @@ a rate effect and an intensity effect applied to a stationary time slice:
 When gamma_intensity is 0, the storm-class split is constant.
 When both beta_sst and gamma_intensity are 0, reduces to stationary model.
 }
+\keyword{internal}

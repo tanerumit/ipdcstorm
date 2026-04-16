@@ -13,3 +13,4 @@ Tibble with columns: region, storm_class, lambda_ref, source, gate_approx_nm, pe
 Returns a tibble of published annual TS passage rates from literature,
 for comparison against model-fitted lambdas.
 }
+\keyword{internal}

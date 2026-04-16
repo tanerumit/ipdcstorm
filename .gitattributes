@@ -1,5 +1,15 @@
-*.R   text eol=lf
+*.R text eol=lf
 *.Rmd text eol=lf
 *.qmd text eol=lf
+*.Rd text eol=lf
+*.md text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+*.txt text eol=lf
+DESCRIPTION text eol=lf
+NAMESPACE text eol=lf
+LICENSE text eol=lf
+LICENSE.md text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.Rbuildignore text eol=lf

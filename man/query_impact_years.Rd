@@ -133,3 +133,4 @@ query_impact_years(
 \code{\link{query_storm_track_years}},
 \code{\link{generate_daily_hazard_impact_spatial}}
 }
+\keyword{internal}

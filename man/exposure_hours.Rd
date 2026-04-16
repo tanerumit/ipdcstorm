@@ -25,3 +25,4 @@ package daily resolution.
 daily <- tibble::tibble(wind_kt = c(20, 40), wind_gust_kt = c(24, 48))
 exposure_hours(daily, threshold_kt = 34)
 }
+\keyword{internal}

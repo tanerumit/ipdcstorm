@@ -27,3 +27,4 @@ get_annual_counts(out)
 \seealso{
 \code{\link{compute_annual_counts}}, \code{\link{compute_lambda_table}}
 }
+\keyword{internal}

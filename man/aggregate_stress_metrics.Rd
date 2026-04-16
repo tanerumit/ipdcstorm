@@ -81,3 +81,4 @@ scored <- aggregate_stress_metrics(
 \seealso{
 \code{\link{compute_stress_year_metrics}}, \code{\link{select_stress_years}}
 }
+\keyword{internal}

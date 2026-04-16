@@ -339,7 +339,7 @@ test_that("downscale daily helpers and damage utilities handle common edge cases
     event_class = c(NA, "TS", "HUR")
   )
 
-  flags <- ipdcstorm::disruption_flags(
+  flags <- ipdcstorm:::disruption_flags(
     daily,
     thr_port = 34,
     thr_infra = 60,
@@ -349,27 +349,27 @@ test_that("downscale daily helpers and damage utilities handle common edge cases
   expect_equal(flags$port_disrupt, c(FALSE, TRUE, FALSE))
   expect_equal(flags$infra_disrupt, c(FALSE, TRUE, FALSE))
   expect_equal(flags$surge_disrupt, c(FALSE, TRUE, FALSE))
-  expect_equal(ipdcstorm::is_tc_day(daily), c(FALSE, TRUE, TRUE))
-  expect_equal(ipdcstorm::is_hur_day(daily), c(NA, FALSE, TRUE))
-  expect_equal(ipdcstorm::exposure_hours(daily, threshold_kt = 34), c(0, 24, NA))
+  expect_equal(ipdcstorm:::is_tc_day(daily), c(FALSE, TRUE, TRUE))
+  expect_equal(ipdcstorm:::is_hur_day(daily), c(NA, FALSE, TRUE))
+  expect_equal(ipdcstorm:::exposure_hours(daily, threshold_kt = 34), c(0, 24, NA))
 
   expect_warning(
-    peak <- ipdcstorm::peak_wind_by_year(daily),
+    peak <- ipdcstorm:::peak_wind_by_year(daily),
     "no non-missing arguments to max"
   )
   expect_equal(peak$peak_wind_kt[[1]], 55)
   expect_true(is.na(peak$peak_wind_kt[[2]]))
 
-  pulse_tri <- ipdcstorm::event_pulse(dur_days = 3, V_peak = 60, shape = "triangle")
-  pulse_cos <- ipdcstorm::event_pulse(dur_days = 0, V_peak = 60)
+  pulse_tri <- ipdcstorm:::event_pulse(dur_days = 3, V_peak = 60, shape = "triangle")
+  pulse_cos <- ipdcstorm:::event_pulse(dur_days = 0, V_peak = 60)
   expect_length(pulse_tri, 3L)
   expect_equal(max(pulse_tri), 60)
   expect_length(pulse_cos, 0L)
 
-  dmg <- ipdcstorm::add_damage_forcing(tibble::tibble(wind_kt = c(20, 40, 100)))
+  dmg <- ipdcstorm:::add_damage_forcing(tibble::tibble(wind_kt = c(20, 40, 100)))
   expect_true(all(c("damage_intensity", "damage_rate") %in% names(dmg)))
-  expect_equal(ipdcstorm::damage_rate_from_wind(c(20, 80, 200)), c(0, 0.03, 0.10))
-  expect_error(ipdcstorm::damage_rate_from_wind(c(50), thr = 80, V_ref = 80), "V_ref must be > thr")
+  expect_equal(ipdcstorm:::damage_rate_from_wind(c(20, 80, 200)), c(0, 0.03, 0.10))
+  expect_error(ipdcstorm:::damage_rate_from_wind(c(50), thr = 80, V_ref = 80), "V_ref must be > thr")
 
   spec <- ipdcstorm:::.validate_damage_spec(list(method = "powerlaw", p = 4))
   expect_equal(spec$method, "powerlaw")
@@ -400,13 +400,13 @@ test_that("downscale event-library wrappers and samplers produce deterministic s
     )
   )
 
-  lib <- ipdcstorm::build_event_library_from_out(out, location = "Saba", seed = 1L)
-  sampled <- ipdcstorm::sample_events_for_year_extended(lib, year = 2001, n_ts = 1, n_hur = 1, seed = 2L)
+  lib <- ipdcstorm:::build_event_library_from_out(out, location = "Saba", seed = 1L)
+  sampled <- ipdcstorm:::sample_events_for_year_extended(lib, year = 2001, n_ts = 1, n_hur = 1, seed = 2L)
 
   expect_true(all(c("events", "sample_doy", "sample_event") %in% names(lib)))
   expect_equal(nrow(sampled), 2)
   expect_true(all(c("event_id", "event_class", "Pc_min_hPa", "RMW_mean_km") %in% names(sampled)))
-  expect_error(ipdcstorm::build_event_library_from_out(out, location = "Statia"), "no entry")
+  expect_error(ipdcstorm:::build_event_library_from_out(out, location = "Statia"), "no entry")
 })
 
 test_that("validation helper functions cover config, sampling, and empty-output paths", {
@@ -449,8 +449,8 @@ test_that("validation helper functions cover config, sampling, and empty-output 
   expect_equal(kde_empty$pool_mean, 44)
   expect_length(ipdcstorm:::.sample_intensity_kde(kde_empty, 0), 0L)
 
-  rl_small <- ipdcstorm::compute_return_levels(c(1, 2), return_periods = c(2, 5))
-  rl_gev_small <- ipdcstorm::compute_return_levels_gev(c(0, 0, 10, 0), return_periods = c(2, 5))
+  rl_small <- ipdcstorm:::compute_return_levels(c(1, 2), return_periods = c(2, 5))
+  rl_gev_small <- ipdcstorm:::compute_return_levels_gev(c(0, 0, 10, 0), return_periods = c(2, 5))
   expect_true(all(is.na(rl_small)))
   expect_true(all(is.na(rl_gev_small$return_levels)))
 
@@ -466,17 +466,31 @@ test_that("validation helper functions cover config, sampling, and empty-output 
     rate_check = tibble::tibble(),
     wind_field = tibble::tibble(model_V_site_kt = numeric(0))
   )
-  expect_null(ipdcstorm::plot_hindcast_validation(empty_val))
-  expect_null(ipdcstorm::plot_rate_validation(empty_val))
-  expect_null(ipdcstorm::plot_wind_field_validation(empty_val))
-  expect_null(ipdcstorm::plot_bias_diagnostics(empty_val))
-  expect_null(ipdcstorm::plot_qq_validation(empty_val))
-  expect_null(ipdcstorm::plot_cdf_comparison(empty_val))
+  expect_null(ipdcstorm:::plot_hindcast_validation(empty_val))
+  expect_null(ipdcstorm:::plot_rate_validation(empty_val))
+  expect_null(ipdcstorm:::plot_wind_field_validation(empty_val))
+  expect_null(ipdcstorm:::plot_bias_diagnostics(empty_val))
+  expect_null(ipdcstorm:::plot_qq_validation(empty_val))
+  expect_null(ipdcstorm:::plot_cdf_comparison(empty_val))
 })
 
 test_that("downscale hazard-impact wrapper executes intensity and powerlaw paths", {
   out_stub <- list(
     cfg = list(resampling_method = "stratified"),
+    events = tibble::tibble(
+      location = c("Saba", "Saba"),
+      storm_class = c("TS", "HUR"),
+      SID = c("TS_1", "HUR_1")
+    ),
+    trackpoints = list(
+      Saba = tibble::tibble(
+        SID = c("TS_1", "HUR_1"),
+        iso_time = as.POSIXct(
+          c("2000-08-01 00:00:00", "2000-09-01 00:00:00"),
+          tz = "UTC"
+        )
+      )
+    ),
     sim = tibble::tibble(
       location = c("Saba", "Saba"),
       sim_year = c(1L, 2L),
@@ -515,7 +529,7 @@ test_that("downscale hazard-impact wrapper executes intensity and powerlaw paths
   )
 
   local_mocked_bindings(
-    build_event_library_from_out = function(...) sample_lib,
+    build_event_library = function(...) sample_lib,
     .package = "ipdcstorm"
   )
 
@@ -599,13 +613,13 @@ test_that("climate intensity and perturbation helpers cover operational branches
 })
 
 test_that("validation distribution helpers cover fitted branches beyond empty fallbacks", {
-  fit <- ipdcstorm::fit_gev_lmom(c(20, 25, 30, 35, 40, 45, 55))
+  fit <- ipdcstorm:::fit_gev_lmom(c(20, 25, 30, 35, 40, 45, 55))
   kde <- ipdcstorm:::.fit_intensity_kde(c(40, 45, 50, 55, 60, 62), lower = 34, upper = 64)
   set.seed(7)
   kde_draws <- ipdcstorm:::.sample_intensity_kde(kde, 25)
-  gev_rl <- ipdcstorm::compute_return_levels_gev(c(0, 20, 30, 40, 50, 65, 80, 90), return_periods = c(2, 5))
+  gev_rl <- ipdcstorm:::compute_return_levels_gev(c(0, 20, 30, 40, 50, 65, 80, 90), return_periods = c(2, 5))
   set.seed(7)
-  boot <- ipdcstorm::bootstrap_return_level_ci(
+  boot <- ipdcstorm:::bootstrap_return_level_ci(
     annual_max = c(0, 20, 30, 40, 50, 65, 80, 90),
     return_periods = c(2, 5),
     n_boot = 20

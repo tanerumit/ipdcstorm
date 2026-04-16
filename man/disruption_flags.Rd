@@ -44,3 +44,4 @@ disruption_flags(daily, thr_port = 34, thr_infra = 50, thr_surge = 0.5)
 \seealso{
 \code{\link{generate_daily_hazard_impact_spatial}}
 }
+\keyword{internal}

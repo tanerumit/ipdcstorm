@@ -88,3 +88,4 @@ selected <- select_stress_years(
 \code{\link{compute_stress_year_metrics}},
 \code{\link{aggregate_stress_metrics}}
 }
+\keyword{internal}

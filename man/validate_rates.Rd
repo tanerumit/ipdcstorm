@@ -18,3 +18,4 @@ Tibble with model vs reference rate comparison.
 Takes the lambda table from the hazard model output and compares per-location
 per-storm_class rates against published references.
 }
+\keyword{internal}

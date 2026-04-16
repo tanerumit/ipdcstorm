@@ -28,3 +28,4 @@ sst_anom <- compute_sst_anomaly(sst, baseline_years = 1991:2020)
 head(sst_anom)
 
 }
+\keyword{internal}

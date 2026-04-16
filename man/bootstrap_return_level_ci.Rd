@@ -36,3 +36,4 @@ Generates bootstrap CIs by:
 \item Computing return levels from each fit
 }
 }
+\keyword{internal}

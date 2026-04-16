@@ -45,7 +45,7 @@ We run a stationary baseline simulation, exercise the three-tier validation suit
 By the end, you will be able to:
 
 - create a baseline model output suitable for validation;
-- configure and run the validation suite with `make_validation_cfg()` and `run_validation_suite()`;
+- configure validation settings with `make_validation_cfg()` and run the full validation workflow with `validate_hazard_model()`;
 - interpret each of the three validation tiers (hindcast return levels, rate sanity, wind-field spot-checks);
 - read the saved plots and tables produced when `save_plots = TRUE` and `save_tables = TRUE`.
 
@@ -101,10 +101,11 @@ targets <- tibble::tribble(
 )
 ```
 
-## Create a Model Output to Validate {#sec-create-output}
+## Create a Model Configuration to Validate {#sec-create-output}
 
-The validation suite operates on a standard `run_hazard_model()` output.
-We use the packaged 1970+ IBTrACS subset so the tutorial renders end-to-end without external data.
+`validate_hazard_model()` runs the hazard model and validation in one call.
+We still build the hazard configuration explicitly so the tutorial makes the model inputs clear.
+The packaged 1970+ IBTrACS subset keeps the example self-contained.
 
 ```{r}
 #| label: hazard-config
@@ -116,16 +117,6 @@ hazard_cfg <- make_hazard_cfg(
   historical_start_year = HIST_START_YEAR,
   simulation_years      = N_SIM,
   climate               = make_climate_cfg(scenario = "stationary")
-)
-```
-
-```{r}
-#| label: hazard-run
-out_base <- run_hazard_model(
-  cfg     = hazard_cfg,
-  targets = targets,
-  seed    = SEED,
-  verbose = FALSE
 )
 ```
 
@@ -162,17 +153,21 @@ val_cfg
 | `save_plots` / `save_tables` | Toggles for writing PNG figures and CSV tables. |
 | `full_output` | When `TRUE`, also returns `hindcast`, `climate_response`, and `artifacts` (file paths). |
 
-## Run the Validation Suite {#sec-run-validation}
+## Run the Validation Workflow {#sec-run-validation}
 
-A single call runs all three tiers and returns a structured list.
+A single wrapper call runs the hazard model, then the three-tier validation suite, and returns both outputs.
 The function prints a console summary as it works.
 
 ```{r}
 #| label: run-validation
-val_out <- run_validation_suite(
-  out = out_base,
-  cfg = val_cfg
+validation_result <- validate_hazard_model(
+  cfg = hazard_cfg,
+  targets = targets,
+  validation_cfg = val_cfg
 )
+
+out_base <- validation_result$out
+val_out <- validation_result$val
 ```
 
 ```{r}
@@ -181,8 +176,8 @@ val_out$summary
 ```
 
 ::: callout-note
-## What's in `val_out`
-Default output contains `summary`, `comparison` (Tier 1), `rate_check` (Tier 2), `wind_field` (Tier 3), and `plots` (list of ggplot objects). With `full_output = TRUE`, you also get `hindcast`, `climate_response`, and `artifacts` (paths to saved PNGs and CSVs). The on-disk bundle lives in `OUT_DIR`.
+## What's in `validation_result`
+The wrapper returns `out` (the hazard model output), `val` (the validation results), and `artifacts` (saved PNG/CSV paths when enabled). Within `val`, the main components are `summary`, `comparison` (Tier 1), `rate_check` (Tier 2), `wind_field` (Tier 3), and `plots`. With `full_output = TRUE`, `val` also carries the richer hindcast diagnostics.
 :::
 
 ## Tier 1 — Hindcast Return Levels {#sec-tier1}
@@ -336,7 +331,7 @@ Use the bias decomposition plot to separate frequency-driven bias (too many or t
 
 ::: callout-tip
 ## One-step shortcut
-`validate_hazard_model()` runs the hazard model and the validation suite in one call. Keep the two-step pattern shown here while you are inspecting outputs; switch to the wrapper for repeat runs.
+`validate_hazard_model()` is the recommended public entry point for validation. Use the returned `out` object when you want to inspect the fitted hazard model alongside the validation diagnostics.
 :::
 
 ::: callout-tip

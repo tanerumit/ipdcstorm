@@ -25,3 +25,4 @@ Computes per-year hurricane probability and corresponding TS/HUR rates:
 \code{lambda_HUR(t) = lambda_total * p_HUR(t)}
 \code{lambda_TS(t)  = lambda_total * (1 - p_HUR(t))}
 }
+\keyword{internal}

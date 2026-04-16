@@ -27,3 +27,4 @@ dist_to_target(lat = c(18, 18.1), lon = c(-63, -63.1), t_lat = 18.05, t_lon = -6
 \seealso{
 \code{\link{calculate_bearing}}
 }
+\keyword{internal}

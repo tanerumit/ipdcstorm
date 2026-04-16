@@ -29,3 +29,4 @@ classify_severity(c(20, 40, 80, NA_real_))
 \seealso{
 \code{\link{make_storm_events}}, \code{\link{compute_annual_counts}}
 }
+\keyword{internal}

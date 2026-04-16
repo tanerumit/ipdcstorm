@@ -62,13 +62,13 @@ test_that("downscale library and samplers expose expected public behavior", {
     storm_classes = c("TD", "TS", "HUR"),
     seed = 10
   )
-  lib_from_out <- build_event_library_from_out(
+  lib_from_out <- ipdcstorm:::build_event_library_from_out(
     out = downscale_out_fixture(),
     location = "Saba",
     seed = 10
   )
 
-  sampled <- sample_events_for_year_extended(
+  sampled <- ipdcstorm:::sample_events_for_year_extended(
     lib = lib,
     year = 2001,
     n_ts = 1L,
@@ -98,7 +98,7 @@ test_that("daily hazard helpers classify events and aggregate daily diagnostics"
     dP_max_hPa = c(18, 55),
     RMW_mean_km = c(35, 22)
   )
-  daily <- generate_daily_year_extended(2001, sampled_events, pulse_shape = "triangle")
+  daily <- ipdcstorm:::generate_daily_year_extended(2001, sampled_events, pulse_shape = "triangle")
   daily_aug <- dplyr::mutate(
     daily,
     location = "Saba",
@@ -107,13 +107,13 @@ test_that("daily hazard helpers classify events and aggregate daily diagnostics"
     wind_gust_kt = .data$wind_kt * 1.2,
     surge_m = dplyr::if_else(is.finite(.data$pressure_hpa), 0.14 * (1013 - .data$pressure_hpa), NA_real_)
   )
-  disrupted <- disruption_flags(daily_aug, thr_port = 40, thr_infra = 70, thr_surge = 5)
-  peaks <- peak_wind_by_year(daily_aug)
+  disrupted <- ipdcstorm:::disruption_flags(daily_aug, thr_port = 40, thr_infra = 70, thr_surge = 5)
+  peaks <- ipdcstorm:::peak_wind_by_year(daily_aug)
 
-  expect_equal(event_pulse(3, 60, shape = "triangle"), c(30, 60, 30))
-  expect_true(any(is_tc_day(daily)))
-  expect_true(any(is_hur_day(daily)))
-  expect_true(any(exposure_hours(daily_aug, threshold_kt = 40) == 24))
+  expect_equal(ipdcstorm:::event_pulse(3, 60, shape = "triangle"), c(30, 60, 30))
+  expect_true(any(ipdcstorm:::is_tc_day(daily)))
+  expect_true(any(ipdcstorm:::is_hur_day(daily)))
+  expect_true(any(ipdcstorm:::exposure_hours(daily_aug, threshold_kt = 40) == 24))
   expect_true(all(c("port_disrupt", "infra_disrupt", "surge_disrupt") %in% names(disrupted)))
   expect_equal(peaks$peak_wind_kt, max(daily_aug$wind_kt))
 })
@@ -129,8 +129,8 @@ test_that("daily hazard generation and damage helpers return public output schem
     seed = 20
   )
   daily <- daily_list$Saba
-  damage_aug <- add_damage_forcing(tibble::tibble(wind_kt = c(20, 60, 140)), dmax = 0.05)
-  powerlaw <- damage_rate_from_wind(c(20, 80, 200), d_max = 0.08)
+  damage_aug <- ipdcstorm:::add_damage_forcing(tibble::tibble(wind_kt = c(20, 60, 140)), dmax = 0.05)
+  powerlaw <- ipdcstorm:::damage_rate_from_wind(c(20, 80, 200), d_max = 0.08)
 
   expect_equal(names(daily_list), "Saba")
   expect_true(all(c(
@@ -166,15 +166,15 @@ test_that("daily hazard generation accepts damage defaults for both methods", {
 
   expect_equal(
     intensity$damage_rate,
-    add_damage_forcing(tibble::tibble(wind_kt = intensity$wind_kt))$damage_rate
+    ipdcstorm:::add_damage_forcing(tibble::tibble(wind_kt = intensity$wind_kt))$damage_rate
   )
   expect_equal(
     powerlaw$damage_rate,
-    damage_rate_from_wind(powerlaw$wind_kt)
+    ipdcstorm:::damage_rate_from_wind(powerlaw$wind_kt)
   )
   expect_equal(
     powerlaw$damage_intensity,
-    add_damage_forcing(
+    ipdcstorm:::add_damage_forcing(
       tibble::tibble(wind_kt = powerlaw$wind_kt),
       p = 3
     )$damage_intensity
@@ -201,7 +201,7 @@ test_that("daily hazard generation honors damage overrides numerically", {
     seed = 20
   )$Saba
 
-  expected_intensity <- add_damage_forcing(
+  expected_intensity <- ipdcstorm:::add_damage_forcing(
     tibble::tibble(wind_kt = intensity$wind_kt),
     V0 = 40,
     V1 = 100,
@@ -212,7 +212,7 @@ test_that("daily hazard generation honors damage overrides numerically", {
   expect_equal(intensity$damage_rate, expected_intensity$damage_rate)
   expect_equal(
     powerlaw$damage_rate,
-    damage_rate_from_wind(
+    ipdcstorm:::damage_rate_from_wind(
       powerlaw$wind_kt,
       thr = 30,
       V_ref = 70,
@@ -223,7 +223,7 @@ test_that("daily hazard generation honors damage overrides numerically", {
   )
   expect_equal(
     powerlaw$damage_intensity,
-    add_damage_forcing(
+    ipdcstorm:::add_damage_forcing(
       tibble::tibble(wind_kt = powerlaw$wind_kt),
       V0 = 34,
       V1 = 120,

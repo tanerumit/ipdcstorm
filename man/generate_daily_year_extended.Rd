@@ -38,3 +38,4 @@ generate_daily_year_extended(2000, sampled_events)
 \seealso{
 \code{\link{sample_events_for_year_extended}}, \code{\link{event_pulse}}
 }
+\keyword{internal}

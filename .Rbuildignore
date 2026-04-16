@@ -13,11 +13,16 @@
 ^\.agents($|/.*)
 ^\.claude($|/.*)
 
-^dev$
-^output$
+^AGENTS\.md$
+^CLAUDE\.md$
+
+^dev($|/.*)
+^handover($|/.*)
+^output($|/.*)
 
 ^.*\.code-workspace$
 ^.*\.Rproj$
 ^_pkgdown\.yml$
-^docs$
-^pkgdown$
+^docs($|/.*)
+^pkgdown($|/.*)
+^vignettes($|/.*)

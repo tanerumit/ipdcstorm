@@ -27,3 +27,4 @@ event_pulse(dur_days = 5, V_peak = 60)
 \seealso{
 \code{\link{generate_daily_year_extended}}
 }
+\keyword{internal}
