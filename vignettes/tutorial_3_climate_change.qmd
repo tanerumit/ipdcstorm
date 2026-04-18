@@ -264,7 +264,10 @@ The combined table lets us compare how often Saba experiences tropical-storm and
 
 ```{r}
 #| label: summarise-daily-series
-daily_summary <- bind_rows(daily_baseline, daily_future) |>
+daily_summary <- bind_rows(
+  dplyr::mutate(daily_baseline, scenario = "Baseline"),
+  dplyr::mutate(daily_future, scenario = "Future (+1.5 C)")
+) |>
   group_by(scenario) |>
   summarise(
     tc_days = sum(wind_kt > 0, na.rm = TRUE),

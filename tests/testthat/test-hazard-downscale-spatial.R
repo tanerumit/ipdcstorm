@@ -59,13 +59,17 @@ test_that("generate_daily_hazard_impact_spatial each element has required column
     sim_years = 1L:3L, seed = 42L
   )
 
-  required <- c("location", "sim_year", "date", "wind_kt", "wind_gust_kt",
-                "event_id", "damage_rate", "cum_damage")
+  required <- c(
+    "sim_year", "date", "wind_kt", "surge_m", "event_id",
+    "pressure_hpa", "pressure_deficit_hpa", "rmw_km",
+    "damage_intensity", "damage_rate", "cum_damage"
+  )
   for (loc in names(res)) {
     for (col in required) {
       expect_true(col %in% names(res[[loc]]),
         info = paste("location:", loc, "| missing column:", col))
     }
+    expect_false(any(c("location", "scenario", "wind_gust_kt", "event_class") %in% names(res[[loc]])))
   }
 })
 
@@ -94,7 +98,7 @@ test_that("generate_daily_hazard_impact_spatial covers all requested sim_years",
   expect_setequal(unique(res$Saba$sim_year), c(1L, 5L, 10L))
 })
 
-test_that("generate_daily_hazard_impact_spatial gust_factor scales wind_gust_kt", {
+test_that("generate_daily_hazard_impact_spatial stores gust_factor as metadata", {
   out    <- .spatial_out()
   gf     <- 1.25
   res    <- .spatial_gen(
@@ -103,8 +107,8 @@ test_that("generate_daily_hazard_impact_spatial gust_factor scales wind_gust_kt"
   )
 
   d <- res$Saba
-  # Every gust observation should equal sustained wind * gust_factor
-  expect_equal(d$wind_gust_kt, d$wind_kt * gf, tolerance = 1e-9)
+  expect_identical(attr(d, "gust_factor"), gf)
+  expect_false("wind_gust_kt" %in% names(d))
 })
 
 test_that("generate_daily_hazard_impact_spatial cum_damage is non-decreasing within each year", {

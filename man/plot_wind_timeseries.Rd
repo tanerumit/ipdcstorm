@@ -15,8 +15,8 @@ plot_wind_timeseries(
 }
 \arguments{
 \item{daily}{A data frame or tibble of daily records with columns \code{date}
-(\code{Date}), \code{wind_kt} (numeric, knots), \code{event_id} (event identifier; \code{NA}
-means no event), and \code{event_class} (character/factor).}
+(\code{Date}), \code{wind_kt} (numeric, knots), and \code{event_id} (event identifier;
+\code{NA} means no event).}
 
 \item{events}{Optional precomputed event table (data frame/tibble) with
 columns \code{start_date}, \code{end_date} (\code{Date}), \code{max_wind_kt} (numeric, knots),
@@ -41,9 +41,9 @@ wind speed.
 }
 \details{
 If \code{events} is \code{NULL}, event summaries are computed from \code{daily}.
-Segment colors collapse event classes to \code{TS} and \code{HUR} (anything not equal
-to \code{"HUR"} is treated as \code{TS}). \code{NA} values in \code{event_id} are ignored when
-computing events.
+Event class is derived from each event's peak daily wind (\code{HUR} for peaks
+at or above 64 kt, otherwise \code{TS}). \code{NA} values in \code{event_id} are ignored
+when computing events.
 }
 \examples{
 d <- data.frame(

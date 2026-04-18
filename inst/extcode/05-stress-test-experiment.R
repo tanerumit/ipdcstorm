@@ -42,6 +42,7 @@ N_SIM          <- 2000L
 IRMA_WIND_KT   <- 80     # site-level peak wind threshold for IRMA-like impact (kt)
 QUANTILE_PROBS <- c(0.50, 0.80, 0.90, 0.95, 0.99)
 KNMI_SCENARIOS <- c("knmi_Ld", "knmi_Hd")
+OUTPUT_DIR     <- file.path("output", "raw")
 
 # Future target year: set to 2050 (near-term) or 2100 (end-of-century).
 # Controls the SST delta used for all KNMI climate scenarios in Part 2.
@@ -82,6 +83,62 @@ data_path <- system.file("extdata", "ibtracs_demo.csv", package = "ipdcstorm")
 # data_path <- "/path/to/ibtracs.NA.list.v04r01.csv"
 
 # =============================================================================
+# Background wind configuration
+# =============================================================================
+#
+# Literature basis:
+#   - Puerto Rico / U.S. Virgin Islands Wind Energy Resource Atlas
+#     (Elliott et al., 1990; DOE/PNL) reports Rayleigh-like trade-wind
+#     distributions and annual mean near-surface winds around 4.4 m/s at
+#     San Juan, with stronger exposed coastal and ridge sites.
+#   - Caribbean low-level-jet climatology shows the eastern Caribbean and
+#     Lesser Antilles sit in a persistently strong easterly trade-wind belt,
+#     supporting slightly stronger background winds there than at San Juan.
+#   - South Florida station climatology is weaker than the eastern Caribbean,
+#     so Miami is assigned a lower mean background wind.
+#
+# These are representative stress-test values, not local station fits.
+# For production work, refit Weibull marginals from local non-TC observations.
+
+weibull_scale_from_mean <- function(mean_kt, shape) {
+  mean_kt / gamma(1 + 1 / shape)
+}
+
+make_stress_test_background_wind_cfg <- function() {
+  # Inference from the literature above:
+  #   Saba      > Statia ~= St_Martin > Puerto_Rico > Miami
+  # because the smaller eastern Caribbean islands are more directly exposed
+  # to the trade-wind corridor, while Puerto Rico is partly sheltered by its
+  # larger land mass and Miami sits in a weaker continental / sea-breeze regime.
+  bg_means <- tibble::tribble(
+    ~location,      ~mean_kt, ~shape,
+    "St_Martin",      9.5,      2.0,
+    "Saba",          10.5,      2.0,
+    "Statia",        10.0,      2.0,
+    "Puerto_Rico",    8.5,      2.0,
+    "Miami",          5.5,      2.2
+  )
+
+  weibull_params <- stats::setNames(
+    lapply(seq_len(nrow(bg_means)), function(i) {
+      tibble::tibble(
+        month = 1:12,
+        shape = bg_means$shape[i],
+        scale = weibull_scale_from_mean(bg_means$mean_kt[i], bg_means$shape[i])
+      )
+    }),
+    bg_means$location
+  )
+
+  make_background_wind_cfg(
+    weibull_params = weibull_params,
+    ar1 = 0.4
+  )
+}
+
+bg_cfg <- make_stress_test_background_wind_cfg()
+
+# =============================================================================
 # Part 1: Stationary baseline — 2,000 synthetic years
 # =============================================================================
 
@@ -90,7 +147,8 @@ message("Part 1: Stationary baseline (", N_SIM, " years, seed = ", SEED, ")")
 cfg_base <- make_hazard_cfg(
   data_path        = data_path,
   simulation_years = N_SIM,
-  climate          = make_climate_cfg(scenario = "stationary")
+  climate          = make_climate_cfg(scenario = "stationary"),
+  background_wind  = bg_cfg
 )
 
 out_base <- run_hazard_model(cfg_base, targets = targets, seed = SEED, verbose = FALSE)
@@ -110,10 +168,17 @@ daily_base_list <- generate_daily_hazard_impact_spatial(
   seed        = SEED
 )
 
+baseline_paths <- save_daily_hazard_csvs(
+  daily = daily_base_list,
+  scenario = "baseline",
+  out_dir = OUTPUT_DIR
+)
+message("  Wrote baseline CSVs to ", OUTPUT_DIR, " (", length(baseline_paths), " files)")
 
 
-# Combine into a single tibble (location column already present in each element)
-daily_base <- dplyr::bind_rows(daily_base_list)
+
+# Combine into a single tibble
+daily_base <- dplyr::bind_rows(daily_base_list, .id = "location")
 
 # --- Compute annual metrics aggregated across all target locations ---
 
@@ -221,7 +286,7 @@ focal_sids <- stats::setNames(vector("list", length(selected_ids)),
 
 for (yr in selected_ids) {
   yr_hur <- dplyr::bind_rows(lapply(baseline_stress, function(df) {
-    df[df$sim_year == yr & !is.na(df$event_class) & df$event_class == "HUR", ]
+    df[df$sim_year == yr & !is.na(df$event_id) & df$wind_kt >= 64, ]
   }))
   if (nrow(yr_hur) == 0L) {
     warning("No HUR-class days found in baseline for year ", yr, ". Focal pin skipped.")
@@ -273,7 +338,8 @@ for (scen in KNMI_SCENARIOS) {
     simulation_years = N_SIM,
     climate          = make_climate_cfg(scenario = scen,
                                         target_year = TARGET_YEAR,
-                                        perturb = TRUE)
+                                        perturb = TRUE),
+    background_wind  = bg_cfg
   )
 
   # Same seed → common random numbers; differences isolate climate forcing only.
@@ -308,6 +374,13 @@ for (scen in KNMI_SCENARIOS) {
     pinned_sids = focal_sids
   )
 
+  cc_paths <- save_daily_hazard_csvs(
+    daily = cc_daily_all,
+    scenario = scen,
+    out_dir = OUTPUT_DIR
+  )
+  message("  [", scen, "] Wrote ", length(cc_paths), " CSVs to ", OUTPUT_DIR)
+
   # Retain only the 5 selected stress-test years for downstream use
   cc_stress[[scen]] <- lapply(cc_daily_all, function(df) {
     df[df$sim_year %in% selected_ids, ]
@@ -328,6 +401,7 @@ message("Rating metrics    : r_peak (w=", w_peak, ") + r_damage (w=", w_damage, 
 message("Selected year IDs : ", paste(selected_ids, collapse = ", "),
         "  [", paste0("Q", round(QUANTILE_PROBS * 100), collapse = " / "), "]")
 message("CC scenarios      : ", paste(KNMI_SCENARIOS, collapse = ", "))
+message("Raw CSV output    : ", OUTPUT_DIR)
 message("Freeze frequency  : ", FREEZE_FREQUENCY)
 message("")
 message("Objects in workspace:")

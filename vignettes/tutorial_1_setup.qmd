@@ -310,7 +310,7 @@ The returned object is a named list of daily tibbles — one per location.
 
 **Step 5 — Combine overlapping events.** Multiple events that overlap in calendar time are reduced to the daily maximum sustained wind. This avoids double-counting while still capturing compound seasons.
 
-**Step 6 — Derived daily fields.** Apply the gust factor, the damage function (`damage = list(method = "intensity")` returns the normalized intensity-based damage proxy; `"powerlaw"` is also available), and forward dominant-event metadata (`event_id`, `event_class`, `pressure_hpa`, `rmw_km`).
+**Step 6 — Derived daily fields.** Apply the damage function (`damage = list(method = "intensity")` returns the normalized intensity-based damage proxy; `"powerlaw"` is also available), estimate `surge_m`, and forward dominant-event metadata (`event_id`, `pressure_hpa`, `rmw_km`).
 
 ::: callout-tip
 ## Common-random-numbers comparisons
@@ -331,14 +331,11 @@ head(daily_by_loc[["Saba"]])
 
 | Column | Description |
 |---|---|
-| `location` | Target site. |
 | `sim_year` | Simulated year index. |
-| `scenario` | Scenario label carried through to downstream tables. |
 | `date` | Calendar date (year derived from `year0`). |
 | `wind_kt` | Daily site-level sustained wind (kt). |
-| `wind_gust_kt` | `wind_kt × gust_factor`. |
 | `surge_m` | Estimated storm surge (m), derived from event properties. |
-| `event_id` / `event_class` | Identifier and class (`TS` / `HUR`) of the dominant event on that day. |
+| `event_id` | Identifier of the dominant event on that day. |
 | `pressure_hpa` / `pressure_deficit_hpa` | Central pressure and deficit of the dominant event. |
 | `rmw_km` | Radius of maximum wind of the dominant event. |
 | `damage_intensity` | Normalised hazard intensity on a 0–1 scale. |
@@ -477,7 +474,7 @@ Collapse the daily series into per-site annual statistics.
 
 ```{r}
 #| label: annual-summary
-daily_all <- bind_rows(daily_by_loc)
+daily_all <- bind_rows(daily_by_loc, .id = "location")
 
 annual_summary <- daily_all |>
   group_by(location, sim_year) |>

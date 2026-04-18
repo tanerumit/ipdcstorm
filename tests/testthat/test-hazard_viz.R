@@ -92,3 +92,23 @@ test_that("save_hazard_viz_plots uses deterministic validation filenames", {
   expect_identical(names(first_result$paths), names(second_result$paths))
   expect_identical(basename(unname(first_result$paths)), basename(unname(second_result$paths)))
 })
+
+test_that("save_hazard_viz_plots accepts reduced-schema daily lists", {
+  tmp_dir <- withr::local_tempdir()
+  withr::local_dir(tmp_dir)
+
+  daily_list <- split(
+    dplyr::select(hazard_viz_daily_fixture(), -location, -event_class),
+    hazard_viz_daily_fixture()$location
+  )
+
+  result <- save_hazard_viz_plots(
+    daily = daily_list,
+    output_dir = "reduced",
+    location_name = "ignored"
+  )
+
+  expect_true(file.exists(file.path("reduced", "Saba_wind_timeseries.png")))
+  expect_true(file.exists(file.path("reduced", "St_Eustatius_wind_timeseries.png")))
+  expect_true("rate_comparison" %in% names(result$plots))
+})

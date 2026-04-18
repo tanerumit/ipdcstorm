@@ -143,6 +143,17 @@ test_that("query_storm_track_years returns location/sim_year tibble for matched 
   expect_setequal(res$sim_year, c(1L, 2L))
 })
 
+test_that("query_storm_track_years reconstructs location from reduced-schema daily lists", {
+  daily_list <- list(
+    Saba = dplyr::select(.daily_fixture(), -location)
+  )
+
+  res <- query_storm_track_years(daily_list, storm_id = "2017242N16333")
+
+  expect_setequal(res$location, "Saba")
+  expect_setequal(res$sim_year, c(1L, 2L))
+})
+
 test_that("query_storm_track_years returns empty tibble for SID not in data", {
   res <- suppressMessages(
     query_storm_track_years(.daily_fixture(), storm_id = "1900999N00000")
@@ -187,6 +198,22 @@ test_that("query_impact_years returns tibble with location, sim_year and metric 
   expect_s3_class(res, "data.frame")
   expect_true(all(c("location", "sim_year") %in% names(res)))
   expect_true("peak_wind_kt" %in% names(res))
+})
+
+test_that("query_impact_years reconstructs location from reduced-schema daily lists", {
+  daily_list <- list(
+    Saba = dplyr::select(.daily_fixture(), -location)
+  )
+
+  res <- query_impact_years(
+    daily_list,
+    storm_id  = "2017242N16333",
+    metric    = "peak_wind_kt",
+    threshold = 65
+  )
+
+  expect_true(all(res$location == "Saba"))
+  expect_setequal(res$sim_year, c(1L, 2L))
 })
 
 test_that("query_impact_years explicit threshold filters correctly", {

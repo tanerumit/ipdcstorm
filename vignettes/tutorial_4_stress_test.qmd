@@ -128,7 +128,7 @@ Each year is summarised on basin-wide metrics: peak site-level wind, hurricane- 
 
 ```{r}
 #| label: annual-metrics
-daily_base <- bind_rows(daily_base_list)
+daily_base <- bind_rows(daily_base_list, .id = "location")
 
 annual_all <- daily_base |>
   group_by(sim_year, location) |>
@@ -203,7 +203,7 @@ focal_sids <- setNames(vector("list", length(selected_ids)),
 
 for (yr in selected_ids) {
   yr_hur <- bind_rows(lapply(baseline_stress, function(df) {
-    df[df$sim_year == yr & !is.na(df$event_class) & df$event_class == "HUR", ]
+    df[df$sim_year == yr & !is.na(df$event_id) & df$wind_kt >= 64, ]
   }))
   if (nrow(yr_hur) == 0L) {
     focal_sids[[as.character(yr)]] <- NA_character_

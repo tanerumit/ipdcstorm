@@ -17,9 +17,11 @@ save_hazard_viz_plots(
 )
 }
 \arguments{
-\item{daily}{A data frame or tibble with columns required by
-\code{plot_monthly_events()}, \code{plot_annual_counts()}, \code{plot_wind_timeseries()},
-\code{plot_wind_distribution()}, and \code{plot_intensity_duration()}.}
+\item{daily}{A data frame/tibble or named list of daily tables. Inputs must
+contain the columns required by \code{plot_monthly_events()},
+\code{plot_annual_counts()}, \code{plot_wind_timeseries()},
+\code{plot_wind_distribution()}, and \code{plot_intensity_duration()}. Named lists
+are flattened using the list names as \code{location}.}
 
 \item{output_dir}{Character scalar path to the folder where PNG files are
 saved. The directory is created if it does not already exist.}
@@ -52,7 +54,6 @@ d <- data.frame(
   date = as.Date("2001-01-01") + 0:364,
   wind_kt = pmax(1, 20 + rnorm(365, sd = 8)),
   event_id = sample(c(NA, 1:8), 365, replace = TRUE),
-  event_class = sample(c(NA, "TS", "HUR"), 365, replace = TRUE),
   location = "A",
   sim_year = 2001
 )

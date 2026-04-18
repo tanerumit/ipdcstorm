@@ -1460,13 +1460,19 @@ make_background_wind_cfg <- function(weibull_params,
 #'   as \code{\link{generate_daily_hazard_impact_spatial}()}.
 #' @param pulse_shape Character scalar pulse shape; \code{"cosine"} or
 #'   \code{"triangle"}.
-#' @param scenario Optional character scalar scenario label carried into output.
+#' @param scenario Optional character scalar scenario label used for run
+#'   bookkeeping and progress messages; it is not stored in the returned daily
+#'   tables.
 #' @param seed Optional integer scalar seed. Defaults to
 #'   \code{out$run_metadata$seed} or \code{1L}. Per-location library seeds are
 #'   offset by location index for reproducibility.
 #'
-#' @return Named list of tibbles — one per requested location — with the same
-#'   column schema as \code{\link{generate_daily_hazard_impact_spatial}()}.
+#' @return Named list of tibbles — one per requested location — with columns
+#'   \code{sim_year}, \code{date}, \code{wind_kt}, \code{surge_m},
+#'   \code{event_id}, \code{pressure_hpa}, \code{pressure_deficit_hpa},
+#'   \code{rmw_km}, \code{damage_intensity}, \code{damage_rate}, and
+#'   \code{cum_damage}. Each tibble also carries \code{location} and
+#'   \code{gust_factor} as attributes.
 #'
 #' @seealso
 #' \code{\link{generate_daily_hazard_impact_spatial}},
@@ -1779,7 +1785,6 @@ generate_daily_hazard_impact_spatial <- function(
   for (loc in location) {
     tbl <- dplyr::bind_rows(results[[loc]]) |>
       dplyr::mutate(
-        wind_gust_kt = .data$wind_kt * gust_factor,
         surge_m      = ifelse(
           is.finite(.data$pressure_hpa),
           0.14 * (1013 - .data$pressure_hpa),
@@ -1787,14 +1792,13 @@ generate_daily_hazard_impact_spatial <- function(
         )
       ) |>
       dplyr::select(
-        "location", "sim_year", "scenario", "date",
-        "wind_kt", "wind_gust_kt", "surge_m",
-        "event_id", "event_class", "pressure_hpa",
+        "sim_year", "date", "wind_kt", "surge_m",
+        "event_id", "pressure_hpa",
         "pressure_deficit_hpa", "rmw_km",
         "damage_intensity", "damage_rate", "cum_damage"
-      ) |>
-      dplyr::relocate("location", "sim_year", "scenario", "date")
+      )
     attr(tbl, "gust_factor") <- gust_factor
+    attr(tbl, "location") <- loc
     results[[loc]] <- tbl
   }
 

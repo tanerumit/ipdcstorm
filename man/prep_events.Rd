@@ -8,8 +8,9 @@ prep_events(daily)
 }
 \arguments{
 \item{daily}{A data frame or tibble containing daily rows with columns
-\code{location}, \code{sim_year}, \code{event_id}, \code{event_class}, \code{date}, and \code{wind_kt}.
-Rows with \code{NA} in \code{event_id} are excluded.}
+\code{sim_year}, \code{event_id}, \code{date}, and \code{wind_kt}. A \code{location} column is
+optional for single-location inputs and is reconstructed from tibble
+metadata when absent. Rows with \code{NA} in \code{event_id} are excluded.}
 }
 \value{
 A tibble with one row per unique (\code{location}, \code{sim_year}, \code{event_id})

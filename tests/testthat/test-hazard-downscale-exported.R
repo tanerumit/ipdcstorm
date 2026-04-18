@@ -133,11 +133,15 @@ test_that("daily hazard generation and damage helpers return public output schem
   powerlaw <- ipdcstorm:::damage_rate_from_wind(c(20, 80, 200), d_max = 0.08)
 
   expect_equal(names(daily_list), "Saba")
-  expect_true(all(c(
-    "location", "sim_year", "scenario", "date", "wind_kt", "wind_gust_kt",
-    "surge_m", "event_id", "event_class", "pressure_hpa", "pressure_deficit_hpa",
-    "rmw_km", "damage_intensity", "damage_rate", "cum_damage"
-  ) %in% names(daily)))
+  expect_identical(
+    names(daily),
+    c(
+      "sim_year", "date", "wind_kt", "surge_m", "event_id",
+      "pressure_hpa", "pressure_deficit_hpa", "rmw_km",
+      "damage_intensity", "damage_rate", "cum_damage"
+    )
+  )
+  expect_false(any(c("location", "scenario", "wind_gust_kt", "event_class") %in% names(daily)))
   expect_identical(attr(daily, "gust_factor"), 1.2)
   expect_true(any(daily$wind_kt > 0))
   expect_equal(damage_aug$damage_intensity[c(1, 3)], c(0, 1))

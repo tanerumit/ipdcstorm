@@ -83,6 +83,23 @@
 .resolve_daily_tbl <- function(daily, location = NULL) {
   if (is.data.frame(daily)) {
     tbl <- tibble::as_tibble(daily)
+    if (!("location" %in% names(tbl))) {
+      attr_location <- attr(daily, "location", exact = TRUE)
+      if (is.character(attr_location) && length(attr_location) == 1L &&
+          !is.na(attr_location) && nzchar(attr_location)) {
+        tbl$location <- attr_location
+      } else if (!is.null(location)) {
+        if (!is.character(location) || length(location) != 1L ||
+            is.na(location) || !nzchar(location)) {
+          stop(
+            "When `daily` is a single-location tibble without a `location` column, ",
+            "`location` must be a single non-empty character string.",
+            call. = FALSE
+          )
+        }
+        tbl$location <- location
+      }
+    }
   } else if (is.list(daily) && !is.data.frame(daily)) {
     if (!is.null(location)) {
       missing_locs <- setdiff(location, names(daily))
@@ -93,9 +110,9 @@
           call. = FALSE
         )
       }
-      tbl <- dplyr::bind_rows(daily[location])
+      tbl <- dplyr::bind_rows(daily[location], .id = "location")
     } else {
-      tbl <- dplyr::bind_rows(daily)
+      tbl <- dplyr::bind_rows(daily, .id = "location")
     }
     tbl <- tibble::as_tibble(tbl)
   } else {

@@ -97,6 +97,11 @@ daily <- generate_daily_hazard_impact_spatial(
 )
 ```
 
+`daily` is a named list with one tibble per location. Each per-location table
+contains `sim_year`, `date`, `wind_kt`, `surge_m`, `event_id`,
+`pressure_hpa`, `pressure_deficit_hpa`, `rmw_km`, `damage_intensity`,
+`damage_rate`, and `cum_damage`.
+
 For production runs, replace `data_path` with the full IBTrACS North
 Atlantic CSV (`ibtracs.NA.list.v04r01.csv`), available from NOAA NCEI.
 

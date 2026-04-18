@@ -8,7 +8,7 @@ plot_monthly_events(daily, normalize = FALSE)
 }
 \arguments{
 \item{daily}{A data frame or tibble with columns required by \code{prep_events()}
-(\code{location}, \code{sim_year}, \code{event_id}, \code{event_class}, \code{date}, \code{wind_kt}).
+(\code{sim_year}, \code{event_id}, \code{date}, \code{wind_kt}, and optional \code{location}).
 Rows with \code{NA} \code{event_id} are excluded during event extraction.}
 
 \item{normalize}{Logical scalar; if \code{TRUE}, plot events per year.}

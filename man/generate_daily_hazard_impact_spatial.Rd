@@ -36,15 +36,21 @@ as \code{\link{generate_daily_hazard_impact_spatial}()}.}
 \item{pulse_shape}{Character scalar pulse shape; \code{"cosine"} or
 \code{"triangle"}.}
 
-\item{scenario}{Optional character scalar scenario label carried into output.}
+\item{scenario}{Optional character scalar scenario label used for run
+bookkeeping and progress messages; it is not stored in the returned daily
+tables.}
 
 \item{seed}{Optional integer scalar seed. Defaults to
 \code{out$run_metadata$seed} or \code{1L}. Per-location library seeds are
 offset by location index for reproducibility.}
 }
 \value{
-Named list of tibbles — one per requested location — with the same
-column schema as \code{\link{generate_daily_hazard_impact_spatial}()}.
+Named list of tibbles — one per requested location — with columns
+\code{sim_year}, \code{date}, \code{wind_kt}, \code{surge_m},
+\code{event_id}, \code{pressure_hpa}, \code{pressure_deficit_hpa},
+\code{rmw_km}, \code{damage_intensity}, \code{damage_rate}, and
+\code{cum_damage}. Each tibble also carries \code{location} and
+\code{gust_factor} as attributes.
 }
 \description{
 Drop-in replacement for \code{\link{generate_daily_hazard_impact_spatial}()} that

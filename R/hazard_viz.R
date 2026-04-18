@@ -82,19 +82,32 @@ prep_daily <- function(daily_impact) {
 #' Summarize event-level features from daily rows
 #'
 #' @param daily A data frame or tibble containing daily rows with columns
-#'   `location`, `sim_year`, `event_id`, `event_class`, `date`, and `wind_kt`.
-#'   Rows with `NA` in `event_id` are excluded.
+#'   `sim_year`, `event_id`, `date`, and `wind_kt`. A `location` column is
+#'   optional for single-location inputs and is reconstructed from tibble
+#'   metadata when absent. Rows with `NA` in `event_id` are excluded.
 #'
 #' @return A tibble with one row per unique (`location`, `sim_year`, `event_id`)
 #'   and columns `event_class`, `start_date`, `end_date`, `dur_days`,
 #'   `max_wind_kt`, `start_doy`, and `start_month`.
 #' @keywords internal
 prep_events <- function(daily) {
+  daily <- tibble::as_tibble(daily)
+  if (!("location" %in% names(daily))) {
+    location_attr <- attr(daily, "location", exact = TRUE)
+    daily$location <- if (is.character(location_attr) &&
+      length(location_attr) == 1L &&
+      !is.na(location_attr) &&
+      nzchar(location_attr)) {
+      location_attr
+    } else {
+      "location_1"
+    }
+  }
+
   daily %>%
     filter(!is.na(event_id)) %>%
     group_by(location, sim_year, event_id) %>%
     summarise(
-      event_class = first(na.omit(event_class)),
       start_date  = min(date),
       end_date    = max(date),
       dur_days    = as.integer(end_date - start_date) + 1L,
@@ -102,7 +115,7 @@ prep_events <- function(daily) {
       .groups = "drop"
     ) %>%
     mutate(
-      event_class = ifelse(event_class == "HUR", "HUR", "TS"),
+      event_class = ifelse(max_wind_kt >= 64, "HUR", "TS"),
       start_doy   = as.integer(format(start_date, "%j")),
       start_month = as.integer(format(start_date, "%m"))
     )
@@ -119,13 +132,13 @@ prep_events <- function(daily) {
 #'   wind speed.
 #'
 #' @details If `events` is `NULL`, event summaries are computed from `daily`.
-#'   Segment colors collapse event classes to `TS` and `HUR` (anything not equal
-#'   to `"HUR"` is treated as `TS`). `NA` values in `event_id` are ignored when
-#'   computing events.
+#'   Event class is derived from each event's peak daily wind (`HUR` for peaks
+#'   at or above 64 kt, otherwise `TS`). `NA` values in `event_id` are ignored
+#'   when computing events.
 #'
 #' @param daily A data frame or tibble of daily records with columns `date`
-#'   (`Date`), `wind_kt` (numeric, knots), `event_id` (event identifier; `NA`
-#'   means no event), and `event_class` (character/factor).
+#'   (`Date`), `wind_kt` (numeric, knots), and `event_id` (event identifier;
+#'   `NA` means no event).
 #' @param events Optional precomputed event table (data frame/tibble) with
 #'   columns `start_date`, `end_date` (`Date`), `max_wind_kt` (numeric, knots),
 #'   and `event_class` (`"TS"`/`"HUR"`). If `NULL`, it is derived from `daily`.
@@ -197,12 +210,12 @@ plot_wind_timeseries <- function(daily,
 #'
 #' @details For `metric = "event_days"`, each day with non-`NA` `event_id`
 #'   contributes one count. For `metric = "starts"`, counts are based on event
-#'   start dates derived from grouped events. Event classes are collapsed to
-#'   `TS`/`HUR` using the same rule as `prep_events()`.
+#'   start dates derived from grouped events. Event classes are derived from the
+#'   event peak wind using the same rule as `prep_events()`.
 #'
 #' @param daily A data frame or tibble with at least `date` (`Date`),
-#'   `event_id`, `event_class`, plus fields required by `prep_events()` when
-#'   `metric = "starts"` (`location`, `sim_year`, `wind_kt`).
+#'   `event_id`, plus fields required by `prep_events()` when
+#'   `metric = "starts"` (`sim_year`, `wind_kt`, and optional `location`).
 #' @param metric Character scalar; one of `"event_days"` or `"starts"`.
 #' @param facet_class Logical scalar; if `TRUE`, create one panel per class.
 #' @param binwidth Numeric scalar > 0; histogram bin width in day-of-year units
@@ -228,11 +241,29 @@ plot_seasonality_doy <- function(daily,
 
 
   metric <- match.arg(metric)
+  daily_tbl <- tibble::as_tibble(daily)
+  if (!("location" %in% names(daily_tbl))) {
+    location_attr <- attr(daily, "location", exact = TRUE)
+    daily_tbl$location <- if (is.character(location_attr) &&
+      length(location_attr) == 1L &&
+      !is.na(location_attr) &&
+      nzchar(location_attr)) {
+      location_attr
+    } else {
+      "location_1"
+    }
+  }
+  events <- prep_events(daily_tbl)
 
   if (metric == "event_days") {
     # Duration-weighted: count each day an event is active
-    plot_data <- daily %>%
-      filter(!is.na(event_id), !is.na(event_class)) %>%
+    plot_data <- daily_tbl %>%
+      filter(!is.na(event_id)) %>%
+      left_join(
+        events %>% select(location, sim_year, event_id, event_class),
+        by = c("location", "sim_year", "event_id")
+      ) %>%
+      filter(!is.na(event_class)) %>%
       mutate(
         doy = as.integer(format(date, "%j")),
         event_class = ifelse(event_class == "HUR", "HUR", "TS")
@@ -242,7 +273,6 @@ plot_seasonality_doy <- function(daily,
 
   } else {
     # Starts only: count event initiations
-    events <- prep_events(daily)
     plot_data <- events %>%
       transmute(doy = start_doy, event_class)
     ylab <- "Event starts"
@@ -285,7 +315,7 @@ plot_seasonality_doy <- function(daily,
 #'   divided by `n_distinct(daily$sim_year)`.
 #'
 #' @param daily A data frame or tibble with columns required by `prep_events()`
-#'   (`location`, `sim_year`, `event_id`, `event_class`, `date`, `wind_kt`).
+#'   (`sim_year`, `event_id`, `date`, `wind_kt`, and optional `location`).
 #'   Rows with `NA` `event_id` are excluded during event extraction.
 #' @param normalize Logical scalar; if `TRUE`, plot events per year.
 #'
@@ -750,9 +780,11 @@ plot_wind_distribution <- function(daily,
 #'   titles, subtitles, and base theme sizing, and saves each plot to `output_dir`
 #'   as a PNG file.
 #'
-#' @param daily A data frame or tibble with columns required by
-#'   `plot_monthly_events()`, `plot_annual_counts()`, `plot_wind_timeseries()`,
-#'   `plot_wind_distribution()`, and `plot_intensity_duration()`.
+#' @param daily A data frame/tibble or named list of daily tables. Inputs must
+#'   contain the columns required by `plot_monthly_events()`,
+#'   `plot_annual_counts()`, `plot_wind_timeseries()`,
+#'   `plot_wind_distribution()`, and `plot_intensity_duration()`. Named lists
+#'   are flattened using the list names as `location`.
 #' @param output_dir Character scalar path to the folder where PNG files are
 #'   saved. The directory is created if it does not already exist.
 #' @param location_name Character scalar used in standardized plot titles.
@@ -771,7 +803,6 @@ plot_wind_distribution <- function(daily,
 #'   date = as.Date("2001-01-01") + 0:364,
 #'   wind_kt = pmax(1, 20 + rnorm(365, sd = 8)),
 #'   event_id = sample(c(NA, 1:8), 365, replace = TRUE),
-#'   event_class = sample(c(NA, "TS", "HUR"), 365, replace = TRUE),
 #'   location = "A",
 #'   sim_year = 2001
 #' )
@@ -788,8 +819,9 @@ save_hazard_viz_plots <- function(daily,
                                   thr_tc = 34,
                                   thr_hur = 64) {
 
-  if (missing(daily) || is.null(daily) || !is.data.frame(daily)) {
-    stop("`daily` must be a data frame.")
+  if (missing(daily) || is.null(daily) ||
+      (!is.data.frame(daily) && !(is.list(daily) && !is.data.frame(daily)))) {
+    stop("`daily` must be a data frame or a named list of daily tables.")
   }
   if (missing(output_dir) || !is.character(output_dir) || length(output_dir) != 1L ||
       is.na(output_dir) || !nzchar(output_dir)) {
@@ -800,7 +832,9 @@ save_hazard_viz_plots <- function(daily,
     stop("`location_name` must be a non-empty character scalar.")
   }
 
-  required_cols <- c("date", "wind_kt", "event_id", "event_class", "location", "sim_year")
+  daily <- .resolve_daily_tbl(daily)
+
+  required_cols <- c("date", "wind_kt", "event_id", "location", "sim_year")
   missing_cols <- setdiff(required_cols, names(daily))
   if (length(missing_cols) > 0L) {
     stop(sprintf(

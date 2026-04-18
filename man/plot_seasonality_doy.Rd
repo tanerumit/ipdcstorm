@@ -13,8 +13,8 @@ plot_seasonality_doy(
 }
 \arguments{
 \item{daily}{A data frame or tibble with at least \code{date} (\code{Date}),
-\code{event_id}, \code{event_class}, plus fields required by \code{prep_events()} when
-\code{metric = "starts"} (\code{location}, \code{sim_year}, \code{wind_kt}).}
+\code{event_id}, plus fields required by \code{prep_events()} when
+\code{metric = "starts"} (\code{sim_year}, \code{wind_kt}, and optional \code{location}).}
 
 \item{metric}{Character scalar; one of \code{"event_days"} or \code{"starts"}.}
 
@@ -33,8 +33,8 @@ event starts, optionally faceted by event class.
 \details{
 For \code{metric = "event_days"}, each day with non-\code{NA} \code{event_id}
 contributes one count. For \code{metric = "starts"}, counts are based on event
-start dates derived from grouped events. Event classes are collapsed to
-\code{TS}/\code{HUR} using the same rule as \code{prep_events()}.
+start dates derived from grouped events. Event classes are derived from the
+event peak wind using the same rule as \code{prep_events()}.
 }
 \examples{
 d <- data.frame(
