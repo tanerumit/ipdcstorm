@@ -258,6 +258,7 @@ plot_seasonality_doy <- function(daily,
   if (metric == "event_days") {
     # Duration-weighted: count each day an event is active
     plot_data <- daily_tbl %>%
+      select(-dplyr::any_of("event_class")) %>%
       filter(!is.na(event_id)) %>%
       left_join(
         events %>% select(location, sim_year, event_id, event_class),

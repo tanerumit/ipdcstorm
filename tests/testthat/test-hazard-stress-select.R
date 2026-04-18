@@ -61,6 +61,68 @@
 .stress_metrics <- function() compute_stress_year_metrics(.stress_daily_fixture())
 .stress_scored  <- function() aggregate_stress_metrics(.stress_metrics())
 
+.compound_stress_fixture <- function() {
+  dates <- seq(as.Date("2000-01-01"), by = "day", length.out = 200L)
+  base <- tidyr::expand_grid(
+    location = c("Saba", "Statia", "Miami"),
+    sim_year = 1:2,
+    date = dates
+  ) |>
+    dplyr::mutate(
+      wind_kt = 0,
+      event_id = NA_character_,
+      damage_rate = 0
+    )
+
+  add_event <- function(tbl, location, sim_year, days, wind, event_id) {
+    idx <- tbl$location == location &
+      tbl$sim_year == sim_year &
+      match(tbl$date, dates) %in% days
+    tbl$wind_kt[idx] <- wind
+    tbl$event_id[idx] <- event_id
+    tbl$damage_rate[idx] <- (wind / 100)^3 * 0.02
+    tbl
+  }
+
+  out <- base
+
+  out <- add_event(
+    out, "Saba", 1L, 100:102, c(72, 80, 76),
+    "AL012000_y2000_1"
+  )
+  out <- add_event(
+    out, "Statia", 1L, 101:103, c(78, 85, 81),
+    "AL012000_y2000_1"
+  )
+  out <- add_event(
+    out, "Saba", 1L, 130:131, c(42, 38),
+    "AL022000_y2000_2"
+  )
+  out <- add_event(
+    out, "Statia", 1L, 150:151, c(36, 34),
+    "AL032000_y2000_3"
+  )
+  out <- add_event(
+    out, "Miami", 1L, 90:92, c(88, 95, 90),
+    "AL992000_y2000_9"
+  )
+
+  out <- add_event(
+    out, "Saba", 2L, 120:121, c(68, 72),
+    "AL042001_y2001_1"
+  )
+  out <- add_event(
+    out, "Statia", 2L, 121:122, c(70, 74),
+    "AL042001_y2001_1"
+  )
+
+  out |>
+    dplyr::arrange(.data$location, .data$sim_year, .data$date) |>
+    dplyr::group_by(.data$location, .data$sim_year) |>
+    dplyr::mutate(cum_damage = cumsum(.data$damage_rate)) |>
+    dplyr::ungroup()
+}
+
 # =============================================================================
 # compute_stress_year_metrics
 # =============================================================================
@@ -126,6 +188,75 @@ test_that("compute_stress_year_metrics returns empty tibble with correct schema 
   expect_equal(nrow(result), 0L)
   expect_true("sim_year" %in% names(result))
   expect_true("peak_wind_kt" %in% names(result))
+})
+
+test_that("compute_compound_stress_year_metrics returns one row per year with compound columns", {
+  metrics <- ipdcstorm:::compute_compound_stress_year_metrics(
+    .compound_stress_fixture(),
+    location = c("Saba", "Statia"),
+    window_days = 60L
+  )
+
+  expected <- c(
+    "sim_year", "focal_event_id", "focal_start_date", "focal_end_date",
+    "focal_peak_wind_kt", "compound_window_end_date",
+    "compound_n_events", "compound_n_aftermath_events",
+    "compound_cum_damage", "compound_max_damage_rate"
+  )
+  expect_true(all(expected %in% names(metrics)))
+  expect_equal(nrow(metrics), 2L)
+})
+
+test_that("compute_compound_stress_year_metrics anchors on the strongest Saba/Statia focal event", {
+  metrics <- ipdcstorm:::compute_compound_stress_year_metrics(
+    .compound_stress_fixture(),
+    location = c("Saba", "Statia"),
+    window_days = 60L
+  )
+
+  yr1 <- metrics[metrics$sim_year == 1L, ]
+
+  expect_equal(yr1$focal_event_id, "AL012000_y2000_1")
+  expect_equal(yr1$focal_peak_wind_kt, 85)
+  expect_equal(as.Date(yr1$focal_start_date), as.Date("2000-04-09"))
+  expect_equal(as.Date(yr1$focal_end_date), as.Date("2000-04-12"))
+})
+
+test_that("compute_compound_stress_year_metrics counts follow-on events and damage in the 60-day window", {
+  fixture <- .compound_stress_fixture()
+  metrics <- ipdcstorm:::compute_compound_stress_year_metrics(
+    fixture,
+    location = c("Saba", "Statia"),
+    window_days = 60L
+  )
+
+  yr1 <- metrics[metrics$sim_year == 1L, ]
+  damage_expected <- fixture |>
+    dplyr::filter(
+      .data$location %in% c("Saba", "Statia"),
+      .data$sim_year == 1L,
+      .data$date >= as.Date("2000-04-09"),
+      .data$date <= as.Date("2000-06-11")
+    ) |>
+    dplyr::summarise(total = sum(.data$damage_rate), .groups = "drop") |>
+    dplyr::pull(.data$total)
+
+  expect_equal(yr1$compound_n_events, 3L)
+  expect_equal(yr1$compound_n_aftermath_events, 2L)
+  expect_equal(yr1$compound_cum_damage, damage_expected, tolerance = 1e-10)
+})
+
+test_that("compute_compound_stress_year_metrics ignores non-target locations", {
+  metrics <- ipdcstorm:::compute_compound_stress_year_metrics(
+    .compound_stress_fixture(),
+    location = c("Saba", "Statia"),
+    window_days = 60L
+  )
+
+  yr1 <- metrics[metrics$sim_year == 1L, ]
+
+  expect_lt(yr1$focal_peak_wind_kt, 95)
+  expect_equal(yr1$focal_event_id, "AL012000_y2000_1")
 })
 
 # =============================================================================

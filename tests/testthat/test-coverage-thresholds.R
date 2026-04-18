@@ -558,9 +558,9 @@ test_that("downscale hazard-impact wrapper executes intensity and powerlaw paths
 
   expect_true("Saba" %in% names(intensity))
   expect_true("Saba" %in% names(powerlaw))
-  expect_true(all(c("wind_gust_kt", "damage_intensity", "damage_rate", "cum_damage") %in% names(intensity$Saba)))
-  expect_true(all(intensity$Saba$scenario == "baseline"))
-  expect_true(all(powerlaw$Saba$scenario == "future"))
+  expect_true(all(c("damage_intensity", "damage_rate", "cum_damage") %in% names(intensity$Saba)))
+  expect_false(any(c("wind_gust_kt", "scenario") %in% names(intensity$Saba)))
+  expect_false(any(c("wind_gust_kt", "scenario") %in% names(powerlaw$Saba)))
   expect_equal(attr(intensity$Saba, "gust_factor"), 1.2)
   expect_true(any(!is.na(intensity$Saba$event_id)))
   expect_true(max(powerlaw$Saba$damage_rate, na.rm = TRUE) <= 0.08)

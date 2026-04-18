@@ -3,10 +3,12 @@
 #
 # Purpose:
 #   Part 1 — Select 5 representative high-impact years from 2,000 synthetic
-#             baseline years. Candidates must include at least one event at or
-#             above the IRMA 2017 site-level impact (peak wind >= 80 kt). Years
-#             are rated on a two-metric composite score (r_peak, r_damage) with
-#             configurable weights, then sampled at Q50/Q80/Q90/Q95/Q99.
+#             baseline years. Candidates are filtered using the combined
+#             Saba + Statia focal event and a 60-day compound window. Years
+#             must reach at least IRMA-like focal intensity and include at
+#             least one follow-on event in the aftermath window. Ranking uses
+#             focal-event peak wind and cumulative damage from the focal event
+#             plus the 60-day aftermath, then samples Q50/Q80/Q90/Q95/Q99.
 #
 #   Part 2 — Replay those same 5 year indices under KNMI'23 climate scenarios
 #             (knmi_Ld, knmi_Hd) using the same seed (common random numbers).
@@ -18,7 +20,7 @@
 # Key config switches (all in the Config block below):
 #   TARGET_YEAR      — 2050 or 2100
 #   FREEZE_FREQUENCY — FALSE (full) or TRUE (intensity-only)
-#   w_peak / w_damage — relative weights for the composite stress rating
+#   w_peak / w_damage — relative weights for the compound stress rating
 #
 # Outputs:
 #   selected_ids    — integer[5]: replicable year indices (seed = SEED)
@@ -177,58 +179,47 @@ message("  Wrote baseline CSVs to ", OUTPUT_DIR, " (", length(baseline_paths), "
 
 
 
-# Combine into a single tibble
-daily_base <- dplyr::bind_rows(daily_base_list, .id = "location")
+# --- Compute compound stress metrics from Saba + Statia only ---
 
-# --- Compute annual metrics aggregated across all target locations ---
+compound_metrics <- ipdcstorm:::compute_compound_stress_year_metrics(
+  daily = daily_base_list,
+  sim_years = seq_len(N_SIM),
+  location = c("Saba", "Statia"),
+  window_days = 60L
+)
 
-annual_loc <- daily_base |>
-  group_by(sim_year, location) |>
-  summarise(
-    peak_wind_kt = max(wind_kt, na.rm = TRUE),
-    n_hur_days   = sum(wind_kt >= 64, na.rm = TRUE),
-    n_storm_days = sum(wind_kt >= 34, na.rm = TRUE),
-    total_damage = sum(damage_rate, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-annual_all <- annual_loc |>
-  group_by(sim_year) |>
-  summarise(
-    peak_wind_max    = max(peak_wind_kt),
-    hur_days_total   = sum(n_hur_days),
-    storm_days_total = sum(n_storm_days),
-    damage_total     = sum(total_damage),
-    .groups = "drop"
-  )
-
-# Attach annual storm count from simulation table for compounding metric.
+# Attach annual storm count from simulation table for context.
 # Use the first location — counts are shared across a single sim draw.
 sim_counts <- out_base$sim |>
   filter(location == targets$name[1]) |>
   select(sim_year, n_total)
 
-year_metrics <- annual_all |>
+year_metrics <- compound_metrics |>
   left_join(sim_counts, by = "sim_year")
 
-# --- Filter: require at least one IRMA-level event in the year ---
-irma_candidates <- year_metrics |>
-  filter(peak_wind_max >= IRMA_WIND_KT)
+# --- Filter: require an IRMA-level focal event plus at least one follow-on event ---
+compound_candidates <- year_metrics |>
+  filter(
+    focal_peak_wind_kt >= IRMA_WIND_KT,
+    compound_n_aftermath_events >= 1L
+  )
 
-message("  IRMA-like candidates (peak wind >= ", IRMA_WIND_KT, " kt): ",
-        nrow(irma_candidates), " of ", N_SIM, " years")
+message(
+  "  Compound candidates at Saba + Statia ",
+  "(focal peak >= ", IRMA_WIND_KT, " kt and >= 1 follow-on event in 60 days): ",
+  nrow(compound_candidates), " of ", N_SIM, " years"
+)
 
-# --- Rank candidates on a composite stress rating ---
+# --- Rank candidates on a compound stress rating ---
 #
 # Two metrics, each rank-normalised to [0, 1] within the candidate pool:
 #
-#   r_peak   : max(peak_wind_kt) across all sites — worst instantaneous
-#              intensity; governs single-event structural damage threshold
-#              exceedance (loss scales ~wind^3).
+#   r_peak   : focal peak wind across Saba + Statia — strongest instantaneous
+#              intensity from the combined anchor event.
 #
-#   r_damage : sum(damage_rate) across all days and sites — integrated
-#              portfolio impact; embeds intensity, duration, and multi-event
-#              accumulation in one physically meaningful number.
+#   r_damage : cumulative damage from focal-event onset through 60 days after
+#              focal-event end across Saba + Statia — embeds direct losses plus
+#              compounding follow-on damage during the recovery window.
 #
 # Weights (w_peak + w_damage must sum to 1):
 #   Equal weighting by default; increase w_peak to favour severity-driven
@@ -237,29 +228,39 @@ message("  IRMA-like candidates (peak wind >= ", IRMA_WIND_KT, " kt): ",
 w_peak   <- 0.5
 w_damage <- 0.5
 
-n_cand <- nrow(irma_candidates)
+n_cand <- nrow(compound_candidates)
 
-irma_rated <- irma_candidates |>
+if (n_cand == 0L) {
+  stop(
+    "No compound candidate years satisfy the Saba + Statia focal-event filter.",
+    call. = FALSE
+  )
+}
+
+compound_rated <- compound_candidates |>
   mutate(
-    r_peak   = rank(peak_wind_max, ties.method = "average") / n_cand,
-    r_damage = rank(damage_total,  ties.method = "average") / n_cand,
+    r_peak   = rank(focal_peak_wind_kt, ties.method = "average") / n_cand,
+    r_damage = rank(compound_cum_damage, ties.method = "average") / n_cand,
     rating   = w_peak * r_peak + w_damage * r_damage
   ) |>
   arrange(rating)
 
 # --- Select 5 years at target quantile levels ---
 sel_pos    <- pmax(1L, ceiling(QUANTILE_PROBS * n_cand))
-selected_ids <- irma_rated$sim_year[sel_pos]
+selected_ids <- compound_rated$sim_year[sel_pos]
 
 message("  Selected stress-test year IDs:")
 for (i in seq_along(QUANTILE_PROBS)) {
   yr  <- selected_ids[i]
-  row <- irma_rated[irma_rated$sim_year == yr, ]
+  row <- compound_rated[compound_rated$sim_year == yr, ]
   message(sprintf(
-    "    Q%02d: year %4d | peak=%3.0f kt  hur_days=%2d  n_storms=%d  damage=%.4f  rating=%.3f",
+    paste0(
+      "    Q%02d: year %4d | focal_peak=%3.0f kt  follow_on=%d  ",
+      "compound_damage=%.4f  n_storms=%d  rating=%.3f"
+    ),
     round(QUANTILE_PROBS[i] * 100), yr,
-    row$peak_wind_max, row$hur_days_total,
-    row$n_total, row$damage_total, row$rating
+    row$focal_peak_wind_kt, row$compound_n_aftermath_events,
+    row$compound_cum_damage, row$n_total, row$rating
   ))
 }
 
@@ -269,32 +270,32 @@ baseline_stress <- lapply(daily_base_list, function(df) {
   df[df$sim_year %in% selected_ids, ]
 })
 
-# --- Identify focal SID for each selected year (basin-level peak HUR event) ---
+# --- Identify focal SID for each selected year from the compound focal event ---
 #
 # The event_id in the daily output is formatted as "{SID}_y{cal_year}_{counter}".
 # Stripping the suffix recovers the original IBTrACS SID.
 #
-# Basin-level: pool all target locations, pick the SID driving the highest
-# single-day wind reading across all sites in that year. This SID will be
-# pinned into every scenario run so the focal event always appears, with its
-# intensity and duration perturbed by the scenario's delta_sst.
+# Pool only Saba + Statia when defining the focal event, consistent with the
+# compound ranking metric above. This SID will be pinned into every scenario
+# run so the focal event always appears, with its intensity and duration
+# perturbed by the scenario's delta_sst.
 
-message("\nExtracting basin-level focal SIDs for selected years ...")
+message("\nExtracting compound focal SIDs for selected years ...")
 
 focal_sids <- stats::setNames(vector("list", length(selected_ids)),
                                as.character(selected_ids))
 
 for (yr in selected_ids) {
-  yr_hur <- dplyr::bind_rows(lapply(baseline_stress, function(df) {
-    df[df$sim_year == yr & !is.na(df$event_id) & df$wind_kt >= 64, ]
-  }))
-  if (nrow(yr_hur) == 0L) {
-    warning("No HUR-class days found in baseline for year ", yr, ". Focal pin skipped.")
+  focal_event_id <- compound_rated |>
+    filter(sim_year == yr) |>
+    pull(focal_event_id)
+
+  if (length(focal_event_id) != 1L || is.na(focal_event_id)) {
+    warning("No focal event found in baseline for year ", yr, ". Focal pin skipped.")
     focal_sids[[as.character(yr)]] <- NA_character_
     next
   }
-  peak_row <- yr_hur[which.max(yr_hur$wind_kt), ]
-  focal_sids[[as.character(yr)]] <- sub("_y[0-9]+_[0-9]+$", "", peak_row$event_id[1L])
+  focal_sids[[as.character(yr)]] <- sub("_y[0-9]+_[0-9]+$", "", focal_event_id)
 }
 
 message("  Focal SIDs:")
@@ -397,7 +398,7 @@ message("Simulation years  : ", N_SIM)
 message("Target year       : ", TARGET_YEAR)
 message("IRMA threshold    : ", IRMA_WIND_KT, " kt")
 message("Candidate years   : ", n_cand, " / ", N_SIM)
-message("Rating metrics    : r_peak (w=", w_peak, ") + r_damage (w=", w_damage, ")")
+message("Rating metrics    : r_peak (w=", w_peak, ") + r_damage_60d (w=", w_damage, ")")
 message("Selected year IDs : ", paste(selected_ids, collapse = ", "),
         "  [", paste0("Q", round(QUANTILE_PROBS * 100), collapse = " / "), "]")
 message("CC scenarios      : ", paste(KNMI_SCENARIOS, collapse = ", "))
@@ -406,6 +407,6 @@ message("Freeze frequency  : ", FREEZE_FREQUENCY)
 message("")
 message("Objects in workspace:")
 message("  selected_ids      — integer[5]: year indices for all scenario comparisons")
-message("  focal_sids        — list[sim_year]: basin-level focal SID pinned across scenarios")
+message("  focal_sids        — list[sim_year]: Saba + Statia focal SID pinned across scenarios")
 message("  baseline_stress   — list[location]: daily tibbles for 5 baseline years")
 message("  cc_stress         — list[scenario][location]: daily tibbles for 5 CC years")
