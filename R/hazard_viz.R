@@ -60,15 +60,51 @@ save_standardized_plot <- function(plot_obj,
 # Data preparation helpers
 # -----------------------------------------------------------------------------
 
+#' Ensure a `date` column exists, deriving from sim_year + doy if needed
+#'
+#' generate_daily_hazard_impact_spatial() returns daily tibbles with a `doy`
+#' column (integer 1-366) and a serial `sim_year`, not a calendar `date`. The
+#' viz/query helpers were originally written against a `date`-bearing daily
+#' tibble; this function synthesises a `date` column from `(sim_year, doy)`
+#' so both representations plot cleanly. The calendar-year offset (`year0`)
+#' is cosmetic - only ordering matters for plotting.
+#'
+#' @param df Data frame with either a `date` column or both `sim_year` and
+#'   `doy` columns.
+#' @param year0 Integer calendar year assigned to `sim_year == 1`. Default
+#'   2000 keeps the derived dates simple and far from IBTrACS historical
+#'   years.
+#' @return `df` unchanged if it already has a `date` column; otherwise a
+#'   copy with a derived `date` column appended. Unchanged if neither
+#'   representation is present (the caller's column check will error).
+#' @keywords internal
+#' @noRd
+.ensure_date_column <- function(df, year0 = 2000L) {
+  if ("date" %in% names(df)) {
+    df$date <- as.Date(df$date)
+    return(df)
+  }
+  if (all(c("sim_year", "doy") %in% names(df))) {
+    cal_year <- as.integer(df$sim_year) + as.integer(year0) - 1L
+    df$date <- as.Date(paste0(cal_year, "-01-01")) +
+      (as.integer(df$doy) - 1L)
+    return(df)
+  }
+  df
+}
+
 #' Add day/month/year fields to daily hazard data
 #'
-#' @param daily_impact A data frame or tibble with at least a `date` column coercible
-#'   by `format()` (typically `Date`), one row per day.
+#' @param daily_impact A data frame or tibble with either a `date` column or
+#'   both `sim_year` and `doy` columns (from
+#'   `generate_daily_hazard_impact_spatial()`).
 #'
-#' @return `daily_impact` with three added integer columns: `doy` (1-366), `month`
-#'   (1-12), and `year` (4-digit calendar year).
+#' @return `daily_impact` with three added integer columns: `doy` (1-366),
+#'   `month` (1-12), and `year` (4-digit calendar year).
 #' @keywords internal
 prep_daily <- function(daily_impact) {
+
+  daily_impact <- .ensure_date_column(daily_impact)
 
   daily_impact %>%
     mutate(
@@ -92,6 +128,7 @@ prep_daily <- function(daily_impact) {
 #' @keywords internal
 prep_events <- function(daily) {
   daily <- tibble::as_tibble(daily)
+  daily <- .ensure_date_column(daily)
   if (!("location" %in% names(daily))) {
     location_attr <- attr(daily, "location", exact = TRUE)
     daily$location <- if (is.character(location_attr) &&
@@ -168,6 +205,7 @@ plot_wind_timeseries <- function(daily,
                                  show_thresholds = TRUE,
                                  title = "Daily Wind with TS/Hurricane Events") {
 
+  daily <- .ensure_date_column(daily)
   if (is.null(events)) events <- prep_events(daily)
 
 
@@ -397,8 +435,12 @@ plot_doy_wind <- function(daily,
                           thr_tc = 34,
                           thr_hur = 64) {
 
+  # `daily` may already carry `doy` (new format) or `date` (legacy). Prefer
+  # existing `doy`; only derive from `date` if needed.
+  if (!("doy" %in% names(daily))) {
+    daily$doy <- as.integer(format(as.Date(daily$date), "%j"))
+  }
   doy_summary <- daily %>%
-    mutate(doy = as.integer(format(date, "%j"))) %>%
     group_by(doy) %>%
     summarise(
       mean_wind = mean(wind_kt, na.rm = TRUE),
@@ -473,6 +515,7 @@ plot_monthly_quantiles <- function(daily,
                                    thr_tc = 34,
                                    thr_hur = 64) {
 
+  daily <- .ensure_date_column(daily)
   monthly <- daily %>%
     mutate(month = as.integer(format(date, "%m"))) %>%
     group_by(month) %>%
@@ -834,6 +877,7 @@ save_hazard_viz_plots <- function(daily,
   }
 
   daily <- .resolve_daily_tbl(daily)
+  daily <- .ensure_date_column(daily)
 
   required_cols <- c("date", "wind_kt", "event_id", "location", "sim_year")
   missing_cols <- setdiff(required_cols, names(daily))

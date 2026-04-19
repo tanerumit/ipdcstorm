@@ -505,13 +505,20 @@ test_that("rate and wind-field validation work with lightweight fixtures", {
     notes = "fixture"
   )
 
-  expect_message(
-    rates <- ipdcstorm:::validate_rates(out),
-    "\\[Rate Check\\] Summary:"
+  # validate_rates() / validate_wind_field() emit a stream of message()
+  # calls; expect_message() only captures the matching line. Wrap in
+  # suppressMessages() so the rest does not leak to the test console.
+  suppressMessages(
+    expect_message(
+      rates <- ipdcstorm:::validate_rates(out),
+      "\\[Rate Check\\] Summary:"
+    )
   )
-  expect_message(
-    wf <- ipdcstorm:::validate_wind_field(out, obs_table = obs_tbl),
-    "\\[Wind Field Check\\]"
+  suppressMessages(
+    expect_message(
+      wf <- ipdcstorm:::validate_wind_field(out, obs_table = obs_tbl),
+      "\\[Wind Field Check\\]"
+    )
   )
 
   expect_true(all(c("raw_ratio", "adj_ratio", "flag") %in% names(rates)))
@@ -547,9 +554,14 @@ test_that("validation wrappers return structured outputs and normalize forwarded
   out_stub <- validation_out_fixture()
   cfg <- make_validation_cfg(n_sim = NULL, save_plots = FALSE, save_tables = FALSE)
 
-  expect_message(
-    val <- ipdcstorm:::run_validation_suite(out_stub, cfg = cfg),
-    "HAZARD MODEL VALIDATION SUITE"
+  # run_validation_suite() emits the three-tier report as a message() stream;
+  # expect_message only captures the matching header. Outer suppressMessages
+  # muffles the rest so the test console stays clean.
+  suppressMessages(
+    expect_message(
+      val <- ipdcstorm:::run_validation_suite(out_stub, cfg = cfg),
+      "HAZARD MODEL VALIDATION SUITE"
+    )
   )
   expect_true(all(c("summary", "comparison", "rate_check", "wind_field", "plots") %in% names(val)))
 

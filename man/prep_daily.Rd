@@ -7,12 +7,13 @@
 prep_daily(daily_impact)
 }
 \arguments{
-\item{daily_impact}{A data frame or tibble with at least a \code{date} column coercible
-by \code{format()} (typically \code{Date}), one row per day.}
+\item{daily_impact}{A data frame or tibble with either a \code{date} column or
+both \code{sim_year} and \code{doy} columns (from
+\code{generate_daily_hazard_impact_spatial()}).}
 }
 \value{
-\code{daily_impact} with three added integer columns: \code{doy} (1-366), \code{month}
-(1-12), and \code{year} (4-digit calendar year).
+\code{daily_impact} with three added integer columns: \code{doy} (1-366),
+\code{month} (1-12), and \code{year} (4-digit calendar year).
 }
 \description{
 Add day/month/year fields to daily hazard data

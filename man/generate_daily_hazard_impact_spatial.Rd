@@ -15,6 +15,7 @@ generate_daily_hazard_impact_spatial(
   scenario = NA_character_,
   seed = NULL,
   pinned_sids = NULL,
+  pin_jitter = NULL,
   background_wind = NULL,
   verbose = FALSE
 )
@@ -43,13 +44,33 @@ tables.}
 \item{seed}{Optional integer scalar seed. Defaults to
 \code{out$run_metadata$seed} or \code{1L}. Per-location library seeds are
 offset by location index for reproducibility.}
+
+\item{pinned_sids}{Optional named list mapping \code{sim_year} (as
+character) to a single IBTrACS SID string. When provided, the
+corresponding SID is pinned into the HUR draw for that sim_year,
+guaranteeing the focal event appears.}
+
+\item{pin_jitter}{Optional named list of per-\code{sim_year} jitter
+specifications for the pinned focal event. Each entry is a list with
+numeric fields \code{doy_offset} (integer days), \code{v_scale} (peak
+wind multiplier), and \code{r_scale} (RMW multiplier). Jitter is
+applied BEFORE climate perturbation, targeting only rows whose
+\code{event_id} begins with the pinned SID for that year. Has no
+effect without a corresponding \code{pinned_sids} entry.}
+
+\item{background_wind}{Optional background-wind configuration as returned
+by \code{\link{make_background_wind_cfg}()}.}
+
+\item{verbose}{Logical scalar; print progress messages when \code{TRUE}.}
 }
 \value{
 Named list of tibbles — one per requested location — with columns
-\code{sim_year}, \code{date}, \code{wind_kt}, \code{surge_m},
+\code{sim_year}, \code{doy}, \code{wind_kt}, \code{surge_m},
 \code{event_id}, \code{pressure_hpa}, \code{pressure_deficit_hpa},
 \code{rmw_km}, \code{damage_intensity}, \code{damage_rate}, and
-\code{cum_damage}. Each tibble also carries \code{location} and
+\code{cum_damage}. \code{doy} is an integer day-of-year (1-365/366) with
+no calendar-date tie-in; synthetic sim_year indices are serial and not
+mapped to real years. Each tibble also carries \code{location} and
 \code{gust_factor} as attributes.
 }
 \description{
@@ -103,4 +124,3 @@ lapply(daily_spatial, function(loc_tbl) {
 \code{\link{build_event_library_from_out}},
 \code{\link{generate_daily_year_extended}}
 }
-\keyword{internal}

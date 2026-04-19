@@ -26,7 +26,7 @@ location. Filenames include both the scenario label and the location name.
 daily <- list(
   Saba = tibble::tibble(
     sim_year = 1L,
-    date = as.Date("2000-01-01"),
+    doy = 1L,
     wind_kt = 0,
     surge_m = NA_real_,
     event_id = NA_character_,

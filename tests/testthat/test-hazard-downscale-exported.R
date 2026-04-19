@@ -136,7 +136,7 @@ test_that("daily hazard generation and damage helpers return public output schem
   expect_identical(
     names(daily),
     c(
-      "sim_year", "date", "wind_kt", "surge_m", "event_id",
+      "sim_year", "doy", "wind_kt", "surge_m", "event_id",
       "pressure_hpa", "pressure_deficit_hpa", "rmw_km",
       "damage_intensity", "damage_rate", "cum_damage"
     )

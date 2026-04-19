@@ -130,4 +130,3 @@ mean(val_out$hindcast$comparison$obs_in_ci, na.rm = TRUE)
 \code{\link{run_hazard_model}} for producing the required \code{out} object,
 \code{\link{plot_hindcast_validation}} for standalone hindcast plots.
 }
-\keyword{internal}

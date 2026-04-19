@@ -39,4 +39,3 @@ spatial correlation and \code{ar1} for day-to-day persistence.
 quantile function to produce background wind speeds in kt.
 }
 }
-\keyword{internal}

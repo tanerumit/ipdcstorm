@@ -75,8 +75,8 @@
 #'   \code{sim_year} values applied to all locations, a tibble with
 #'   \code{location} and \code{sim_year} columns, or \code{NULL}.
 #' @param location Character vector of location names to include.
-#' @param window_days Positive integer: length of the compound window after the
-#'   focal event end date.
+#' @param window_days Positive integer: length of the compound window (in
+#'   days of year) applied after the focal event end.
 #'
 #' @return Tibble with one row per \code{sim_year}, describing the strongest
 #'   focal event across the selected locations together and the cumulative
@@ -103,7 +103,7 @@ compute_compound_stress_year_metrics <- function(
   }
 
   tbl <- .resolve_daily_tbl(daily, location = location)
-  required <- c("location", "sim_year", "date", "wind_kt", "event_id", "cum_damage", "damage_rate")
+  required <- c("location", "sim_year", "doy", "wind_kt", "event_id", "cum_damage", "damage_rate")
   missing_cols <- setdiff(required, names(tbl))
   if (length(missing_cols) > 0L) {
     stop(
@@ -114,7 +114,7 @@ compute_compound_stress_year_metrics <- function(
     )
   }
 
-  tbl$date <- as.Date(tbl$date)
+  tbl$doy <- as.integer(tbl$doy)
 
   yr_filter <- .resolve_sim_years_filter(sim_years, unique(tbl$location))
   if (!is.null(yr_filter)) {
@@ -130,10 +130,10 @@ compute_compound_stress_year_metrics <- function(
     return(tibble::tibble(
       sim_year = integer(0),
       focal_event_id = character(0),
-      focal_start_date = as.Date(character(0)),
-      focal_end_date = as.Date(character(0)),
+      focal_start_doy = integer(0),
+      focal_end_doy = integer(0),
       focal_peak_wind_kt = numeric(0),
-      compound_window_end_date = as.Date(character(0)),
+      compound_window_end_doy = integer(0),
       compound_n_events = integer(0),
       compound_n_aftermath_events = integer(0),
       compound_cum_damage = numeric(0),
@@ -141,32 +141,36 @@ compute_compound_stress_year_metrics <- function(
     ))
   }
 
-  year_ids <- sort(unique(tbl$sim_year))
+  # Partition by sim_year once so the per-year loop is O(N) overall, not
+  # O(N^2). Subset lookups inside the loop previously rescanned the full
+  # table for every year, which dominated runtime at N_BASE >= 3000.
+  tbl_by_year <- split(tbl, tbl$sim_year)
+  year_ids <- sort(as.integer(names(tbl_by_year)))
   result <- vector("list", length(year_ids))
 
   for (i in seq_along(year_ids)) {
     yr <- year_ids[i]
-    rows <- tbl[tbl$sim_year == yr, , drop = FALSE]
-    rows <- rows[order(rows$date, rows$location), , drop = FALSE]
+    rows <- tbl_by_year[[as.character(yr)]]
+    rows <- rows[order(rows$doy, rows$location), , drop = FALSE]
 
     event_rows <- rows[!is.na(rows$event_id), , drop = FALSE]
     if (nrow(event_rows) == 0L) {
       peak_idx <- which.max(rows$wind_kt)
-      focal_start <- rows$date[peak_idx]
-      focal_end <- rows$date[peak_idx]
+      focal_start <- rows$doy[peak_idx]
+      focal_end <- rows$doy[peak_idx]
       focal_event_id <- NA_character_
       focal_peak <- rows$wind_kt[peak_idx]
     } else {
       peak_row <- event_rows[which.max(event_rows$wind_kt), , drop = FALSE]
       focal_event_id <- peak_row$event_id[[1L]]
       focal_block <- event_rows[event_rows$event_id == focal_event_id, , drop = FALSE]
-      focal_start <- min(focal_block$date)
-      focal_end <- max(focal_block$date)
+      focal_start <- min(focal_block$doy)
+      focal_end <- max(focal_block$doy)
       focal_peak <- max(focal_block$wind_kt, na.rm = TRUE)
     }
 
     window_end <- focal_end + window_days
-    window_rows <- rows[rows$date >= focal_start & rows$date <= window_end, , drop = FALSE]
+    window_rows <- rows[rows$doy >= focal_start & rows$doy <= window_end, , drop = FALSE]
 
     compound_ids <- unique(window_rows$event_id[!is.na(window_rows$event_id)])
     compound_n_events <- length(compound_ids)
@@ -175,13 +179,13 @@ compute_compound_stress_year_metrics <- function(
     damage_delta <- 0
     for (loc in unique(rows$location)) {
       loc_rows <- rows[rows$location == loc, , drop = FALSE]
-      damage_before <- loc_rows$cum_damage[loc_rows$date < focal_start]
+      damage_before <- loc_rows$cum_damage[loc_rows$doy < focal_start]
       damage_before <- if (length(damage_before) > 0L) {
         max(damage_before, na.rm = TRUE)
       } else {
         0
       }
-      damage_after <- loc_rows$cum_damage[loc_rows$date <= window_end]
+      damage_after <- loc_rows$cum_damage[loc_rows$doy <= window_end]
       damage_after <- if (length(damage_after) > 0L) {
         max(damage_after, na.rm = TRUE)
       } else {
@@ -206,10 +210,10 @@ compute_compound_stress_year_metrics <- function(
     result[[i]] <- tibble::tibble(
       sim_year = as.integer(yr),
       focal_event_id = focal_event_id,
-      focal_start_date = focal_start,
-      focal_end_date = focal_end,
+      focal_start_doy = as.integer(focal_start),
+      focal_end_doy = as.integer(focal_end),
       focal_peak_wind_kt = focal_peak,
-      compound_window_end_date = window_end,
+      compound_window_end_doy = as.integer(window_end),
       compound_n_events = as.integer(compound_n_events),
       compound_n_aftermath_events = as.integer(compound_n_aftermath_events),
       compound_cum_damage = damage_delta,

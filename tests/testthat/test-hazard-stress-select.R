@@ -30,8 +30,7 @@
     tibble::tibble(
       location    = "Saba",
       sim_year    = as.integer(yr),
-      date        = seq(as.Date("2000-01-01") + (yr - 1L) * 365L,
-                        by = "day", length.out = 365L),
+      doy         = seq_len(365L),
       wind_kt     = wind,
       event_id    = eid,
       damage_rate = dmg_r,
@@ -62,11 +61,11 @@
 .stress_scored  <- function() aggregate_stress_metrics(.stress_metrics())
 
 .compound_stress_fixture <- function() {
-  dates <- seq(as.Date("2000-01-01"), by = "day", length.out = 200L)
+  doys <- seq_len(200L)
   base <- tidyr::expand_grid(
     location = c("Saba", "Statia", "Miami"),
     sim_year = 1:2,
-    date = dates
+    doy = doys
   ) |>
     dplyr::mutate(
       wind_kt = 0,
@@ -77,7 +76,7 @@
   add_event <- function(tbl, location, sim_year, days, wind, event_id) {
     idx <- tbl$location == location &
       tbl$sim_year == sim_year &
-      match(tbl$date, dates) %in% days
+      tbl$doy %in% days
     tbl$wind_kt[idx] <- wind
     tbl$event_id[idx] <- event_id
     tbl$damage_rate[idx] <- (wind / 100)^3 * 0.02
@@ -117,7 +116,7 @@
   )
 
   out |>
-    dplyr::arrange(.data$location, .data$sim_year, .data$date) |>
+    dplyr::arrange(.data$location, .data$sim_year, .data$doy) |>
     dplyr::group_by(.data$location, .data$sim_year) |>
     dplyr::mutate(cum_damage = cumsum(.data$damage_rate)) |>
     dplyr::ungroup()
@@ -198,8 +197,8 @@ test_that("compute_compound_stress_year_metrics returns one row per year with co
   )
 
   expected <- c(
-    "sim_year", "focal_event_id", "focal_start_date", "focal_end_date",
-    "focal_peak_wind_kt", "compound_window_end_date",
+    "sim_year", "focal_event_id", "focal_start_doy", "focal_end_doy",
+    "focal_peak_wind_kt", "compound_window_end_doy",
     "compound_n_events", "compound_n_aftermath_events",
     "compound_cum_damage", "compound_max_damage_rate"
   )
@@ -218,8 +217,10 @@ test_that("compute_compound_stress_year_metrics anchors on the strongest Saba/St
 
   expect_equal(yr1$focal_event_id, "AL012000_y2000_1")
   expect_equal(yr1$focal_peak_wind_kt, 85)
-  expect_equal(as.Date(yr1$focal_start_date), as.Date("2000-04-09"))
-  expect_equal(as.Date(yr1$focal_end_date), as.Date("2000-04-12"))
+  # Saba event occupies doys 100-102; Statia 101-103. Combined focal block
+  # spans 100..103 (fixture starts doy = 1).
+  expect_equal(yr1$focal_start_doy, 100L)
+  expect_equal(yr1$focal_end_doy, 103L)
 })
 
 test_that("compute_compound_stress_year_metrics counts follow-on events and damage in the 60-day window", {
@@ -231,12 +232,14 @@ test_that("compute_compound_stress_year_metrics counts follow-on events and dama
   )
 
   yr1 <- metrics[metrics$sim_year == 1L, ]
+  # Window: focal_start_doy = 100, focal_end_doy = 103, window_days = 60
+  # => doy range 100..163 inclusive.
   damage_expected <- fixture |>
     dplyr::filter(
       .data$location %in% c("Saba", "Statia"),
       .data$sim_year == 1L,
-      .data$date >= as.Date("2000-04-09"),
-      .data$date <= as.Date("2000-06-11")
+      .data$doy >= 100L,
+      .data$doy <= 163L
     ) |>
     dplyr::summarise(total = sum(.data$damage_rate), .groups = "drop") |>
     dplyr::pull(.data$total)

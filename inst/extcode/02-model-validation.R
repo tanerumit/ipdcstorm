@@ -32,10 +32,6 @@
 #   val_cfg       — validation_cfg object (validation parameters)
 #   val_out       — run_validation_suite() output (summary, comparison,
 #                   rate_check, wind_field, plots)
-#
-# Data path:
-#   Uses the packaged demo IBTrACS subset by default.
-#   For production, replace `DATA_PATH` with the full IBTrACS NA CSV path.
 # =============================================================================
 
 library(dplyr)
@@ -46,7 +42,7 @@ library(ipdcstorm)
 # =============================================================================
 
 SEED           <- 42L
-N_SIM          <- 2000L
+N_SIM          <- 5000L
 HIST_START_YEAR  <- 1970L
 SEARCH_RADIUS_KM <- 800
 
@@ -164,7 +160,7 @@ if (!is.null(val_out$comparison)) {
   hc_tbl <- val_out$comparison
 
   n_checks  <- nrow(hc_tbl)
-  n_in_ci   <- sum(hc_tbl$in_ci, na.rm = TRUE)
+  n_in_ci   <- sum(hc_tbl$obs_in_ci, na.rm = TRUE)
   pct_in_ci <- round(100 * n_in_ci / n_checks, 1)
 
   message(sprintf("  Pass rate: %d / %d checks within %d%% CI  (%s%%)",

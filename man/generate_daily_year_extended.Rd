@@ -4,7 +4,14 @@
 \alias{generate_daily_year_extended}
 \title{Generate a daily wind + dominant-event attribute series for a single calendar year}
 \usage{
-generate_daily_year_extended(year, sampled_events, pulse_shape = "cosine")
+generate_daily_year_extended(
+  year,
+  sampled_events,
+  pulse_shape = "cosine",
+  sim_year = NA_integer_,
+  location = NA_character_,
+  scenario = NA_character_
+)
 }
 \arguments{
 \item{year}{Integer scalar calendar year.}

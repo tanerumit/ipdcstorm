@@ -2,7 +2,7 @@ daily_io_fixture <- function() {
   list(
     Saba = tibble::tibble(
       sim_year = c(1L, 1L),
-      date = as.Date(c("2000-01-01", "2000-01-02")),
+      doy = c(1L, 2L),
       wind_kt = c(0, 42),
       surge_m = c(NA_real_, 0.8),
       event_id = c(NA_character_, "storm_a_y2000_1"),
@@ -15,7 +15,7 @@ daily_io_fixture <- function() {
     ),
     St_Martin = tibble::tibble(
       sim_year = c(1L, 1L),
-      date = as.Date(c("2000-01-01", "2000-01-02")),
+      doy = c(1L, 2L),
       wind_kt = c(5, 18),
       surge_m = c(0.1, 0.2),
       event_id = c(NA_character_, NA_character_),
@@ -48,7 +48,7 @@ test_that("save_daily_hazard_csvs writes one CSV per location with scenario and 
   expect_identical(
     names(saba_written),
     c(
-      "sim_year", "date", "wind_kt", "surge_m", "event_id",
+      "sim_year", "doy", "wind_kt", "surge_m", "event_id",
       "pressure_hpa", "pressure_deficit_hpa", "rmw_km",
       "damage_intensity", "damage_rate", "cum_damage"
     )

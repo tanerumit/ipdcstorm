@@ -60,7 +60,7 @@ test_that("generate_daily_hazard_impact_spatial each element has required column
   )
 
   required <- c(
-    "sim_year", "date", "wind_kt", "surge_m", "event_id",
+    "sim_year", "doy", "wind_kt", "surge_m", "event_id",
     "pressure_hpa", "pressure_deficit_hpa", "rmw_km",
     "damage_intensity", "damage_rate", "cum_damage"
   )
@@ -118,7 +118,7 @@ test_that("generate_daily_hazard_impact_spatial cum_damage is non-decreasing wit
     sim_years = 1L:10L, seed = 42L
   )
 
-  d <- dplyr::arrange(res$Saba, sim_year, date)
+  d <- dplyr::arrange(res$Saba, sim_year, doy)
   by_yr <- split(d, d$sim_year)
   all_mono <- vapply(by_yr, function(df) all(diff(df$cum_damage) >= -1e-12), logical(1L))
   expect_true(all(all_mono), info = "cum_damage is not monotone in some years")

@@ -16,7 +16,7 @@
 #' daily <- list(
 #'   Saba = tibble::tibble(
 #'     sim_year = 1L,
-#'     date = as.Date("2000-01-01"),
+#'     doy = 1L,
 #'     wind_kt = 0,
 #'     surge_m = NA_real_,
 #'     event_id = NA_character_,
@@ -48,7 +48,7 @@ save_daily_hazard_csvs <- function(daily,
   }
 
   required_cols <- c(
-    "sim_year", "date", "wind_kt", "surge_m", "event_id",
+    "sim_year", "doy", "wind_kt", "surge_m", "event_id",
     "pressure_hpa", "pressure_deficit_hpa", "rmw_km",
     "damage_intensity", "damage_rate", "cum_damage"
   )

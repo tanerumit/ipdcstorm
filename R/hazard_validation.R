@@ -3748,7 +3748,7 @@ validate_wind_field <- function(out, obs_table = NULL) {
 #' # Overall pass rate
 #' mean(val_out$hindcast$comparison$obs_in_ci, na.rm = TRUE)
 #' }
-#' @keywords internal
+#' @export
 run_validation_suite <- function(out, cfg = make_validation_cfg()) {
   if (!inherits(cfg, "validation_cfg")) {
     stop("cfg must be created by make_validation_cfg().", call. = FALSE)

@@ -649,6 +649,7 @@ query_aftermath_impact <- function(
 
   # --- Resolve and filter daily data ------------------------------------------
   tbl <- .resolve_daily_tbl(daily, location)
+  tbl <- .ensure_date_column(tbl)
 
   required <- c("date", "sim_year", "wind_kt", "event_id", "cum_damage", "damage_rate")
   missing_cols <- setdiff(required, names(tbl))

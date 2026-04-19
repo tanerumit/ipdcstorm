@@ -787,13 +787,16 @@ event_pulse <- function(dur_days, V_peak, shape = c("cosine", "triangle")) {
 #' @seealso \code{\link{sample_events_for_year_extended}}, \code{\link{event_pulse}}
 #' @keywords internal
 generate_daily_year_extended <- function(year, sampled_events,
-                                         pulse_shape = "cosine") {
+                                         pulse_shape = "cosine",
+                                         sim_year = NA_integer_,
+                                         location = NA_character_,
+                                         scenario = NA_character_) {
 
+  # Only one Date object is needed (the Jan-1 anchor for start_date offsets).
+  # Avoid seq.Date(), which was ~6% of total time over 15k calls at N=3000.
   start <- as.Date(sprintf("%d-01-01", year))
-  end   <- as.Date(sprintf("%d-12-31", year))
-  dates <- seq.Date(start, end, by = "day")
-
-  n <- length(dates)
+  is_leap <- (year %% 4L == 0L & year %% 100L != 0L) | year %% 400L == 0L
+  n <- if (is_leap) 366L else 365L
   wind <- rep(0, n)
 
   # Dominant event per day
@@ -872,15 +875,21 @@ generate_daily_year_extended <- function(year, sampled_events,
     }
   }
 
-  tibble::tibble(
-    date = dates,
+  # Embed sim_year / location / scenario directly in the output tibble so
+  # callers don't need to tbl_subassign them afterwards (three subassigns per
+  # year-location pair were ~11% of total time at N=500).
+  .fast_tbl(list(
+    sim_year = rep.int(as.integer(sim_year), n),
+    doy = seq_len(n),
+    location = rep.int(as.character(location), n),
+    scenario = rep.int(as.character(scenario), n),
     wind_kt = wind,
     event_id = event_id,
     event_class = event_class,
     pressure_hpa = pressure_hpa,
     pressure_deficit_hpa = pressure_deficit_hpa,
     rmw_km = rmw_km
-  )
+  ))
 }
 
 
@@ -918,7 +927,6 @@ generate_daily_year_extended <- function(year, sampled_events,
 #'   independent daily draws.
 #'
 #' @return A list of class \code{"background_wind_cfg"}.
-#' @keywords internal
 #' @export
 make_background_wind_cfg <- function(weibull_params,
                                      cor_matrix = NULL,
@@ -1197,6 +1205,25 @@ make_background_wind_cfg <- function(weibull_params,
 #' @param lib Event library from \code{build_event_library_from_out()}.
 #' @return Input library with a cached \code{spatial_lookup} entry.
 #' @keywords internal
+# Fast tibble constructor: wraps a named list of equal-length vectors with
+# tbl_df class and compact row.names, bypassing tibble::tibble()'s validation,
+# glue-based error messages, and vec_c dispatch. Safe to use inside hot inner
+# loops that build small tibbles repeatedly; the result is indistinguishable
+# from tibble::tibble() output for downstream consumers that only check
+# inherits(., "tbl_df") or access columns by name. Caller guarantees equal
+# lengths.
+#' @keywords internal
+#' @noRd
+.fast_tbl <- function(cols) {
+  n <- length(cols[[1L]])
+  structure(
+    cols,
+    class = c("tbl_df", "tbl", "data.frame"),
+    row.names = if (n == 0L) integer(0) else c(NA_integer_, -as.integer(n)),
+    names = names(cols)
+  )
+}
+
 .prepare_spatial_event_lookup <- function(lib) {
   if (!is.null(lib$spatial_lookup)) {
     return(lib)
@@ -1408,7 +1435,7 @@ make_background_wind_cfg <- function(weibull_params,
   start_date_year <- as.Date(sprintf("%d-01-01", year))
   v_peak <- if (sev == "HUR") lookup$v_peak_hur[row_idx] else lookup$v_peak_ts[row_idx]
 
-  rows <- tibble::tibble(
+  rows <- .fast_tbl(list(
     severity = rep.int(sev, n_filled),
     start_date = start_date_year + (lookup$doy[row_idx] - 1L),
     dur_days = as.integer(lookup$dur_days[row_idx]),
@@ -1418,7 +1445,7 @@ make_background_wind_cfg <- function(weibull_params,
     Pc_min_hPa = lookup$pc_min_hpa[row_idx],
     dP_max_hPa = lookup$dp_max_hpa[row_idx],
     RMW_mean_km = lookup$rmw_mean_km[row_idx]
-  )
+  ))
 
   counter <- counter + n_filled
   list(rows = rows, n_filled = n_filled, counter = counter)
@@ -1466,12 +1493,28 @@ make_background_wind_cfg <- function(weibull_params,
 #' @param seed Optional integer scalar seed. Defaults to
 #'   \code{out$run_metadata$seed} or \code{1L}. Per-location library seeds are
 #'   offset by location index for reproducibility.
+#' @param pinned_sids Optional named list mapping \code{sim_year} (as
+#'   character) to a single IBTrACS SID string. When provided, the
+#'   corresponding SID is pinned into the HUR draw for that sim_year,
+#'   guaranteeing the focal event appears.
+#' @param pin_jitter Optional named list of per-\code{sim_year} jitter
+#'   specifications for the pinned focal event. Each entry is a list with
+#'   numeric fields \code{doy_offset} (integer days), \code{v_scale} (peak
+#'   wind multiplier), and \code{r_scale} (RMW multiplier). Jitter is
+#'   applied BEFORE climate perturbation, targeting only rows whose
+#'   \code{event_id} begins with the pinned SID for that year. Has no
+#'   effect without a corresponding \code{pinned_sids} entry.
+#' @param background_wind Optional background-wind configuration as returned
+#'   by \code{\link{make_background_wind_cfg}()}.
+#' @param verbose Logical scalar; print progress messages when \code{TRUE}.
 #'
 #' @return Named list of tibbles — one per requested location — with columns
-#'   \code{sim_year}, \code{date}, \code{wind_kt}, \code{surge_m},
+#'   \code{sim_year}, \code{doy}, \code{wind_kt}, \code{surge_m},
 #'   \code{event_id}, \code{pressure_hpa}, \code{pressure_deficit_hpa},
 #'   \code{rmw_km}, \code{damage_intensity}, \code{damage_rate}, and
-#'   \code{cum_damage}. Each tibble also carries \code{location} and
+#'   \code{cum_damage}. \code{doy} is an integer day-of-year (1-365/366) with
+#'   no calendar-date tie-in; synthetic sim_year indices are serial and not
+#'   mapped to real years. Each tibble also carries \code{location} and
 #'   \code{gust_factor} as attributes.
 #'
 #' @seealso
@@ -1500,7 +1543,6 @@ make_background_wind_cfg <- function(weibull_params,
 #'     dplyr::pull(sim_year)
 #' })
 #' }
-#' @keywords internal
 #' @export
 generate_daily_hazard_impact_spatial <- function(
     out,
@@ -1513,6 +1555,7 @@ generate_daily_hazard_impact_spatial <- function(
     scenario       = NA_character_,
     seed           = NULL,
     pinned_sids    = NULL,
+    pin_jitter     = NULL,
     background_wind = NULL,
     verbose        = FALSE) {
 
@@ -1618,6 +1661,36 @@ generate_daily_hazard_impact_spatial <- function(
     }, logical(1L))
     if (any(bad)) {
       stop("Each pinned_sids entry must be a single character SID or NA.", call. = FALSE)
+    }
+  }
+
+  # ---- Validate pin_jitter --------------------------------------------------
+  # pin_jitter is a named list (keyed by sim_year as character) of jitter
+  # specs. Each spec is a list with numeric fields `doy_offset`, `v_scale`,
+  # `r_scale`. Jitter applies only to rows whose event_id starts with the
+  # pinned focal SID for that sim_year, so pin_jitter is a no-op without a
+  # matching pinned_sids entry.
+  if (!is.null(pin_jitter)) {
+    if (!is.list(pin_jitter)) {
+      stop("pin_jitter must be NULL or a named list of jitter specs.",
+           call. = FALSE)
+    }
+    bad <- vapply(pin_jitter, function(j) {
+      if (is.null(j)) return(FALSE)
+      if (!is.list(j)) return(TRUE)
+      ok_fields <- all(c("v_scale", "r_scale") %in% names(j)) &&
+                   (("doy_offset" %in% names(j)) || ("doy_abs" %in% names(j)))
+      ok_types  <- is.numeric(j$v_scale) && is.numeric(j$r_scale) &&
+                   (is.null(j$doy_offset) || is.numeric(j$doy_offset) ||
+                    all(is.na(j$doy_offset))) &&
+                   (is.null(j$doy_abs) || is.numeric(j$doy_abs) ||
+                    all(is.na(j$doy_abs)))
+      !(ok_fields && ok_types)
+    }, logical(1L))
+    if (any(bad)) {
+      stop("Each pin_jitter entry must be NULL or a list with numeric fields ",
+           "`v_scale`, `r_scale`, and at least one of `doy_offset` or ",
+           "`doy_abs`.", call. = FALSE)
     }
   }
 
@@ -1731,6 +1804,45 @@ generate_daily_hazard_impact_spatial <- function(
       hur_res <- .build_event_rows_from_sids(lib, shared_hur_sids, "HUR", cal_yr, ts_res$counter)
       sampled <- dplyr::bind_rows(ts_res$rows, hur_res$rows)
 
+      # Apply per-year pin jitter: stochastic variation of the pinned focal
+      # event's timing and intensity, representing unresolved internal
+      # variability that the deterministic IBTrACS track does not capture.
+      # Applied BEFORE perturb_event() so climate forcing compounds with
+      # internal variability. Targets only rows whose event_id begins with
+      # the pinned focal SID for this sim_year.
+      if (!is.null(pin_jitter) && nrow(sampled) > 0L &&
+          !is.null(focal_sid) && !is.na(focal_sid) && nzchar(focal_sid)) {
+        jitter_spec <- pin_jitter[[as.character(sim_yr)]]
+        if (!is.null(jitter_spec)) {
+          is_focal <- startsWith(as.character(sampled$event_id), focal_sid)
+          if (any(is_focal)) {
+            sampled$V_peak[is_focal] <- sampled$V_peak[is_focal] *
+              jitter_spec$v_scale
+            if ("RMW_mean_km" %in% names(sampled)) {
+              sampled$RMW_mean_km[is_focal] <- sampled$RMW_mean_km[is_focal] *
+                jitter_spec$r_scale
+            }
+            if ("start_date" %in% names(sampled)) {
+              doy_abs <- jitter_spec$doy_abs
+              if (!is.null(doy_abs) && length(doy_abs) == 1L && !is.na(doy_abs)) {
+                # Absolute DOY override: set start_date to cal_yr-01-01 +
+                # (doy_abs - 1). Historical DOY is ignored.
+                new_start <- as.Date(paste0(cal_yr, "-01-01")) +
+                  (as.integer(doy_abs) - 1L)
+                sampled$start_date[is_focal] <- new_start
+              } else {
+                doy_off <- jitter_spec$doy_offset
+                if (!is.null(doy_off) && length(doy_off) == 1L &&
+                    !is.na(doy_off) && as.integer(doy_off) != 0L) {
+                  sampled$start_date[is_focal] <- sampled$start_date[is_focal] +
+                    as.integer(doy_off)
+                }
+              }
+            }
+          }
+        }
+      }
+
       # Apply climate perturbation when enabled
       if (perturb_enabled && nrow(sampled) > 0L) {
         if (!is.numeric(delta_sst) || length(delta_sst) != 1L || !is.finite(delta_sst))
@@ -1741,11 +1853,11 @@ generate_daily_hazard_impact_spatial <- function(
       daily0 <- generate_daily_year_extended(
         year           = cal_yr,
         sampled_events = sampled,
-        pulse_shape    = pulse_shape
+        pulse_shape    = pulse_shape,
+        sim_year       = sim_yr,
+        location       = loc,
+        scenario       = scenario
       )
-      daily0$sim_year <- sim_yr
-      daily0$location <- loc
-      daily0$scenario <- scenario
 
       # Overlay background wind before damage calculations.
       # pmax keeps the storm signal intact on event days; background fills zeros.
@@ -1782,21 +1894,20 @@ generate_daily_hazard_impact_spatial <- function(
   }
 
   # ---- Assemble and return final output --------------------------------------
+  # Base-R assembly (dplyr::mutate/select here was ~18% of daily-gen time
+  # per Rprof at N=500). Surge is a simple vectorised transform; the final
+  # column order is a static subset. Preserve tbl_df class via .fast_tbl().
+  final_cols <- c(
+    "sim_year", "doy", "wind_kt", "surge_m",
+    "event_id", "pressure_hpa",
+    "pressure_deficit_hpa", "rmw_km",
+    "damage_intensity", "damage_rate", "cum_damage"
+  )
   for (loc in location) {
-    tbl <- dplyr::bind_rows(results[[loc]]) |>
-      dplyr::mutate(
-        surge_m      = ifelse(
-          is.finite(.data$pressure_hpa),
-          0.14 * (1013 - .data$pressure_hpa),
-          NA_real_
-        )
-      ) |>
-      dplyr::select(
-        "sim_year", "date", "wind_kt", "surge_m",
-        "event_id", "pressure_hpa",
-        "pressure_deficit_hpa", "rmw_km",
-        "damage_intensity", "damage_rate", "cum_damage"
-      )
+    tbl <- dplyr::bind_rows(results[[loc]])
+    pres <- tbl$pressure_hpa
+    tbl$surge_m <- ifelse(is.finite(pres), 0.14 * (1013 - pres), NA_real_)
+    tbl <- .fast_tbl(unclass(tbl)[final_cols])
     attr(tbl, "gust_factor") <- gust_factor
     attr(tbl, "location") <- loc
     results[[loc]] <- tbl
@@ -1871,7 +1982,7 @@ add_damage_forcing <- function(daily,
 #' @examples
 #' damage_rate_from_wind(c(20, 40, 80))
 #' @seealso \code{\link{add_damage_forcing}}
-#' @keywords internal
+#' @export
 damage_rate_from_wind <- function(wind_kt,
                                   thr = 34,
                                   V_ref = 80,
