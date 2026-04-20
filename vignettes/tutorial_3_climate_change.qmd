@@ -32,15 +32,9 @@ editor:
 knitr::opts_chunk$set(comment = "#>")
 ```
 
-::: callout-note
-## Prerequisites
-This tutorial assumes you have already worked through [Tutorial 1](tutorial_1_setup.qmd), where the single-site workflow and the main output objects are introduced in more detail.
-:::
+## 1. What This Tutorial Covers {#sec-what-this-covers}
 
 This tutorial scales the workflow from a single site to a small group of islands, then compares a present-day baseline with a warmer climate.
-The aim is practical: run the model, inspect the annual output, and turn scenario differences into daily disruption metrics for one site.
-
-## 1. What This Tutorial Covers {#sec-what-this-covers}
 
 By the end, you will be able to:
 
@@ -58,7 +52,6 @@ library(ggplot2)
 ## 2. Multi-Site Baseline {#sec-multisite-baseline}
 
 We start with the three Dutch Caribbean islands used throughout the package: St. Martin, Saba, and Statia.
-The setup is the same as in Tutorial 1, only with three rows in `targets` instead of one.
 
 ```{r}
 #| label: setup-baseline
@@ -128,9 +121,6 @@ baseline_summary
 | `mean_hur` | Average number of hurricanes per year. |
 | `mean_p_hur` | Average share of events that reach hurricane strength. |
 
-These numbers should broadly match the `rates` table.
-Small differences between islands reflect real geography: some sites see storms pass close and strong more often than others.
-
 ## 3. Climate Change Scenarios {#sec-climate-change}
 
 Warming affects the simulated climate in two ways.
@@ -141,7 +131,6 @@ Both effects are driven by a single number: `delta_sst`, the change in Main Deve
 You can either use a named scenario helper (IPCC AR6, KNMI'23) or set `delta_sst` directly.
 
 Here we compare a stationary baseline (`delta_sst = 0`) with a warmer climate at `delta_sst = 1.5`.
-This side-by-side setup makes the direction and size of the climate response easy to see.
 
 ```{r}
 #| label: inspect-sst-scenarios
@@ -222,11 +211,6 @@ activity_summary |>
   ) +
   theme_minimal(base_size = 11)
 ```
-
-::: callout-tip
-## How to read scenario differences
-Scenario differences describe the long-run average, not a forecast for any single year. A higher `mean_total` or `mean_p_hur` means the simulated climate is more active on average — but quiet years still happen.
-:::
 
 ## 4. Daily Series Comparison {#sec-daily-comparison}
 
@@ -314,45 +298,6 @@ daily_plot_data |>
 | `hur_days` | Days reaching at least 64 kt (hurricane strength). |
 | `mean_annual_damage` | Average damage total per year across the 200 simulated seasons. |
 
-::: callout-tip
-## Adding trade-wind background to both scenarios
-The daily series above have zero wind on every non-storm day.
-For applications that need a continuous wind record (wind energy, chronic exposure, port disruption), attach a `make_background_wind_cfg()` object to each hazard config. It then flows through to `generate_daily_hazard_impact_spatial()` automatically:
-
-```r
-bg_cfg <- make_background_wind_cfg(
-  weibull_params = list(
-    Saba = tibble::tibble(month = 1:12, shape = 2.0, scale = 13)
-  ),
-  ar1 = 0.4
-)
-
-cfg_baseline_bg <- make_hazard_cfg(
-  data_path = ibtracs_demo,
-  historical_start_year = 1970L,
-  simulation_years = simulation_years,
-  climate = make_climate_cfg(scenario = "stationary"),
-  background_wind = bg_cfg            # <-- attach once to each cfg
-)
-
-cfg_future_bg <- make_hazard_cfg(
-  data_path = ibtracs_demo,
-  historical_start_year = 1970L,
-  simulation_years = simulation_years,
-  climate = make_climate_cfg(delta_sst = 1.5, sensitivity_mode = "fixed"),
-  background_wind = bg_cfg
-)
-```
-
-After `run_hazard_model()`, call `generate_daily_hazard_impact_spatial()` without a `background_wind` argument — it picks the setting up from `out$cfg$background_wind` automatically, keeping the same seed so the climate comparison stays clean.
-See [Tutorial 1 §Background Wind](tutorial_1_setup.qmd#sec-background-wind) for guidance and a worked example.
-:::
-
-::: callout-note
-## About event-level perturbation
-The package also supports event-level perturbation for more exploratory scenario analysis. We do not use it here, so the daily comparison isolates the rate and intensity effects discussed above.
-:::
-
 ## 5. Key Parameters {#sec-key-parameters}
 
 For most climate sensitivity runs, three settings matter most:
@@ -362,6 +307,3 @@ For most climate sensitivity runs, three settings matter most:
 | `delta_sst` | The warming (°C) relative to the 1991-2020 baseline. Here `delta_sst = 1.5` sets the future climate directly. |
 | `scenario` vs `delta_sst` | Use a named `scenario` (e.g. IPCC AR6, KNMI'23) when you want to follow a published pathway. Use `delta_sst` when you want a transparent what-if value without committing to any specific pathway. |
 | `sensitivity_mode` | `"fixed"` keeps the calibrated climate sensitivities constant as warming grows. `"linear_shifted"` lets those sensitivities themselves vary with `delta_sst` — more exploratory. |
-
-Baseline-versus-scenario is a good starting point for stress-testing.
-Once the annual and daily outputs feel familiar, the same workflow scales to more islands or alternative warming assumptions.

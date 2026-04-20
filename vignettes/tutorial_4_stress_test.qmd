@@ -34,24 +34,16 @@ editor:
 knitr::opts_chunk$set(comment = "#>")
 ```
 
-::: callout-note
-## Prerequisites
-This tutorial builds on [Tutorial 3](tutorial_3_climate_change.qmd).
-You should already be familiar with `make_hazard_cfg()`, `run_hazard_model()`, `make_climate_cfg()`, and named KNMI'23 scenarios.
-:::
-
 ## 1. What This Tutorial Covers
 
 This tutorial walks through a **focal-anchored climate stress-test**, mirroring `inst/extcode/05-stress-test-experiment.R`.
 By the end you will be able to:
 
 - anchor every baseline year with a major historical hurricane drawn from a fixed pool (Irma, Maria, Hugo, Luis, Lenny, Georges) — so you don't need to roll 10 000 random seasons to sample a rare Cat-4/5 event;
-- add a small amount of timing, intensity, and radius jitter to each anchored year so the years are distinct realisations rather than verbatim replays;
+- add a small amount of timing, intensity, and radius jitter to each anchored year so the years are distinct realizations rather than verbatim replays;
 - apply **HAZUS-style state-dependent damage** — already-damaged structures are more vulnerable to the next storm;
 - pick a handful of high-stress years at fixed quantiles of a 90-day compound damage window at Saba + Statia;
 - replay those same years under KNMI'23 warming, keeping the same pinned event and the same jitter so any differences come from the climate signal alone.
-
-The companion script `inst/extcode/05-stress-test-experiment.R` is the canonical production implementation (3000-year ensemble, full plot set). This vignette uses smaller parameters for quick rendering but follows the same logic.
 
 ```{r}
 #| label: setup-packages
@@ -360,11 +352,6 @@ baseline_stress <- lapply(daily_base_list, function(df) {
 })
 ```
 
-::: callout-tip
-## Why `n_selected` replay slots, not `N_BASE`?
-Running only the selected years keeps the replay fast — 5 simulations instead of 500. The pinned storm guarantees each replay year contains the right focal event; `.remap_replay_years()` then relabels the sequential replay slots `1..n_selected` back onto the baseline year IDs, so the scenario tibbles key on `sim_year` identically to the baseline.
-:::
-
 ## 7. Visualise the Stress-Test Traces {#sec-viz}
 
 Build one long tibble with all three scenarios, filter to the selected years, and facet by year.
@@ -435,37 +422,6 @@ ggplot(long_loc, aes(doy, wind_kt, colour = scenario)) +
         strip.text = element_text(face = "bold"))
 ```
 
-### 7.2. Cumulative damage — the climate-signal view
-
-Each curve climbs in steps — one step per storm strike. The gap between the baseline, Ld, and Hd curves at year-end is the extra loss attributable to warming, amplified by the state-dependent damage model.
-
-```{r}
-#| label: plot-cum-damage
-#| fig-width: 9
-#| fig-height: 11
-ggplot(long_loc, aes(doy, cum_damage, colour = scenario)) +
-  geom_line(linewidth = 0.6, alpha = 0.9) +
-  facet_wrap(~ year_label, ncol = 1) +
-  scale_colour_manual(values = scen_colours) +
-  scale_x_continuous(
-    breaks = doy_month_breaks, labels = doy_month_labels,
-    limits = c(1, 366), expand = c(0.005, 0)
-  ) +
-  scale_y_continuous(limits = c(0, 0.15), breaks = seq(0, 0.15, by = 0.025),
-                     expand = c(0, 0)) +
-  labs(
-    title = paste0("Cumulative damage at ", focal_location,
-                   " - selected stress-test years"),
-    subtitle = paste0("baseline vs KNMI'23 @ ", TARGET_YEAR,
-                      ". alpha = ", DAMAGE_ALPHA, ", cap = ", DAMAGE_V_CAP, "."),
-    x = NULL, y = "cumulative damage (fraction of total loss)",
-    colour = "scenario"
-  ) +
-  theme_bw(base_size = 11) +
-  theme(legend.position = "bottom",
-        strip.text = element_text(face = "bold"))
-```
-
 ## 8. Baseline Stress Distribution {#sec-distribution}
 
 Rank-ordered view of the full baseline's compound damage, coloured by which storm was pinned. The five selected quantile years appear as labelled markers against the cloud of all 500 anchored years. The visible plateaus are each pool storm's characteristic damage signature; within-plateau spread comes from jitter, state-dependent amplification, and non-focal follow-on storms.
@@ -524,25 +480,3 @@ ggplot(rank_dist, aes(rank_pct, compound_cum_damage)) +
   theme(legend.position = "bottom",
         panel.grid.minor = element_blank())
 ```
-
-## 9. What to do next {#sec-next}
-
-- **Scale up.** Rerun with `N_BASE = 2000L` or `3000L` for production-quality tail statistics. The implementation scales linearly; expect about 6 minutes end to end on a modern laptop at N = 3000.
-- **Extend the pool.** Any IBTrACS SID in the input CSV can anchor — add David 1979, Klaus 1990, Dorian 2019, etc. to widen the geometry coverage.
-- **Compare horizons.** Rerun with `TARGET_YEAR = 2050` to contrast near-term vs end-of-century warming.
-- **Try a different timing mode.** Switch `PIN_TIMING_MODE` to `"gaussian"` to keep each storm close to its historical date instead of resampling uniformly across the season.
-- **Validate.** `compute_compound_stress_year_metrics()` and the internal helpers live in `R/stress_test_helpers.R`; their unit tests in `tests/testthat/test-stress-test-helpers.R` cover the pin, jitter, and amplification contracts.
-
-Run the full production script from the console when you are ready:
-
-```{r}
-#| label: run-script
-#| eval: false
-source(system.file("extcode", "05-stress-test-experiment.R",
-                   package = "ipdcstorm"))
-```
-
-## 10. References {.unnumbered}
-
-::: {#refs}
-:::
