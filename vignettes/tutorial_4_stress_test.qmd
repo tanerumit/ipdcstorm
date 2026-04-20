@@ -9,7 +9,7 @@ format:
     toc: true
     toc-depth: 3
     toc-location: left
-    number-sections: true
+    number-sections: false
     code-fold: false
     code-tools: true
     code-copy: true
@@ -21,6 +21,8 @@ execute:
   echo: true
   warning: false
   message: false
+bibliography: references.bib
+link-citations: true
 editor:
   markdown:
     wrap: sentence
@@ -35,20 +37,21 @@ knitr::opts_chunk$set(comment = "#>")
 ::: callout-note
 ## Prerequisites
 This tutorial builds on [Tutorial 3](tutorial_3_climate_change.qmd).
-You should already be familiar with `make_hazard_cfg()`, `run_hazard_model()`, and named KNMI'23 climate scenarios.
+You should already be familiar with `make_hazard_cfg()`, `run_hazard_model()`, `make_climate_cfg()`, and named KNMI'23 scenarios.
 :::
 
-This tutorial shows how to design a **climate stress-test experiment**: pick a handful of high-impact synthetic years from a long stationary baseline, then replay those *same* years under future-climate scenarios using common random numbers (CRN).
-The result is a directly comparable set of daily wind traces where any difference between baseline and future is attributable to climate forcing alone.
+## 1. What This Tutorial Covers
 
-## What This Tutorial Covers {#sec-what-this-covers}
+This tutorial walks through a **focal-anchored climate stress-test**, mirroring `inst/extcode/05-stress-test-experiment.R`.
+By the end you will be able to:
 
-By the end, you will be able to:
+- anchor every baseline year with a major historical hurricane drawn from a fixed pool (Irma, Maria, Hugo, Luis, Lenny, Georges) — so you don't need to roll 10 000 random seasons to sample a rare Cat-4/5 event;
+- add a small amount of timing, intensity, and radius jitter to each anchored year so the years are distinct realisations rather than verbatim replays;
+- apply **HAZUS-style state-dependent damage** — already-damaged structures are more vulnerable to the next storm;
+- pick a handful of high-stress years at fixed quantiles of a 90-day compound damage window at Saba + Statia;
+- replay those same years under KNMI'23 warming, keeping the same pinned event and the same jitter so any differences come from the climate signal alone.
 
-- generate a long stationary baseline and rate years on a composite stress score
-- pick representative high-impact years at fixed severity quantiles (Q50–Q99)
-- replay those year indices under KNMI'23 scenarios with CRN, pinning the dominant event
-- visualize baseline-vs-scenario daily wind traces in a single faceted panel
+The companion script `inst/extcode/05-stress-test-experiment.R` is the canonical production implementation (3000-year ensemble, full plot set). This vignette uses smaller parameters for quick rendering but follows the same logic.
 
 ```{r}
 #| label: setup-packages
@@ -57,319 +60,489 @@ library(dplyr)
 library(ggplot2)
 ```
 
-## Experiment Configuration {#sec-config}
+## 2. Design Rationale {#sec-design}
 
-A small block of switches controls the entire experiment.
-The defaults below run quickly for the vignette; for a production stress-test, raise `n_sim` to 2,000 or more.
+A random present-day ensemble needs ~10 000 years to sample Cat-4/5 events at Saba / Statia often enough to study the tail. The approach adopted here — **forced anchoring** — guarantees a major event in every year:
+
+1. **Pool.** Six historical Cat-4/5 hurricanes that passed within 300 km of the Saba / Statia midpoint. The pool spans different approach geometries (Irma's direct Cat-5 hit, Maria south of the islands, Lenny from the west) and intensities (130–155 kt at peak).
+2. **Per-year assignment.** Every baseline year gets one pool storm, picked at random. `generate_daily_hazard_impact_spatial()` drops that storm into the hurricane slot for that year; the remaining storms are drawn freely from the climate-adjusted pool.
+3. **Stochastic jitter.** The anchored storm is not a carbon copy. A small per-year jitter picks a fresh day-of-year inside the Atlantic hurricane season, scales peak wind by `N(1, 0.05)`, and scales radius by `N(1, 0.05)` — so each year is a distinct "what if Irma hit on August 10 / October 5 / …" case. The ±5 % on intensity and radius reflects real best-track uncertainty for Cat-4/5 storms [@torn2012; @landsea2013] and radius-estimation spread [@vickery2008rmw].
+4. **State-dependent damage.** Each day's damage rate is nudged up by the damage already accumulated in the same season — the HAZUS-HM progressive-vulnerability idea [@vickery2006hazus; @pinelli2004; @grossi2005catastrophe].
+5. **Scenario replay.** The five selected years are re-run under KNMI warming scenarios with the **same pinned storm and the same jitter** carried across, so any differences come from the climate signal alone.
+
+## 3. Experiment Configuration {#sec-config}
 
 ```{r}
 #| label: config
-seed            <- 42L
-n_sim           <- 500L                       # raise to 2000+ in production
-irma_wind_kt    <- 80                         # IRMA-like site-level threshold (kt)
-quantile_probs  <- c(0.50, 0.80, 0.90, 0.95, 0.99)
-knmi_scenarios  <- c("knmi_Ld", "knmi_Hd")    # low-dry and high-dry KNMI'23
-target_year     <- 2100                       # 2050 (near-term) or 2100 (end-of-century)
+SEED             <- 123
+N_BASE           <- 500L                             # raise to 2000+ for production
+QUANTILE_PROBS   <- c(0.50, 0.80, 0.90, 0.95, 0.99)
+KNMI_SCENARIOS   <- c("knmi_Ld", "knmi_Hd")
+TARGET_YEAR      <- 2100                             # 2050 (near-term) or 2100 (end-of-century)
 
-# Composite rating weights (must sum to 1)
-w_peak   <- 0.5   # severity (max site-level peak wind)
-w_damage <- 0.5   # accumulation (integrated portfolio damage)
+# Compound-stress window (days after focal start) used for selection.
+COMPOUND_WINDOW_DAYS <- 90L
+
+# Stochastic pin-jitter configuration (see inst/extcode/05-... for full
+# scientific rationale; defaults match the production script).
+PIN_TIMING_MODE  <- "uniform_season"
+PIN_DOY_MIN      <- 152L            # June 1
+PIN_DOY_MAX      <- 304L            # October 31 (leaves 90-d window in year)
+PIN_V_SCALE_SD   <- 0.05            # +-5% peak-wind jitter (Torn & Snyder 2012)
+PIN_R_SCALE_SD   <- 0.05            # +-5% RMW jitter
+
+# State-dependent damage (HAZUS-HM-style progressive vulnerability).
+# d_new(t) = d_raw(t) * (1 + alpha * min(V(t-1), cap))
+DAMAGE_ALPHA     <- 3
+DAMAGE_V_CAP     <- 0.5
+
+# Pool of historical major hurricanes (Cat-4+ within ~300 km of Saba/Statia).
+PINNED_SID_POOL <- c(
+  "2017242N16333",   # Irma     (2017) - Cat-5 direct hit
+  "2017260N12310",   # Maria    (2017) - Cat-5 passing south
+  "1989254N13340",   # Hugo     (1989) - Cat-4 reference
+  "1995241N11333",   # Luis     (1995) - St Martin landfall
+  "1999318N17278",   # Lenny    (1999) - unusual east-bound November Cat-4
+  "1998259N10335"    # Georges  (1998) - closest Cat-4 approach
+)
 
 targets <- tibble::tribble(
   ~name,         ~lat,     ~lon,
   "St_Martin",   18.0708, -63.0501,
   "Saba",        17.6350, -63.2300,
-  "Statia",      17.4890, -62.9740,
-  "Puerto_Rico", 18.4655, -66.1057,
-  "Miami",       25.7617, -80.1918
+  "Statia",      17.4890, -62.9740
 )
 
-ibtracs_demo <- system.file("extdata", "ibtracs_demo.csv", package = "ipdcstorm")
+DATA_PATH <- system.file("extdata", "ibtracs_1970.csv", package = "ipdcstorm")
 ```
 
-## Part 1 — Baseline & Year Selection {#sec-baseline}
+### 3.1. Pool selection {#sec-pool}
 
-We first run a stationary baseline of `n_sim` synthetic years and downscale every year to daily wind and damage at every target location.
+The six pool SIDs were chosen by filtering IBTrACS [@ibtracs2010; @knapp2018ibtracs] for storms that reached Cat-4+ at some point in their life **and** passed within 300 km of the Saba / Statia midpoint.
+Swap in different SIDs to stress-test different geometries — any SID in the IBTrACS input works.
+Full impact summaries with NHC Tropical Cyclone Report citations are in `dev/storm-pool-reference.md`.
+
+| SID | Name | Year | Peak wind (kt) | Min pres (hPa) | Saffir–Simpson | Min dist to Saba (km) | Character | Reference |
+|---|---|---|---:|---:|:---:|---:|---|---|
+| 2017242N16333 | **Irma**    | 2017 | 155 | 914 | Cat 5 |  52 | Cat-5 direct hit on Sint Maarten (6 km); ~US$2.5 B Dutch-side loss | @nhc_irma2017; @sxm_nrrp2018 |
+| 2017260N12310 | **Maria**   | 2017 | 150 | 908 | Cat 5 | 117 | Cat-5 passing ~115 km south; compounding effect on Irma-damaged stock | @nhc_maria2017 |
+| 1989254N13340 | **Hugo**    | 1989 | 140 | 918 | Cat 5 |  87 | Cat-4 reference; 11 fatalities / ~US$50 M across Netherlands Antilles | @nhc_hugo1989 |
+| 1995241N11333 | **Luis**    | 1995 | 130 | 935 | Cat 4 |  84 | Cat-4 southern eyewall on SXM; ~US$1.8 B Dutch-side loss | @nhc_luis1995; @cepal_luis1996 |
+| 1999318N17278 | **Lenny**   | 1999 | 135 | 933 | Cat 4 |  41 | Unusual west-to-east November track; west-coast surge on SXM | @nhc_lenny1999; @cepal_lenny2000 |
+| 1998259N10335 | **Georges** | 1998 | 135 | 937 | Cat 4 |  47 | Closest Cat-4 eye approach to Statia (33 km); minor Dutch-Caribbean damage | @nhc_georges1998 |
+
+Distances are great-circle minimums between each storm's IBTrACS track and Saba; intensity figures are lifetime peaks (generally larger than site-level wind felt on the islands).
+
+## 4. Anchored Baseline {#sec-baseline}
+
+### 4.1. Build the pin map and jitter map
+
+Two internal helpers do the bookkeeping. They live in `R/stress_test_helpers.R` and use the dot-prefix convention (not exported from the package), so user scripts call them through the `:::` operator.
+
+```{r}
+#| label: build-pins
+# One SID per sim_year, sampled uniformly from the pool with replacement.
+baseline_pin_map <- ipdcstorm:::.build_pin_map(
+  sim_years = seq_len(N_BASE),
+  pool      = PINNED_SID_POOL,
+  seed      = SEED
+)
+
+# One jitter spec per sim_year. In "uniform_season" mode the focal day-of-year
+# is drawn uniformly from [PIN_DOY_MIN, PIN_DOY_MAX], discarding each SID's
+# historical date.
+baseline_pin_jitter <- ipdcstorm:::.build_pin_jitter(
+  sim_years  = seq_len(N_BASE),
+  mode       = PIN_TIMING_MODE,
+  doy_min    = PIN_DOY_MIN,
+  doy_max    = PIN_DOY_MAX,
+  v_scale_sd = PIN_V_SCALE_SD,
+  r_scale_sd = PIN_R_SCALE_SD,
+  seed       = SEED + 1L
+)
+
+head(baseline_pin_jitter, 3)
+```
+
+Each entry is a small list: `doy_offset` (unused in uniform-season mode), `doy_abs` (the sampled day-of-year that overrides the historical date), `v_scale` (peak-wind multiplier), and `r_scale` (radius multiplier).
+
+### 4.2. Run the stationary baseline
 
 ```{r}
 #| label: run-baseline
+bg_cfg <- ipdcstorm:::.make_stress_test_background_wind_cfg()
+
 cfg_base <- make_hazard_cfg(
-  data_path        = ibtracs_demo,
-  simulation_years = n_sim,
-  climate          = make_climate_cfg(scenario = "stationary")
+  data_path        = DATA_PATH,
+  simulation_years = N_BASE,
+  climate          = make_climate_cfg(scenario = "stationary"),
+  background_wind  = bg_cfg
 )
 
-out_base <- run_hazard_model(cfg_base, targets = targets, seed = seed, verbose = FALSE)
+out_base <- run_hazard_model(cfg_base, targets = targets,
+                             seed = SEED, verbose = FALSE)
+```
 
+### 4.3. Generate daily hazard with pinned focal events
+
+Pass `pinned_sids` and `pin_jitter` to the daily generator. The jitter is applied **before** any climate warming, so internal variability and climate forcing stack cleanly.
+
+```{r}
+#| label: gen-daily-baseline
 daily_base_list <- generate_daily_hazard_impact_spatial(
   out         = out_base,
   location    = targets$name,
-  sim_years   = seq_len(n_sim),
+  sim_years   = seq_len(N_BASE),
   year0       = 2000L,
   gust_factor = 1.0,
   damage      = list(method = "intensity"),
   pulse_shape = "cosine",
   scenario    = "baseline",
-  seed        = seed
+  seed        = SEED,
+  pinned_sids = baseline_pin_map,
+  pin_jitter  = baseline_pin_jitter
 )
 ```
 
-::: callout-tip
-## Including trade-wind background in stress tests
-Pass a `make_background_wind_cfg()` object to `make_hazard_cfg()` to fill non-storm days with realistic wind speeds across all stress-test replays.
-Because it is stored in `cfg`, it is embedded in every `out` object and picked up automatically by each `generate_daily_hazard_impact_spatial()` call — both the baseline above and all scenario replays below — with no extra arguments required.
-This keeps the CRN isolation intact: the background wind is generated with `seed + 1`, so the storm-sampling RNG is unaffected.
-See [Tutorial 1 §Background Wind](tutorial_1_setup.qmd#sec-background-wind) for a full example.
-:::
+### 4.4. Apply state-dependent damage amplification
 
-### Annual metrics across all sites {#sec-annual-metrics}
-
-Each year is summarised on basin-wide metrics: peak site-level wind, hurricane- and storm-day counts, and integrated damage across all sites.
+Post-process the daily output so each day's damage is bumped up by whatever damage has already accumulated in the same year. Damaged structures have less capacity left; the next storm's wind does more harm. This is a simplified HAZUS-HM progressive-vulnerability model [@vickery2006hazus; @pinelli2004].
 
 ```{r}
-#| label: annual-metrics
-daily_base <- bind_rows(daily_base_list, .id = "location")
-
-annual_all <- daily_base |>
-  group_by(sim_year, location) |>
-  summarise(
-    peak_wind_kt = max(wind_kt, na.rm = TRUE),
-    n_hur_days   = sum(wind_kt >= 64, na.rm = TRUE),
-    n_storm_days = sum(wind_kt >= 34, na.rm = TRUE),
-    total_damage = sum(damage_rate, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  group_by(sim_year) |>
-  summarise(
-    peak_wind_max    = max(peak_wind_kt),
-    hur_days_total   = sum(n_hur_days),
-    storm_days_total = sum(n_storm_days),
-    damage_total     = sum(total_damage),
-    .groups = "drop"
-  )
+#| label: state-dep-damage
+daily_base_list <- ipdcstorm:::.apply_state_dependent_damage(
+  daily_list = daily_base_list,
+  alpha      = DAMAGE_ALPHA,
+  cap        = DAMAGE_V_CAP
+)
 ```
 
-### Composite stress rating {#sec-rating}
+The helper keeps the original numbers in a new `damage_rate_raw` column and overwrites `damage_rate` / `cum_damage` with the amplified values.
 
-Candidate years must contain at least one IRMA-class event (peak wind ≥ `r irma_wind_kt` kt).
-Surviving years are rank-normalised on two metrics and combined into a single rating in `[0, 1]`:
-
-| Metric | Meaning |
-|--------|---------|
-| `r_peak`   | Worst single-site peak wind (severity; loss scales ~wind³). |
-| `r_damage` | Sum of `damage_rate` across days and sites (integrated impact). |
+### 4.5. Verify every pin landed
 
 ```{r}
-#| label: rate-candidates
-irma_candidates <- annual_all |>
-  filter(peak_wind_max >= irma_wind_kt)
+#| label: verify-pins
+missed <- ipdcstorm:::.verify_pins_landed(daily_base_list, baseline_pin_map)
+nrow(missed)
+```
 
-n_cand <- nrow(irma_candidates)
+`.verify_pins_landed()` returns the rows where the pinned storm failed to appear — usually only happens in years where the rate draw produced zero hurricanes and the insertion logic couldn't add one. At the historical baseline rate, expect zero misses.
 
-irma_rated <- irma_candidates |>
-  mutate(
-    r_peak   = rank(peak_wind_max, ties.method = "average") / n_cand,
-    r_damage = rank(damage_total,  ties.method = "average") / n_cand,
-    rating   = w_peak * r_peak + w_damage * r_damage
-  ) |>
-  arrange(rating)
+## 5. Quantile Selection {#sec-selection}
 
-# Pick years at the target quantiles of the rating distribution
-sel_pos      <- pmax(1L, ceiling(quantile_probs * n_cand))
-selected_ids <- irma_rated$sim_year[sel_pos]
+### 5.1. Compound-stress metric
 
-irma_rated |>
+`compute_compound_stress_year_metrics()` finds each year's strongest event at the target locations and totals the damage over a window of `COMPOUND_WINDOW_DAYS` starting when the focal event begins.
+
+```{r}
+#| label: compound-metrics
+compound_metrics <- ipdcstorm:::compute_compound_stress_year_metrics(
+  daily       = daily_base_list,
+  sim_years   = seq_len(N_BASE),
+  location    = c("Saba", "Statia"),
+  window_days = COMPOUND_WINDOW_DAYS
+)
+
+head(compound_metrics, 3)
+```
+
+Key columns:
+
+- `focal_event_id` — the strongest event at Saba or Statia;
+- `focal_start_doy` / `focal_end_doy` — the focal event's first and last day (as day-of-year);
+- `focal_peak_wind_kt` — peak wind at those sites during that event;
+- `compound_cum_damage` — combined Saba + Statia damage across the 90-day window;
+- `compound_n_aftermath_events` — how many separate follow-on storms happen in that window.
+
+### 5.2. Rank candidates and pick quantile years
+
+Rank primarily by compound damage; break ties with the year's total annual damage. This keeps Lenny-anchored late-season years (which often have no follow-on inside the window) from collapsing onto each other.
+
+```{r}
+#| label: rate-and-select
+sim_counts <- out_base$sim |>
+  filter(location == targets$name[1]) |>
+  select(sim_year, n_total)
+
+annual_damage <- dplyr::bind_rows(
+  daily_base_list[["Saba"]], daily_base_list[["Statia"]]
+) |>
+  dplyr::group_by(sim_year) |>
+  dplyr::summarise(annual_total_damage = sum(damage_rate, na.rm = TRUE),
+                   .groups = "drop")
+
+year_metrics <- compound_metrics |>
+  left_join(sim_counts,    by = "sim_year") |>
+  left_join(annual_damage, by = "sim_year")
+
+n_cand <- nrow(year_metrics)
+
+compound_rated <- year_metrics |>
+  arrange(compound_cum_damage, annual_total_damage) |>
+  mutate(rating = seq_len(dplyr::n()) / n_cand)
+
+sel_pos      <- pmax(1L, ceiling(QUANTILE_PROBS * n_cand))
+selected_ids <- compound_rated$sim_year[sel_pos]
+
+focal_sids <- baseline_pin_map[as.character(selected_ids)]
+
+compound_rated |>
   filter(sim_year %in% selected_ids) |>
-  mutate(
-    quantile = paste0("Q", round(quantile_probs * 100), "%")
-  ) |>
-  select(quantile, sim_year, peak_wind_max, hur_days_total,
-         damage_total, rating)
+  mutate(quantile = paste0("Q", round(QUANTILE_PROBS * 100))) |>
+  select(quantile, sim_year, focal_peak_wind_kt,
+         compound_n_aftermath_events, compound_cum_damage,
+         annual_total_damage)
 ```
 
-### Pin the focal event {#sec-focal}
+## 6. KNMI'23 Replays {#sec-replays}
 
-For each selected year we identify the SID of the basin-level peak hurricane day.
-Pinning this SID into every scenario run guarantees the focal event always appears, with its intensity and duration perturbed by the scenario's `delta_sst` — all other storm slots remain free to vary with climate.
-
-```{r}
-#| label: focal-sids
-baseline_stress <- lapply(daily_base_list, function(df) {
-  df[df$sim_year %in% selected_ids, ]
-})
-
-focal_sids <- setNames(vector("list", length(selected_ids)),
-                       as.character(selected_ids))
-
-for (yr in selected_ids) {
-  yr_hur <- bind_rows(lapply(baseline_stress, function(df) {
-    df[df$sim_year == yr & !is.na(df$event_id) & df$wind_kt >= 64, ]
-  }))
-  if (nrow(yr_hur) == 0L) {
-    focal_sids[[as.character(yr)]] <- NA_character_
-    next
-  }
-  peak_row <- yr_hur[which.max(yr_hur$wind_kt), ]
-  focal_sids[[as.character(yr)]] <- sub("_y[0-9]+_[0-9]+$", "",
-                                        peak_row$event_id[1L])
-}
-
-focal_sids
-```
-
-## Part 2 — KNMI'23 Climate Replays {#sec-replays}
-
-The same `seed` and the same `sim_years = 1:n_sim` vector are used for every scenario.
-This is the **common random numbers** trick: the RNG is consumed at exactly the same rate in every run, so year `i` in the baseline corresponds to year `i` in the scenario.
-Differences between traces therefore isolate climate forcing rather than sampling noise.
-
-::: callout-tip
-## Why iterate the full `1:n_sim`?
-Passing only `selected_ids` to the scenario run would put its first iteration at the initial RNG state, while the baseline reached those same indices after consuming hundreds of prior draws.
-The result would be completely different event sampling — unrelated to climate.
-:::
+Replay the five selected years under each KNMI'23 scenario [@knmi23]. The **same pin map** and the **same jitter** are passed through, so the focal event lands on the same day with the same intensity and radius in every run. The only thing that changes across scenarios is the warming value `delta_sst` — applied on top of the jitter by `perturb_event()`, which scales the Holland parametric wind profile [@holland1980].
 
 ```{r}
-#| label: run-scenarios
-cc_stress <- vector("list", length(knmi_scenarios))
-names(cc_stress) <- knmi_scenarios
+#| label: run-replays
+cc_stress <- vector("list", length(KNMI_SCENARIOS))
+names(cc_stress) <- KNMI_SCENARIOS
 
-for (scen in knmi_scenarios) {
+replay_pins <- stats::setNames(
+  focal_sids[as.character(selected_ids)],
+  as.character(seq_along(selected_ids))
+)
+replay_jitter <- stats::setNames(
+  baseline_pin_jitter[as.character(selected_ids)],
+  as.character(seq_along(selected_ids))
+)
+n_selected <- length(selected_ids)
+
+for (scen in KNMI_SCENARIOS) {
   cfg_cc <- make_hazard_cfg(
-    data_path        = ibtracs_demo,
-    simulation_years = n_sim,
-    climate          = make_climate_cfg(scenario   = scen,
-                                        target_year = target_year,
-                                        perturb     = TRUE)
+    data_path        = DATA_PATH,
+    simulation_years = n_selected,
+    climate          = make_climate_cfg(scenario    = scen,
+                                        target_year = TARGET_YEAR,
+                                        perturb     = TRUE),
+    background_wind  = bg_cfg
   )
-
   out_cc <- run_hazard_model(cfg_cc, targets = targets,
-                             seed = seed, verbose = FALSE)
+                             seed = SEED, verbose = FALSE)
 
-  cc_daily_all <- generate_daily_hazard_impact_spatial(
+  cc_daily <- generate_daily_hazard_impact_spatial(
     out         = out_cc,
     location    = targets$name,
-    sim_years   = seq_len(n_sim),
+    sim_years   = seq_len(n_selected),
     year0       = 2000L,
     gust_factor = 1.0,
     damage      = list(method = "intensity"),
     pulse_shape = "cosine",
     scenario    = scen,
-    seed        = seed,
-    pinned_sids = focal_sids
+    seed        = SEED,
+    pinned_sids = replay_pins,
+    pin_jitter  = replay_jitter
   )
 
-  cc_stress[[scen]] <- lapply(cc_daily_all, function(df) {
-    df[df$sim_year %in% selected_ids, ]
-  })
+  # Remap replay slot 1..n_selected back onto baseline sim_year IDs, then
+  # apply the same state-dependent damage amplification used for baseline.
+  cc_daily <- ipdcstorm:::.remap_replay_years(
+    daily_list   = cc_daily,
+    baseline_ids = selected_ids
+  )
+  cc_daily <- ipdcstorm:::.apply_state_dependent_damage(
+    daily_list = cc_daily,
+    alpha      = DAMAGE_ALPHA,
+    cap        = DAMAGE_V_CAP
+  )
+
+  cc_stress[[scen]] <- cc_daily
 }
+
+baseline_stress <- lapply(daily_base_list, function(df) {
+  df[df$sim_year %in% selected_ids, ]
+})
 ```
 
-## Part 3 — Visualize the Stress-Test Traces {#sec-viz}
+::: callout-tip
+## Why `n_selected` replay slots, not `N_BASE`?
+Running only the selected years keeps the replay fast — 5 simulations instead of 500. The pinned storm guarantees each replay year contains the right focal event; `.remap_replay_years()` then relabels the sequential replay slots `1..n_selected` back onto the baseline year IDs, so the scenario tibbles key on `sim_year` identically to the baseline.
+:::
 
-Each panel below is one selected year, with the stationary baseline (black) overlaid against the KNMI'23 scenarios (blue = low-dry, red = high-dry).
-Reference dashes mark the tropical-storm (34 kt) and hurricane (64 kt) thresholds.
+## 7. Visualise the Stress-Test Traces {#sec-viz}
+
+Build one long tibble with all three scenarios, filter to the selected years, and facet by year.
 
 ```{r}
-#| label: assemble-plot-data
-focal_location <- "Saba"
-
-scenario_labels <- c(
-  "Baseline" = "Baseline (stationary)",
-  "knmi_Ld"  = "KNMI L-d (low warming, dry)",
-  "knmi_Hd"  = "KNMI H-d (high warming, dry)"
-)
-scenario_colors <- c(
-  "Baseline" = "black",
-  "knmi_Ld"  = "#4575b4",
-  "knmi_Hd"  = "#d73027"
+#| label: assemble-viz-data
+daily_by_scen <- list(
+  baseline = baseline_stress,
+  knmi_Ld  = cc_stress[["knmi_Ld"]],
+  knmi_Hd  = cc_stress[["knmi_Hd"]]
 )
 
-# Hurricane season window (Jun 1 – Dec 31, non-leap)
-season_doy_start <- 152L
-season_doy_end   <- 365L
-month_doy_all    <- cumsum(c(1L, 31L, 28L, 31L, 30L, 31L,
-                             30L, 31L, 31L, 30L, 31L, 30L))
-season_months    <- 6:12
-month_doy_starts <- month_doy_all[season_months]
-month_labels     <- month.abb[season_months]
-
-base_df <- baseline_stress[[focal_location]] |>
-  mutate(scenario = "Baseline",
-         doy      = as.integer(format(date, "%j")))
-
-knmi_df <- bind_rows(lapply(knmi_scenarios, function(scen) {
-  cc_stress[[scen]][[focal_location]] |>
-    mutate(scenario = scen,
-           doy      = as.integer(format(date, "%j")))
-}))
-
-trace_labels <- setNames(
-  paste0("Trace ", seq_along(selected_ids),
-         "  \u2014  Q", round(quantile_probs * 100), "%"),
+year_labels <- setNames(
+  paste0("Q", round(QUANTILE_PROBS * 100), " (year ", selected_ids, ")"),
   as.character(selected_ids)
 )
 
-plot_df <- bind_rows(knmi_df, base_df) |>
-  filter(doy >= season_doy_start, doy <= season_doy_end) |>
-  mutate(
-    scenario    = factor(scenario, levels = c(knmi_scenarios, "Baseline")),
-    trace_label = factor(trace_labels[as.character(sim_year)],
-                         levels = trace_labels)
-  )
+focal_location <- "Saba"
+
+long_loc <- dplyr::bind_rows(lapply(names(daily_by_scen), function(scen) {
+  df <- daily_by_scen[[scen]][[focal_location]]
+  df$scenario <- scen
+  df
+}))
+long_loc <- long_loc[long_loc$sim_year %in% selected_ids, , drop = FALSE]
+long_loc$year_label <- factor(
+  year_labels[as.character(long_loc$sim_year)],
+  levels = year_labels
+)
 ```
+
+### 7.1. Daily wind with TS / HUR thresholds
 
 ```{r}
-#| label: plot-traces
+#| label: plot-wind
 #| fig-width: 9
 #| fig-height: 11
-ggplot(plot_df, aes(x = doy, y = wind_kt)) +
+scen_colours <- c(baseline = "#444444",
+                  knmi_Ld  = "#1f77b4",
+                  knmi_Hd  = "#d62728")
+
+doy_month_breaks <- c(1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335)
+doy_month_labels <- month.abb
+
+ggplot(long_loc, aes(doy, wind_kt, colour = scenario)) +
   geom_hline(yintercept = 34, linetype = "dashed",
-             colour = "#E69F00", linewidth = 0.35, alpha = 0.8) +
+             colour = "#ff7f00", linewidth = 0.5, alpha = 0.8) +
   geom_hline(yintercept = 64, linetype = "dashed",
-             colour = "#d73027", linewidth = 0.35, alpha = 0.8) +
-  geom_line(data = ~ filter(.x, scenario != "Baseline"),
-            aes(colour = scenario), linewidth = 0.9, alpha = 0.9) +
-  geom_line(data = ~ filter(.x, scenario == "Baseline"),
-            aes(colour = scenario), linewidth = 1.2) +
-  scale_colour_manual(values = scenario_colors,
-                      labels = scenario_labels,
-                      breaks = c("Baseline", knmi_scenarios),
-                      name   = NULL) +
-  scale_x_continuous(limits = c(season_doy_start, season_doy_end),
-                     breaks = month_doy_starts,
-                     labels = month_labels,
-                     expand = expansion(mult = c(0.01, 0.01))) +
-  scale_y_continuous(limits = c(0, NA),
-                     expand = expansion(mult = c(0, 0.08))) +
-  facet_wrap(~ trace_label, nrow = 5, ncol = 1, scales = "fixed") +
+             colour = "#e31a1c", linewidth = 0.5, alpha = 0.8) +
+  geom_line(linewidth = 0.5, alpha = 0.85) +
+  facet_wrap(~ year_label, ncol = 1) +
+  scale_colour_manual(values = scen_colours) +
+  scale_x_continuous(
+    breaks = doy_month_breaks, labels = doy_month_labels,
+    limits = c(1, 366), expand = c(0.005, 0)
+  ) +
+  scale_y_continuous(limits = c(0, 180), breaks = seq(0, 180, by = 30),
+                     expand = c(0, 0)) +
   labs(
-    x = NULL,
-    y = "Sustained wind speed (kt)",
-    title = sprintf("%s \u2014 Stress-test wind traces: baseline vs KNMI\u201923",
-                    focal_location),
-    subtitle = sprintf(
-      "%d high-impact years from %d synthetic years (seed = %d, target year %d)",
-      length(selected_ids), n_sim, seed, target_year),
-    caption = "Dashed: TS (34 kt, orange) and hurricane (64 kt, red) thresholds"
+    title = paste0("Daily wind at ", focal_location,
+                   " - selected stress-test years"),
+    subtitle = paste0("baseline vs KNMI'23 @ ", TARGET_YEAR,
+                      ". Dashed: TS 34 kt (orange), HUR 64 kt (red)."),
+    x = NULL, y = "wind (kt)", colour = "scenario"
   ) +
-  theme_light(base_size = 10) +
-  theme(
-    legend.position  = "bottom",
-    legend.key.width = unit(1.4, "cm"),
-    strip.text       = element_text(size = 8.5, face = "bold"),
-    panel.spacing.y  = unit(0.4, "lines"),
-    plot.subtitle    = element_text(size = 8, colour = "grey40"),
-    plot.caption     = element_text(size = 7, colour = "grey50", hjust = 0)
-  ) +
-  guides(colour = guide_legend(nrow = 1,
-                               override.aes = list(linewidth = 1.1)))
+  theme_bw(base_size = 11) +
+  theme(legend.position = "bottom",
+        strip.text = element_text(face = "bold"))
 ```
 
-## Where to Go Next {#sec-next}
+### 7.2. Cumulative damage — the climate-signal view
 
-- Switch `target_year` to `2050` to compare near-term vs end-of-century forcing.
-- Add `knmi_Ln` / `knmi_Hn` to `knmi_scenarios` for the wet variants.
-- Tune `w_peak` / `w_damage` to bias year selection toward severity vs accumulation.
-- Change `focal_location` to view the same experiment from a different island.
-- For a production run, point `data_path` at the full IBTrACS NA CSV and raise `n_sim` to ≥ 2,000.
+Each curve climbs in steps — one step per storm strike. The gap between the baseline, Ld, and Hd curves at year-end is the extra loss attributable to warming, amplified by the state-dependent damage model.
+
+```{r}
+#| label: plot-cum-damage
+#| fig-width: 9
+#| fig-height: 11
+ggplot(long_loc, aes(doy, cum_damage, colour = scenario)) +
+  geom_line(linewidth = 0.6, alpha = 0.9) +
+  facet_wrap(~ year_label, ncol = 1) +
+  scale_colour_manual(values = scen_colours) +
+  scale_x_continuous(
+    breaks = doy_month_breaks, labels = doy_month_labels,
+    limits = c(1, 366), expand = c(0.005, 0)
+  ) +
+  scale_y_continuous(limits = c(0, 0.15), breaks = seq(0, 0.15, by = 0.025),
+                     expand = c(0, 0)) +
+  labs(
+    title = paste0("Cumulative damage at ", focal_location,
+                   " - selected stress-test years"),
+    subtitle = paste0("baseline vs KNMI'23 @ ", TARGET_YEAR,
+                      ". alpha = ", DAMAGE_ALPHA, ", cap = ", DAMAGE_V_CAP, "."),
+    x = NULL, y = "cumulative damage (fraction of total loss)",
+    colour = "scenario"
+  ) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "bottom",
+        strip.text = element_text(face = "bold"))
+```
+
+## 8. Baseline Stress Distribution {#sec-distribution}
+
+Rank-ordered view of the full baseline's compound damage, coloured by which storm was pinned. The five selected quantile years appear as labelled markers against the cloud of all 500 anchored years. The visible plateaus are each pool storm's characteristic damage signature; within-plateau spread comes from jitter, state-dependent amplification, and non-focal follow-on storms.
+
+```{r}
+#| label: plot-distribution
+#| fig-width: 10
+#| fig-height: 6
+PINNED_SID_NAMES <- c(
+  "2017242N16333" = "Irma 2017",   "2017260N12310" = "Maria 2017",
+  "1989254N13340" = "Hugo 1989",   "1995241N11333" = "Luis 1995",
+  "1999318N17278" = "Lenny 1999",  "1998259N10335" = "Georges 1998"
+)
+
+rank_dist <- compound_rated |>
+  mutate(
+    rank_pct   = 100 * rating,
+    pinned_sid = unname(unlist(baseline_pin_map[as.character(sim_year)])),
+    pinned     = factor(PINNED_SID_NAMES[pinned_sid],
+                        levels = PINNED_SID_NAMES[PINNED_SID_POOL])
+  )
+
+selected_rows <- rank_dist |>
+  filter(sim_year %in% selected_ids) |>
+  mutate(
+    qlab = paste0("Q", round(QUANTILE_PROBS[match(sim_year, selected_ids)] * 100)),
+    plab = paste0(qlab, " (yr ", sim_year, ")")
+  )
+
+ggplot(rank_dist, aes(rank_pct, compound_cum_damage)) +
+  geom_vline(data = selected_rows, aes(xintercept = rank_pct),
+             linetype = "dashed", colour = "grey40",
+             linewidth = 0.3, alpha = 0.6) +
+  geom_point(aes(colour = pinned), size = 0.9, alpha = 0.55) +
+  geom_point(data = selected_rows, shape = 21, fill = "white",
+             colour = "black", size = 3.5, stroke = 1.1) +
+  geom_text(data = selected_rows, aes(label = plab),
+            vjust = -1.0, size = 3, fontface = "bold") +
+  scale_colour_brewer(palette = "Set2", name = "Pinned focal") +
+  scale_x_continuous(breaks = seq(0, 100, 10),
+                     limits = c(0, 103), expand = c(0, 0)) +
+  scale_y_continuous(
+    limits = c(0, max(rank_dist$compound_cum_damage, na.rm = TRUE) * 1.15),
+    expand = c(0, 0)
+  ) +
+  labs(
+    title = paste0("Baseline compound-stress distribution (N = ",
+                   N_BASE, " anchored years)"),
+    subtitle = paste0("Compound cumulative damage at Saba + Statia (",
+                      COMPOUND_WINDOW_DAYS,
+                      "-day window). Selected quantiles labelled."),
+    x = "Rating percentile",
+    y = "Compound cumulative damage"
+  ) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank())
+```
+
+## 9. What to do next {#sec-next}
+
+- **Scale up.** Rerun with `N_BASE = 2000L` or `3000L` for production-quality tail statistics. The implementation scales linearly; expect about 6 minutes end to end on a modern laptop at N = 3000.
+- **Extend the pool.** Any IBTrACS SID in the input CSV can anchor — add David 1979, Klaus 1990, Dorian 2019, etc. to widen the geometry coverage.
+- **Compare horizons.** Rerun with `TARGET_YEAR = 2050` to contrast near-term vs end-of-century warming.
+- **Try a different timing mode.** Switch `PIN_TIMING_MODE` to `"gaussian"` to keep each storm close to its historical date instead of resampling uniformly across the season.
+- **Validate.** `compute_compound_stress_year_metrics()` and the internal helpers live in `R/stress_test_helpers.R`; their unit tests in `tests/testthat/test-stress-test-helpers.R` cover the pin, jitter, and amplification contracts.
+
+Run the full production script from the console when you are ready:
+
+```{r}
+#| label: run-script
+#| eval: false
+source(system.file("extcode", "05-stress-test-experiment.R",
+                   package = "ipdcstorm"))
+```
+
+## 10. References {.unnumbered}
+
+::: {#refs}
+:::

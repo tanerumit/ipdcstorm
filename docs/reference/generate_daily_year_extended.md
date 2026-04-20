@@ -7,7 +7,14 @@ attributes for each day.
 ## Usage
 
 ``` r
-generate_daily_year_extended(year, sampled_events, pulse_shape = "cosine")
+generate_daily_year_extended(
+  year,
+  sampled_events,
+  pulse_shape = "cosine",
+  sim_year = NA_integer_,
+  location = NA_character_,
+  scenario = NA_character_
+)
 ```
 
 ## Arguments

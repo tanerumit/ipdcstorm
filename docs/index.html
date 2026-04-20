@@ -120,6 +120,7 @@
 <span>  scenario    <span class="op">=</span> <span class="st">"baseline"</span>,</span>
 <span>  seed        <span class="op">=</span> <span class="fl">42</span></span>
 <span><span class="op">)</span></span></code></pre></div>
+<p><code>daily</code> is a named list with one tibble per location. Each per-location table contains <code>sim_year</code> (serial 1..N), <code>doy</code> (day-of-year, 1-366), <code>wind_kt</code>, <code>surge_m</code>, <code>event_id</code>, <code>pressure_hpa</code>, <code>pressure_deficit_hpa</code>, <code>rmw_km</code>, <code>damage_intensity</code>, <code>damage_rate</code>, and <code>cum_damage</code>. The location name is stored as the list-element name and as a tibble attribute, not as a column; use <code>dplyr::bind_rows(daily, .id = "location")</code> when you need a flat tibble with an explicit <code>location</code> column.</p>
 <p>For production runs, replace <code>data_path</code> with the full IBTrACS North Atlantic CSV (<code>ibtracs.NA.list.v04r01.csv</code>), available from NOAA NCEI.</p>
 </div>
 <div class="section level2">
@@ -141,7 +142,7 @@
 <div class="section level2">
 <h2 id="tutorials">Tutorials<a class="anchor" aria-label="anchor" href="#tutorials"></a>
 </h2>
-<p>Three Quarto tutorials walk through the full workflow:</p>
+<p>Four Quarto tutorials walk through the full workflow:</p>
 <ul>
 <li>
 <code>vignettes/tutorial_1_setup.qmd</code> — model overview, setup, single-site baseline.</li>
@@ -149,8 +150,10 @@
 <code>vignettes/tutorial_2_validation.qmd</code> — validation suite and hindcasting.</li>
 <li>
 <code>vignettes/tutorial_3_climate_change.qmd</code> — multi-site climate-change analysis.</li>
+<li>
+<code>vignettes/tutorial_4_stress_test.qmd</code> — focal-anchored stress-test experiment: pin a pool of historical major hurricanes, replay under KNMI’23 scenarios, apply state-dependent damage amplification.</li>
 </ul>
-<p>Worked example scripts live in <code>inst/extcode/</code>, including a stress-test experiment (<code>05-stress-test-experiment.R</code>) that selects representative high-impact years and replays them under KNMI’23 scenarios.</p>
+<p>Worked example scripts live in <code>inst/extcode/</code>, including the stress-test experiment (<code>05-stress-test-experiment.R</code>) that implements the Tutorial 4 workflow end-to-end.</p>
 </div>
 <div class="section level2">
 <h2 id="key-entry-points">Key entry points<a class="anchor" aria-label="anchor" href="#key-entry-points"></a>
@@ -179,13 +182,17 @@
 </tr>
 <tr>
 <td><code><a href="reference/generate_daily_hazard_impact_spatial.html">generate_daily_hazard_impact_spatial()</a></code></td>
-<td>Daily downscaling for one or more sites</td>
+<td>Daily downscaling; accepts <code>pinned_sids</code> (per-year focal SID pin) and <code>pin_jitter</code> (per-year timing / intensity / RMW jitter) for stress-test workflows</td>
 </tr>
 <tr>
 <td>
-<code><a href="reference/make_validation_cfg.html">make_validation_cfg()</a></code> / <code><a href="reference/run_validation_suite.html">run_validation_suite()</a></code>
+<code><a href="reference/make_validation_cfg.html">make_validation_cfg()</a></code> / <code><a href="reference/run_validation_suite.html">run_validation_suite()</a></code> / <code><a href="reference/validate_hazard_model.html">validate_hazard_model()</a></code>
 </td>
-<td>Validate against the historical record</td>
+<td>Validate against the historical record (run separately or via the combined wrapper)</td>
+</tr>
+<tr>
+<td><code><a href="reference/save_daily_hazard_csvs.html">save_daily_hazard_csvs()</a></code></td>
+<td>Persist per-location daily output to disk</td>
 </tr>
 <tr>
 <td>

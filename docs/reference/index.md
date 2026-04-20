@@ -21,6 +21,8 @@
   : Create a validation configuration
 - [`validate_hazard_model()`](https://tanerumit.github.io/ipdcstorm/reference/validate_hazard_model.md)
   : Run hazard model and validate in one step
+- [`run_validation_suite()`](https://tanerumit.github.io/ipdcstorm/reference/run_validation_suite.md)
+  : Run the three-tier hazard model validation suite
 
 ## IBTrACS and storm inputs
 
@@ -47,6 +49,10 @@
 - [`generate_daily_hazard_impact_spatial()`](https://tanerumit.github.io/ipdcstorm/reference/generate_daily_hazard_impact_spatial.md)
   : Generate spatially coherent daily synthetic hazard and impact time
   series
+- [`damage_rate_from_wind()`](https://tanerumit.github.io/ipdcstorm/reference/damage_rate_from_wind.md)
+  : Bounded power-law damage rate from wind speed
+- [`save_daily_hazard_csvs()`](https://tanerumit.github.io/ipdcstorm/reference/save_daily_hazard_csvs.md)
+  : Save daily hazard output to per-location CSV files
 
 ## Query and Stress Testing
 

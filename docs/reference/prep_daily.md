@@ -12,9 +12,9 @@ prep_daily(daily_impact)
 
 - daily_impact:
 
-  A data frame or tibble with at least a `date` column coercible by
-  [`format()`](https://rdrr.io/r/base/format.html) (typically `Date`),
-  one row per day.
+  A data frame or tibble with either a `date` column or both `sim_year`
+  and `doy` columns (from
+  [`generate_daily_hazard_impact_spatial()`](https://tanerumit.github.io/ipdcstorm/reference/generate_daily_hazard_impact_spatial.md)).
 
 ## Value
 

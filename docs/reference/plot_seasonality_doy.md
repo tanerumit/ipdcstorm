@@ -18,10 +18,11 @@ plot_seasonality_doy(
 
 - daily:
 
-  A data frame or tibble with at least `date` (`Date`), `event_id`,
-  `event_class`, plus fields required by
+  A data frame or tibble with at least `date` (`Date`), `event_id`, plus
+  fields required by
   [`prep_events()`](https://tanerumit.github.io/ipdcstorm/reference/prep_events.md)
-  when `metric = "starts"` (`location`, `sim_year`, `wind_kt`).
+  when `metric = "starts"` (`sim_year`, `wind_kt`, and optional
+  `location`).
 
 - metric:
 
@@ -43,8 +44,8 @@ A `ggplot` object.
 
 For `metric = "event_days"`, each day with non-`NA` `event_id`
 contributes one count. For `metric = "starts"`, counts are based on
-event start dates derived from grouped events. Event classes are
-collapsed to `TS`/`HUR` using the same rule as
+event start dates derived from grouped events. Event classes are derived
+from the event peak wind using the same rule as
 [`prep_events()`](https://tanerumit.github.io/ipdcstorm/reference/prep_events.md).
 
 ## Examples
@@ -59,6 +60,6 @@ d <- data.frame(
   sim_year = 2001
 )
 plot_seasonality_doy(d, metric = "event_days")
-#> Warning: Removed 4 rows containing missing values or values outside the scale range
+#> Warning: Removed 2 rows containing missing values or values outside the scale range
 #> (`geom_bar()`).
 ```

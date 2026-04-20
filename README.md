@@ -1,42 +1,45 @@
+---
+output: github_document
+---
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
+
+
 
 # ipdcstorm
 
 <!-- badges: start -->
-
 <!-- badges: end -->
 
 `ipdcstorm` is an R package for stochastic tropical-cyclone wind hazard
-modelling at point locations in the North Atlantic basin. It was
-developed to support climate stress testing of supply-chain
-infrastructure on the Dutch Caribbean islands (St. Martin, Saba,
-Statia), but it works for any site in the basin.
+modelling at point locations in the North Atlantic basin. It was developed
+to support climate stress testing of supply-chain infrastructure on the
+Dutch Caribbean islands (St. Martin, Saba, Statia), but it works for any
+site in the basin.
 
-The package combines NOAA’s IBTrACS historical track database with a
+The package combines NOAA's IBTrACS historical track database with a
 parametric wind model and a stochastic event generator to produce long
-synthetic records of daily site-level wind exposure under both
-stationary and climate-change conditions.
+synthetic records of daily site-level wind exposure under both stationary
+and climate-change conditions.
 
 ## What it does
 
 The workflow has three stages:
 
-1.  **Historical calibration.** Reads IBTrACS tracks, computes
-    site-level winds with a Holland (1980) parametric profile (with
-    forward-motion asymmetry and directional radii), and estimates
-    per-site annual storm rates and Gamma overdispersion by severity
-    class.
-2.  **Stochastic simulation.** Draws synthetic seasons from a
-    Gamma–Poisson–Binomial process that reproduces observed burstiness
-    and the tropical-storm/hurricane split. Climate change enters
-    through SST forcing — affecting both annual rates and the hurricane
-    fraction — with KNMI’23 and IPCC AR6 scenarios built in.
-3.  **Temporal downscaling.** Resamples historical events from a
-    severity-stratified library, places them on the calendar via
-    empirical day-of-year distributions, and spreads each event over its
-    duration with a smooth wind envelope to produce a daily wind (kt)
-    time series per location.
+1. **Historical calibration.** Reads IBTrACS tracks, computes site-level
+   winds with a Holland (1980) parametric profile (with forward-motion
+   asymmetry and directional radii), and estimates per-site annual storm
+   rates and Gamma overdispersion by severity class.
+2. **Stochastic simulation.** Draws synthetic seasons from a
+   Gamma–Poisson–Binomial process that reproduces observed burstiness and
+   the tropical-storm/hurricane split. Climate change enters through SST
+   forcing — affecting both annual rates and the hurricane fraction —
+   with KNMI'23 and IPCC AR6 scenarios built in.
+3. **Temporal downscaling.** Resamples historical events from a
+   severity-stratified library, places them on the calendar via empirical
+   day-of-year distributions, and spreads each event over its duration
+   with a smooth wind envelope to produce a daily wind (kt) time series
+   per location.
 
 It also ships validation utilities (rates, return levels, wind-field
 diagnostics, QQ/CDF/bias plots) and a hindcast suite for checking the
@@ -45,6 +48,7 @@ calibrated model against the historical record.
 ## Installation
 
 Install the development version from GitHub:
+
 
 ``` r
 # install.packages("devtools")
@@ -55,6 +59,7 @@ devtools::install_github("tanerumit/ipdcstorm")
 
 A minimal end-to-end run for three Dutch Caribbean sites using the
 packaged IBTrACS demo subset:
+
 
 ``` r
 library(ipdcstorm)
@@ -87,6 +92,14 @@ daily <- generate_daily_hazard_impact_spatial(
 )
 ```
 
+`daily` is a named list with one tibble per location. Each per-location
+table contains `sim_year` (serial 1..N), `doy` (day-of-year, 1-366),
+`wind_kt`, `surge_m`, `event_id`, `pressure_hpa`, `pressure_deficit_hpa`,
+`rmw_km`, `damage_intensity`, `damage_rate`, and `cum_damage`. The location
+name is stored as the list-element name and as a tibble attribute, not as
+a column; use `dplyr::bind_rows(daily, .id = "location")` when you need a
+flat tibble with an explicit `location` column.
+
 For production runs, replace `data_path` with the full IBTrACS North
 Atlantic CSV (`ibtracs.NA.list.v04r01.csv`), available from NOAA NCEI.
 
@@ -95,19 +108,18 @@ Atlantic CSV (`ibtracs.NA.list.v04r01.csv`), available from NOAA NCEI.
 Climate forcing is configured through `make_climate_cfg()` and supports:
 
 - **Stationary** baseline (no warming).
-- **KNMI’23** scenarios at 2050 and 2100 horizons (`knmi_Ld`,
-  `knmi_Hd`).
+- **KNMI'23** scenarios at 2050 and 2100 horizons (`knmi_Ld`, `knmi_Hd`).
 - **IPCC AR6** SST scenarios.
 - **Direct** `delta_sst` for custom forcing.
 
-Scenarios shift annual storm rates, the hurricane share, and
-(optionally) individual event intensities, while preserving common
-random numbers between baseline and scenario runs so differences isolate
-the climate signal.
+Scenarios shift annual storm rates, the hurricane share, and (optionally)
+individual event intensities, while preserving common random numbers
+between baseline and scenario runs so differences isolate the climate
+signal.
 
 ## Tutorials
 
-Three Quarto tutorials walk through the full workflow:
+Four Quarto tutorials walk through the full workflow:
 
 - `vignettes/tutorial_1_setup.qmd` — model overview, setup, single-site
   baseline.
@@ -115,19 +127,23 @@ Three Quarto tutorials walk through the full workflow:
   hindcasting.
 - `vignettes/tutorial_3_climate_change.qmd` — multi-site climate-change
   analysis.
+- `vignettes/tutorial_4_stress_test.qmd` — focal-anchored stress-test
+  experiment: pin a pool of historical major hurricanes, replay under
+  KNMI'23 scenarios, apply state-dependent damage amplification.
 
-Worked example scripts live in `inst/extcode/`, including a stress-test
-experiment (`05-stress-test-experiment.R`) that selects representative
-high-impact years and replays them under KNMI’23 scenarios.
+Worked example scripts live in `inst/extcode/`, including the
+stress-test experiment (`05-stress-test-experiment.R`) that implements
+the Tutorial 4 workflow end-to-end.
 
 ## Key entry points
 
 | Function | Purpose |
-|----|----|
+|---|---|
 | `make_hazard_cfg()` / `run_hazard_model()` | Configure and run the hazard simulation |
 | `make_climate_cfg()` / `resolve_climate_inputs()` | Build a climate scenario |
-| `generate_daily_hazard_impact_spatial()` | Daily downscaling for one or more sites |
-| `make_validation_cfg()` / `run_validation_suite()` | Validate against the historical record |
+| `generate_daily_hazard_impact_spatial()` | Daily downscaling; accepts `pinned_sids` (per-year focal SID pin) and `pin_jitter` (per-year timing / intensity / RMW jitter) for stress-test workflows |
+| `make_validation_cfg()` / `run_validation_suite()` / `validate_hazard_model()` | Validate against the historical record (run separately or via the combined wrapper) |
+| `save_daily_hazard_csvs()` | Persist per-location daily output to disk |
 | `plot_*()` / `save_hazard_viz_plots()` | Diagnostic and reporting plots |
 
 ## License
@@ -136,4 +152,5 @@ MIT. See `LICENSE`.
 
 ## Issues
 
-Please report bugs at <https://github.com/tanerumit/ipdcstorm/issues>.
+Please report bugs at
+<https://github.com/tanerumit/ipdcstorm/issues>.

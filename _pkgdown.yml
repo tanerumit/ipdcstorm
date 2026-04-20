@@ -41,6 +41,7 @@ reference:
     contents:
       - make_validation_cfg
       - validate_hazard_model
+      - run_validation_suite
 
   - title: IBTrACS and storm inputs
     contents:
@@ -56,6 +57,8 @@ reference:
       - build_event_library
       - make_background_wind_cfg
       - generate_daily_hazard_impact_spatial
+      - damage_rate_from_wind
+      - save_daily_hazard_csvs
 
   - title: Query and Stress Testing
     contents:

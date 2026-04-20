@@ -54,5 +54,5 @@ Numeric vector of daily damage rates.
 
 ``` r
 damage_rate_from_wind(c(20, 40, 80))
-#> Error in damage_rate_from_wind(c(20, 40, 80)): could not find function "damage_rate_from_wind"
+#> [1] 0.000000e+00 6.657352e-05 3.000000e-02
 ```

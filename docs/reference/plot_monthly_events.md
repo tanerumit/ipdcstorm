@@ -15,9 +15,8 @@ plot_monthly_events(daily, normalize = FALSE)
 
   A data frame or tibble with columns required by
   [`prep_events()`](https://tanerumit.github.io/ipdcstorm/reference/prep_events.md)
-  (`location`, `sim_year`, `event_id`, `event_class`, `date`,
-  `wind_kt`). Rows with `NA` `event_id` are excluded during event
-  extraction.
+  (`sim_year`, `event_id`, `date`, `wind_kt`, and optional `location`).
+  Rows with `NA` `event_id` are excluded during event extraction.
 
 - normalize:
 

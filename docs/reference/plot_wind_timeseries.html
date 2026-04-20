@@ -71,8 +71,8 @@ wind speed.</p>
 
 <dl><dt id="arg-daily">daily<a class="anchor" aria-label="anchor" href="#arg-daily"></a></dt>
 <dd><p>A data frame or tibble of daily records with columns <code>date</code>
-(<code>Date</code>), <code>wind_kt</code> (numeric, knots), <code>event_id</code> (event identifier; <code>NA</code>
-means no event), and <code>event_class</code> (character/factor).</p></dd>
+(<code>Date</code>), <code>wind_kt</code> (numeric, knots), and <code>event_id</code> (event identifier;
+<code>NA</code> means no event).</p></dd>
 
 
 <dt id="arg-events">events<a class="anchor" aria-label="anchor" href="#arg-events"></a></dt>
@@ -105,9 +105,9 @@ lines are added.</p></dd>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>If <code>events</code> is <code>NULL</code>, event summaries are computed from <code>daily</code>.
-Segment colors collapse event classes to <code>TS</code> and <code>HUR</code> (anything not equal
-to <code>"HUR"</code> is treated as <code>TS</code>). <code>NA</code> values in <code>event_id</code> are ignored when
-computing events.</p>
+Event class is derived from each event's peak daily wind (<code>HUR</code> for peaks
+at or above 64 kt, otherwise <code>TS</code>). <code>NA</code> values in <code>event_id</code> are ignored
+when computing events.</p>
     </div>
 
     <div class="section level2">

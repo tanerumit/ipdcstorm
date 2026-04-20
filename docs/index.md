@@ -80,6 +80,15 @@ daily <- generate_daily_hazard_impact_spatial(
 )
 ```
 
+`daily` is a named list with one tibble per location. Each per-location
+table contains `sim_year` (serial 1..N), `doy` (day-of-year, 1-366),
+`wind_kt`, `surge_m`, `event_id`, `pressure_hpa`,
+`pressure_deficit_hpa`, `rmw_km`, `damage_intensity`, `damage_rate`, and
+`cum_damage`. The location name is stored as the list-element name and
+as a tibble attribute, not as a column; use
+`dplyr::bind_rows(daily, .id = "location")` when you need a flat tibble
+with an explicit `location` column.
+
 For production runs, replace `data_path` with the full IBTrACS North
 Atlantic CSV (`ibtracs.NA.list.v04r01.csv`), available from NOAA NCEI.
 
@@ -102,7 +111,7 @@ the climate signal.
 
 ## Tutorials
 
-Three Quarto tutorials walk through the full workflow:
+Four Quarto tutorials walk through the full workflow:
 
 - `vignettes/tutorial_1_setup.qmd` — model overview, setup, single-site
   baseline.
@@ -110,10 +119,13 @@ Three Quarto tutorials walk through the full workflow:
   hindcasting.
 - `vignettes/tutorial_3_climate_change.qmd` — multi-site climate-change
   analysis.
+- `vignettes/tutorial_4_stress_test.qmd` — focal-anchored stress-test
+  experiment: pin a pool of historical major hurricanes, replay under
+  KNMI’23 scenarios, apply state-dependent damage amplification.
 
-Worked example scripts live in `inst/extcode/`, including a stress-test
-experiment (`05-stress-test-experiment.R`) that selects representative
-high-impact years and replays them under KNMI’23 scenarios.
+Worked example scripts live in `inst/extcode/`, including the
+stress-test experiment (`05-stress-test-experiment.R`) that implements
+the Tutorial 4 workflow end-to-end.
 
 ## Key entry points
 
@@ -121,8 +133,9 @@ high-impact years and replays them under KNMI’23 scenarios.
 |----|----|
 | [`make_hazard_cfg()`](https://tanerumit.github.io/ipdcstorm/reference/make_hazard_cfg.md) / [`run_hazard_model()`](https://tanerumit.github.io/ipdcstorm/reference/run_hazard_model.md) | Configure and run the hazard simulation |
 | [`make_climate_cfg()`](https://tanerumit.github.io/ipdcstorm/reference/make_climate_cfg.md) / [`resolve_climate_inputs()`](https://tanerumit.github.io/ipdcstorm/reference/resolve_climate_inputs.md) | Build a climate scenario |
-| [`generate_daily_hazard_impact_spatial()`](https://tanerumit.github.io/ipdcstorm/reference/generate_daily_hazard_impact_spatial.md) | Daily downscaling for one or more sites |
-| [`make_validation_cfg()`](https://tanerumit.github.io/ipdcstorm/reference/make_validation_cfg.md) / [`run_validation_suite()`](https://tanerumit.github.io/ipdcstorm/reference/run_validation_suite.md) | Validate against the historical record |
+| [`generate_daily_hazard_impact_spatial()`](https://tanerumit.github.io/ipdcstorm/reference/generate_daily_hazard_impact_spatial.md) | Daily downscaling; accepts `pinned_sids` (per-year focal SID pin) and `pin_jitter` (per-year timing / intensity / RMW jitter) for stress-test workflows |
+| [`make_validation_cfg()`](https://tanerumit.github.io/ipdcstorm/reference/make_validation_cfg.md) / [`run_validation_suite()`](https://tanerumit.github.io/ipdcstorm/reference/run_validation_suite.md) / [`validate_hazard_model()`](https://tanerumit.github.io/ipdcstorm/reference/validate_hazard_model.md) | Validate against the historical record (run separately or via the combined wrapper) |
+| [`save_daily_hazard_csvs()`](https://tanerumit.github.io/ipdcstorm/reference/save_daily_hazard_csvs.md) | Persist per-location daily output to disk |
 | `plot_*()` / [`save_hazard_viz_plots()`](https://tanerumit.github.io/ipdcstorm/reference/save_hazard_viz_plots.md) | Diagnostic and reporting plots |
 
 ## License

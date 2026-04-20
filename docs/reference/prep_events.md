@@ -12,9 +12,10 @@ prep_events(daily)
 
 - daily:
 
-  A data frame or tibble containing daily rows with columns `location`,
-  `sim_year`, `event_id`, `event_class`, `date`, and `wind_kt`. Rows
-  with `NA` in `event_id` are excluded.
+  A data frame or tibble containing daily rows with columns `sim_year`,
+  `event_id`, `date`, and `wind_kt`. A `location` column is optional for
+  single-location inputs and is reconstructed from tibble metadata when
+  absent. Rows with `NA` in `event_id` are excluded.
 
 ## Value
 

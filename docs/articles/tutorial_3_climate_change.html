@@ -50,8 +50,8 @@
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Tutorials</h6></li>
-    <li><a class="dropdown-item" href="../articles/tutorial_1_setup.html">Tutorial 1 — Introduction, Setup &amp; Baseline Workflow</a></li>
-    <li><a class="dropdown-item" href="../articles/tutorial_2_validation.html">Tutorial 2 — Model Validation</a></li>
+    <li><a class="dropdown-item" href="../articles/tutorial_1_setup.html">Tutorial 1 - Introduction, Setup &amp; Baseline Workflow</a></li>
+    <li><a class="dropdown-item" href="../articles/tutorial_2_validation.html">Tutorial 2 - Model Validation</a></li>
     <li><a class="dropdown-item" href="../articles/tutorial_3_climate_change.html">Tutorial 3 - Climate Impact Analysis</a></li>
     <li><a class="dropdown-item" href="../articles/tutorial_4_stress_test.html">Tutorial 4 — Climate Stress-Test Experiment</a></li>
   </ul>
@@ -75,7 +75,7 @@
       <h1>Tutorial 3 - Climate Impact Analysis</h1>
       <p class="subtitle">Hurricane Wind Hazard Model for the Caribbean</p>
 
-      <p class="date">2026-04-16</p>
+      <p class="date">2026-04-20</p>
 
       <small class="dont-index">Source: <a href="https://github.com/tanerumit/ipdcstorm/blob/main/vignettes/tutorial_3_climate_change.qmd" class="external-link"><code>vignettes/tutorial_3_climate_change.qmd</code></a></small>
       <div class="d-none name"><code></code></div>
@@ -89,18 +89,17 @@
     <div>
 <blockquote>
 <p><strong>Prerequisites</strong></p>
-<p>This tutorial assumes you have already worked through <a href="tutorial_1_introduction_setup.qmd">Tutorial 1</a>, where the single-site workflow and the main output objects are introduced in more detail.</p>
+<p>This tutorial assumes you have already worked through <a href="tutorial_1_setup.qmd">Tutorial 1</a>, where the single-site workflow and the main output objects are introduced in more detail.</p>
 </blockquote>
 </div>
-<p>This tutorial shows how to move from one island to a small group of islands, then compare a stationary baseline with a warmer-climate scenario. The focus is practical: run the model, inspect the annual outputs, and then downscale one site to daily disruption metrics.</p>
-<section class="level2" data-number="1"><h2 data-number="1" id="sec-what-this-covers">
-<span class="header-section-number">1</span> What This Tutorial Covers<a class="anchor" aria-label="anchor" href="#sec-what-this-covers"></a>
+<p>This tutorial scales the workflow from a single site to a small group of islands, then compares a present-day baseline with a warmer climate. The aim is practical: run the model, inspect the annual output, and turn scenario differences into daily disruption metrics for one site.</p>
+<section class="level2"><h2 id="sec-what-this-covers">1. What This Tutorial Covers<a class="anchor" aria-label="anchor" href="#sec-what-this-covers"></a>
 </h2>
 <p>By the end, you will be able to:</p>
 <ul>
-<li>run the baseline model for three islands at once</li>
-<li>compare a stationary baseline with a warmer climate scenario</li>
-<li>translate annual scenario differences into daily disruption metrics for one site</li>
+<li>run the baseline model for three islands at once;</li>
+<li>compare today’s climate with a warmer scenario;</li>
+<li>turn the annual scenario differences into day-by-day disruption metrics for one site.</li>
 </ul>
 <div class="cell">
 <div class="code-copy-outer-scaffold">
@@ -111,10 +110,9 @@
 <button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button>
 </div>
 </div>
-</section><section class="level2" data-number="2"><h2 data-number="2" id="sec-multisite-baseline">
-<span class="header-section-number">2</span> Multi-Site Baseline<a class="anchor" aria-label="anchor" href="#sec-multisite-baseline"></a>
+</section><section class="level2"><h2 id="sec-multisite-baseline">2. Multi-Site Baseline<a class="anchor" aria-label="anchor" href="#sec-multisite-baseline"></a>
 </h2>
-<p>We start with the three Dutch Caribbean islands used throughout this package: St. Martin, Saba, and Statia. The setup is the same as in Tutorial 1, except that <code>targets</code> now contains three rows instead of one.</p>
+<p>We start with the three Dutch Caribbean islands used throughout the package: St. Martin, Saba, and Statia. The setup is the same as in Tutorial 1, only with three rows in <code>targets</code> instead of one.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold">
 <div class="sourceCode cell-code" id="cb2"><pre class="downlit sourceCode r">
@@ -155,7 +153,7 @@
 <button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button>
 </div>
 </div>
-<p>The <code>rates</code> table is the historical calibration result: mean annual site-level rates for tropical storms and hurricanes at each island.</p>
+<p>The <code>rates</code> table shows what the model learned from history: the average number of tropical-storm and hurricane hits per year at each island.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold">
 <div class="sourceCode cell-code" id="cb4"><pre class="downlit sourceCode r">
@@ -174,7 +172,7 @@
 <span><span class="co">#&gt; 6 Statia    TS           0.511      47       0.400     0.600</span></span></code></pre>
 </div>
 </div>
-<p>The annual simulation table gives one synthetic season per row. For a quick comparison across islands, we can average the simulated counts and hurricane share by location.</p>
+<p>The simulation table has one synthetic season per row. To compare islands at a glance, average the simulated counts and the hurricane share by location.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold">
 <div class="sourceCode cell-code" id="cb6"><pre class="downlit sourceCode r">
@@ -212,29 +210,28 @@
 <tbody>
 <tr class="odd">
 <td><code>mean_total</code></td>
-<td>Mean annual number of site-impacting storms with at least tropical-storm strength.</td>
+<td>Average number of storms per year that hit the site at tropical-storm strength or above.</td>
 </tr>
 <tr class="even">
 <td><code>mean_ts</code></td>
-<td>Mean annual number of tropical-storm events.</td>
+<td>Average number of tropical-storm events per year.</td>
 </tr>
 <tr class="odd">
 <td><code>mean_hur</code></td>
-<td>Mean annual number of hurricane events.</td>
+<td>Average number of hurricanes per year.</td>
 </tr>
 <tr class="even">
 <td><code>mean_p_hur</code></td>
-<td>Mean simulated fraction of storms that are hurricanes.</td>
+<td>Average share of events that reach hurricane strength.</td>
 </tr>
 </tbody>
 </table>
-<p>These averages should broadly line up with the rate table. Small differences across islands reflect real differences in how often storms pass close enough, and strongly enough, to exceed the site thresholds.</p>
-</section><section class="level2" data-number="3"><h2 data-number="3" id="sec-climate-change">
-<span class="header-section-number">3</span> Climate Change Scenarios<a class="anchor" aria-label="anchor" href="#sec-climate-change"></a>
+<p>These numbers should broadly match the <code>rates</code> table. Small differences between islands reflect real geography: some sites see storms pass close and strong more often than others.</p>
+</section><section class="level2"><h2 id="sec-climate-change">3. Climate Change Scenarios<a class="anchor" aria-label="anchor" href="#sec-climate-change"></a>
 </h2>
-<p>The climate extension changes the annual simulation in two SST-driven ways. First, warming can scale the total number of storms up or down through a rate effect. Second, warming can shift the storm mix toward a larger hurricane fraction through an intensity effect.</p>
-<p>In this model, both effects are driven by a scalar <code>delta_sst</code>: the Main Development Region sea-surface temperature change, in °C, relative to a 1991-2020 baseline. That keeps the workflow simple for scenario testing: you can either use a named scenario helper or supply a direct warming value yourself.</p>
-<p>We will compare a stationary baseline (<code>delta_sst = 0</code>) with a hypothetical warmer climate using <code>delta_sst = 1.5</code>. That is a clean side-by-side example for understanding the direction and size of the climate response.</p>
+<p>Warming affects the simulated climate in two ways. First, it can raise or lower the total number of storms per year (a <em>rate</em> effect). Second, it can shift the storm mix so a larger share reach hurricane strength (an <em>intensity</em> effect).</p>
+<p>Both effects are driven by a single number: <code>delta_sst</code>, the change in Main Development Region sea-surface temperature (in °C) relative to a 1991-2020 baseline. You can either use a named scenario helper (IPCC AR6, KNMI’23) or set <code>delta_sst</code> directly.</p>
+<p>Here we compare a stationary baseline (<code>delta_sst = 0</code>) with a warmer climate at <code>delta_sst = 1.5</code>. This side-by-side setup makes the direction and size of the climate response easy to see.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold">
 <div class="sourceCode cell-code" id="cb8"><pre class="downlit sourceCode r">
@@ -252,7 +249,7 @@
 <span><span class="co">#&gt; 3 ssp585   ipcc_ar6            1              2.5</span></span></code></pre>
 </div>
 </div>
-<p>The built-in scenario table is useful for context, but for this tutorial we set the warming directly so the climate signal is explicit in the code.</p>
+<p>The built-in scenario table is useful context, but for the tutorial we set <code>delta_sst</code> directly so the warming is visible in the code.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold">
 <div class="sourceCode cell-code" id="cb10"><pre class="downlit sourceCode r">
@@ -283,7 +280,7 @@
 <button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button>
 </div>
 </div>
-<p>Now we stack the two annual simulation tables and compute a compact comparison by scenario and island. The summary below reports the mean annual storm count, the tropical-storm and hurricane components, and the mean simulated hurricane fraction.</p>
+<p>Now stack the two simulation tables and compare by scenario and island. The summary reports the average yearly storm count, how it splits into tropical storms and hurricanes, and the simulated hurricane share.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold">
 <div class="sourceCode cell-code" id="cb12"><pre class="downlit sourceCode r">
@@ -317,10 +314,6 @@
 </div>
 </div>
 <table class="table caption-top">
-<colgroup>
-<col style="width: 38%">
-<col style="width: 61%">
-</colgroup>
 <thead><tr class="header">
 <th>Column</th>
 <th>Description</th>
@@ -328,7 +321,7 @@
 <tbody>
 <tr class="odd">
 <td><code>scenario</code></td>
-<td>Baseline or future climate label used for the comparison.</td>
+<td>Baseline or future — the label used in the comparison.</td>
 </tr>
 <tr class="even">
 <td><code>location</code></td>
@@ -336,19 +329,19 @@
 </tr>
 <tr class="odd">
 <td><code>mean_total</code></td>
-<td>Mean annual storm count under that scenario.</td>
+<td>Average yearly storm count under that scenario.</td>
 </tr>
 <tr class="even">
 <td><code>mean_ts</code></td>
-<td>Mean annual tropical-storm count.</td>
+<td>Average yearly tropical-storm count.</td>
 </tr>
 <tr class="odd">
 <td><code>mean_hur</code></td>
-<td>Mean annual hurricane count.</td>
+<td>Average yearly hurricane count.</td>
 </tr>
 <tr class="even">
 <td><code>mean_p_hur</code></td>
-<td>Mean simulated hurricane fraction.</td>
+<td>Average share of storms reaching hurricane strength.</td>
 </tr>
 </tbody>
 </table>
@@ -376,14 +369,13 @@
 </div>
 <div>
 <blockquote>
-<p><strong>Interpreting scenario differences</strong></p>
-<p>These scenario differences are changes in long-run stochastic behavior, not forecasts for any single year. A higher <code>mean_total</code> or <code>mean_p_hur</code> means the simulated climate state is more active on average, but quiet years still occur.</p>
+<p><strong>How to read scenario differences</strong></p>
+<p>Scenario differences describe the long-run average, not a forecast for any single year. A higher <code>mean_total</code> or <code>mean_p_hur</code> means the simulated climate is more active on average — but quiet years still happen.</p>
 </blockquote>
 </div>
-</section><section class="level2" data-number="4"><h2 data-number="4" id="sec-daily-comparison">
-<span class="header-section-number">4</span> Daily Series Comparison<a class="anchor" aria-label="anchor" href="#sec-daily-comparison"></a>
+</section><section class="level2"><h2 id="sec-daily-comparison">4. Daily Series Comparison<a class="anchor" aria-label="anchor" href="#sec-daily-comparison"></a>
 </h2>
-<p>Annual counts are useful for climatology, but many planning questions depend on daily disruption. To illustrate that step, we generate daily hazard-impact series for Saba under the baseline and the warmer scenario.</p>
+<p>Annual counts are useful for climatology, but many planning questions are about daily disruption. To show that step, we generate daily hazard and impact series for Saba under the baseline and the warmer scenario.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold">
 <div class="sourceCode cell-code" id="cb15"><pre class="downlit sourceCode r">
@@ -413,11 +405,14 @@
 <button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button>
 </div>
 </div>
-<p>The combined table lets us compare how often Saba experiences tropical-storm and hurricane days, along with the average annual damage-rate signal over the 200 simulated years.</p>
+<p>The combined table shows how often Saba experiences tropical-storm and hurricane days under each scenario, plus the average annual damage signal across the 200 simulated years.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold">
 <div class="sourceCode cell-code" id="cb16"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">daily_summary</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dplyr.tidyverse.org/reference/bind_rows.html" class="external-link">bind_rows</a></span><span class="op">(</span><span class="va">daily_baseline</span>, <span class="va">daily_future</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<code class="sourceCode R"><span><span class="va">daily_summary</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://dplyr.tidyverse.org/reference/bind_rows.html" class="external-link">bind_rows</a></span><span class="op">(</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span><span class="va">daily_baseline</span>, scenario <span class="op">=</span> <span class="st">"Baseline"</span><span class="op">)</span>,</span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span><span class="va">daily_future</span>, scenario <span class="op">=</span> <span class="st">"Future (+1.5 C)"</span><span class="op">)</span></span>
+<span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="https://dplyr.tidyverse.org/reference/group_by.html" class="external-link">group_by</a></span><span class="op">(</span><span class="va">scenario</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="https://dplyr.tidyverse.org/reference/summarise.html" class="external-link">summarise</a></span><span class="op">(</span></span>
 <span>    tc_days <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">wind_kt</span> <span class="op">&gt;</span> <span class="fl">0</span>, na.rm <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>,</span>
@@ -485,26 +480,26 @@
 <tbody>
 <tr class="odd">
 <td><code>tc_days</code></td>
-<td>Number of simulated days with any tropical-cyclone wind signal (<code>wind_kt &gt; 0</code>).</td>
+<td>Days where a storm produced any wind at the site (<code>wind_kt &gt; 0</code>).</td>
 </tr>
 <tr class="even">
 <td><code>ts_days</code></td>
-<td>Number of days reaching at least 34 kt.</td>
+<td>Days reaching at least 34 kt (tropical-storm strength).</td>
 </tr>
 <tr class="odd">
 <td><code>hur_days</code></td>
-<td>Number of days reaching at least 64 kt.</td>
+<td>Days reaching at least 64 kt (hurricane strength).</td>
 </tr>
 <tr class="even">
 <td><code>mean_annual_damage</code></td>
-<td>Average annual damage-rate total across the 200 simulated years.</td>
+<td>Average damage total per year across the 200 simulated seasons.</td>
 </tr>
 </tbody>
 </table>
 <div>
 <blockquote>
-<p><strong>Adding trade-wind background across both scenarios</strong></p>
-<p>The daily series above have zero wind on all non-TC days. For continuous-wind applications (energy, chronic exposure, port disruption), embed a <code><a href="../reference/make_background_wind_cfg.html">make_background_wind_cfg()</a></code> object in each hazard config so it flows through automatically to <code><a href="../reference/generate_daily_hazard_impact_spatial.html">generate_daily_hazard_impact_spatial()</a></code>:</p>
+<p><strong>Adding trade-wind background to both scenarios</strong></p>
+<p>The daily series above have zero wind on every non-storm day. For applications that need a continuous wind record (wind energy, chronic exposure, port disruption), attach a <code><a href="../reference/make_background_wind_cfg.html">make_background_wind_cfg()</a></code> object to each hazard config. It then flows through to <code><a href="../reference/generate_daily_hazard_impact_spatial.html">generate_daily_hazard_impact_spatial()</a></code> automatically:</p>
 <div class="code-copy-outer-scaffold">
 <div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">bg_cfg</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/make_background_wind_cfg.html">make_background_wind_cfg</a></span><span class="op">(</span></span>
@@ -531,17 +526,16 @@
 <span><span class="op">)</span></span></code></pre></div>
 <button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button>
 </div>
-<p>After <code><a href="../reference/run_hazard_model.html">run_hazard_model()</a></code>, call <code><a href="../reference/generate_daily_hazard_impact_spatial.html">generate_daily_hazard_impact_spatial()</a></code> without a <code>background_wind</code> argument — it reads the setting from <code>out$cfg$background_wind</code> automatically, keeping the same seed and CRN pattern so the climate comparison remains clean. See <a href="tutorial_1_setup.qmd#sec-background-wind">Tutorial 1 §Background Wind</a> for parameter guidance and a worked example.</p>
+<p>After <code><a href="../reference/run_hazard_model.html">run_hazard_model()</a></code>, call <code><a href="../reference/generate_daily_hazard_impact_spatial.html">generate_daily_hazard_impact_spatial()</a></code> without a <code>background_wind</code> argument — it picks the setting up from <code>out$cfg$background_wind</code> automatically, keeping the same seed so the climate comparison stays clean. See <a href="tutorial_1_setup.qmd#sec-background-wind">Tutorial 1 §Background Wind</a> for guidance and a worked example.</p>
 </blockquote>
 </div>
 <div>
 <blockquote>
-<p><strong>About Level 3 perturbation</strong></p>
-<p>The package also supports Level 3 storm perturbation for more exploratory scenario analysis. We do not use it here, so the daily comparison isolates the Level 1 and Level 2 climate effects discussed above.</p>
+<p><strong>About event-level perturbation</strong></p>
+<p>The package also supports event-level perturbation for more exploratory scenario analysis. We do not use it here, so the daily comparison isolates the rate and intensity effects discussed above.</p>
 </blockquote>
 </div>
-</section><section class="level2" data-number="5"><h2 data-number="5" id="sec-key-parameters">
-<span class="header-section-number">5</span> Key Parameters<a class="anchor" aria-label="anchor" href="#sec-key-parameters"></a>
+</section><section class="level2"><h2 id="sec-key-parameters">5. Key Parameters<a class="anchor" aria-label="anchor" href="#sec-key-parameters"></a>
 </h2>
 <p>For most climate sensitivity runs, three settings matter most:</p>
 <table class="table caption-top">
@@ -556,22 +550,22 @@
 <tbody>
 <tr class="odd">
 <td><code>delta_sst</code></td>
-<td>The imposed MDR SST shift in °C relative to the 1991-2020 baseline. In this tutorial, <code>delta_sst = 1.5</code> defines the future climate state directly.</td>
+<td>The warming (°C) relative to the 1991-2020 baseline. Here <code>delta_sst = 1.5</code> sets the future climate directly.</td>
 </tr>
 <tr class="even">
 <td>
 <code>scenario</code> vs <code>delta_sst</code>
 </td>
-<td>Use a named <code>scenario</code> when you want a built-in helper tied to a source such as IPCC AR6. Use <code>delta_sst</code> when you want a transparent what-if value without committing to one named pathway.</td>
+<td>Use a named <code>scenario</code> (e.g. IPCC AR6, KNMI’23) when you want to follow a published pathway. Use <code>delta_sst</code> when you want a transparent what-if value without committing to any specific pathway.</td>
 </tr>
 <tr class="odd">
 <td><code>sensitivity_mode</code></td>
 <td>
-<code>"fixed"</code> keeps the calibrated climate sensitivities unchanged as warming increases. <code>"linear_shifted"</code> lets those sensitivities themselves vary with <code>delta_sst</code>, which is more exploratory.</td>
+<code>"fixed"</code> keeps the calibrated climate sensitivities constant as warming grows. <code>"linear_shifted"</code> lets those sensitivities themselves vary with <code>delta_sst</code> — more exploratory.</td>
 </tr>
 </tbody>
 </table>
-<p>This baseline-versus-scenario pattern is a good starting point for stress testing. Once you are comfortable with the annual and daily outputs, you can expand the same workflow to additional islands or alternative warming assumptions.</p>
+<p>Baseline-versus-scenario is a good starting point for stress-testing. Once the annual and daily outputs feel familiar, the same workflow scales to more islands or alternative warming assumptions.</p>
 </section><script id="quarto-html-after-body" type="application/javascript">
   window.document.addEventListener("DOMContentLoaded", function (event) {
     const isCodeAnnotation = (el) => {

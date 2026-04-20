@@ -24,13 +24,15 @@ save_hazard_viz_plots(
 
 - daily:
 
-  A data frame or tibble with columns required by
+  A data frame/tibble or named list of daily tables. Inputs must contain
+  the columns required by
   [`plot_monthly_events()`](https://tanerumit.github.io/ipdcstorm/reference/plot_monthly_events.md),
   [`plot_annual_counts()`](https://tanerumit.github.io/ipdcstorm/reference/plot_annual_counts.md),
   [`plot_wind_timeseries()`](https://tanerumit.github.io/ipdcstorm/reference/plot_wind_timeseries.md),
   [`plot_wind_distribution()`](https://tanerumit.github.io/ipdcstorm/reference/plot_wind_distribution.md),
   and
   [`plot_intensity_duration()`](https://tanerumit.github.io/ipdcstorm/reference/plot_intensity_duration.md).
+  Named lists are flattened using the list names as `location`.
 
 - output_dir:
 
@@ -80,7 +82,6 @@ d <- data.frame(
   date = as.Date("2001-01-01") + 0:364,
   wind_kt = pmax(1, 20 + rnorm(365, sd = 8)),
   event_id = sample(c(NA, 1:8), 365, replace = TRUE),
-  event_class = sample(c(NA, "TS", "HUR"), 365, replace = TRUE),
   location = "A",
   sim_year = 2001
 )

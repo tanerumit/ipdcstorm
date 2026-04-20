@@ -114,6 +114,7 @@ forcing) is identical to the independent-sampling variant.</p>
 <span>  scenario <span class="op">=</span> <span class="cn">NA_character_</span>,</span>
 <span>  seed <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  pinned_sids <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  pin_jitter <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  background_wind <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -154,7 +155,9 @@ as <code>generate_daily_hazard_impact_spatial()</code>.</p></dd>
 
 
 <dt id="arg-scenario">scenario<a class="anchor" aria-label="anchor" href="#arg-scenario"></a></dt>
-<dd><p>Optional character scalar scenario label carried into output.</p></dd>
+<dd><p>Optional character scalar scenario label used for run
+bookkeeping and progress messages; it is not stored in the returned daily
+tables.</p></dd>
 
 
 <dt id="arg-seed">seed<a class="anchor" aria-label="anchor" href="#arg-seed"></a></dt>
@@ -162,11 +165,43 @@ as <code>generate_daily_hazard_impact_spatial()</code>.</p></dd>
 <code>out$run_metadata$seed</code> or <code>1L</code>. Per-location library seeds are
 offset by location index for reproducibility.</p></dd>
 
+
+<dt id="arg-pinned-sids">pinned_sids<a class="anchor" aria-label="anchor" href="#arg-pinned-sids"></a></dt>
+<dd><p>Optional named list mapping <code>sim_year</code> (as
+character) to a single IBTrACS SID string. When provided, the
+corresponding SID is pinned into the HUR draw for that sim_year,
+guaranteeing the focal event appears.</p></dd>
+
+
+<dt id="arg-pin-jitter">pin_jitter<a class="anchor" aria-label="anchor" href="#arg-pin-jitter"></a></dt>
+<dd><p>Optional named list of per-<code>sim_year</code> jitter
+specifications for the pinned focal event. Each entry is a list with
+numeric fields <code>doy_offset</code> (integer days), <code>v_scale</code> (peak
+wind multiplier), and <code>r_scale</code> (RMW multiplier). Jitter is
+applied BEFORE climate perturbation, targeting only rows whose
+<code>event_id</code> begins with the pinned SID for that year. Has no
+effect without a corresponding <code>pinned_sids</code> entry.</p></dd>
+
+
+<dt id="arg-background-wind">background_wind<a class="anchor" aria-label="anchor" href="#arg-background-wind"></a></dt>
+<dd><p>Optional background-wind configuration as returned
+by <code><a href="make_background_wind_cfg.html">make_background_wind_cfg()</a></code>.</p></dd>
+
+
+<dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
+<dd><p>Logical scalar; print progress messages when <code>TRUE</code>.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Named list of tibbles — one per requested location — with the same
-column schema as <code>generate_daily_hazard_impact_spatial()</code>.</p>
+    <p>Named list of tibbles — one per requested location — with columns
+<code>sim_year</code>, <code>doy</code>, <code>wind_kt</code>, <code>surge_m</code>,
+<code>event_id</code>, <code>pressure_hpa</code>, <code>pressure_deficit_hpa</code>,
+<code>rmw_km</code>, <code>damage_intensity</code>, <code>damage_rate</code>, and
+<code>cum_damage</code>. <code>doy</code> is an integer day-of-year (1-365/366) with
+no calendar-date tie-in; synthetic sim_year indices are serial and not
+mapped to real years. Each tibble also carries <code>location</code> and
+<code>gust_factor</code> as attributes.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

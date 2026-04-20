@@ -38,6 +38,7 @@ generate_daily_hazard_impact_spatial(
   scenario = NA_character_,
   seed = NULL,
   pinned_sids = NULL,
+  pin_jitter = NULL,
   background_wind = NULL,
   verbose = FALSE
 )
@@ -77,7 +78,8 @@ generate_daily_hazard_impact_spatial(
 
 - scenario:
 
-  Optional character scalar scenario label carried into output.
+  Optional character scalar scenario label used for run bookkeeping and
+  progress messages; it is not stored in the returned daily tables.
 
 - seed:
 
@@ -85,10 +87,41 @@ generate_daily_hazard_impact_spatial(
   `1L`. Per-location library seeds are offset by location index for
   reproducibility.
 
+- pinned_sids:
+
+  Optional named list mapping `sim_year` (as character) to a single
+  IBTrACS SID string. When provided, the corresponding SID is pinned
+  into the HUR draw for that sim_year, guaranteeing the focal event
+  appears.
+
+- pin_jitter:
+
+  Optional named list of per-`sim_year` jitter specifications for the
+  pinned focal event. Each entry is a list with numeric fields
+  `doy_offset` (integer days), `v_scale` (peak wind multiplier), and
+  `r_scale` (RMW multiplier). Jitter is applied BEFORE climate
+  perturbation, targeting only rows whose `event_id` begins with the
+  pinned SID for that year. Has no effect without a corresponding
+  `pinned_sids` entry.
+
+- background_wind:
+
+  Optional background-wind configuration as returned by
+  [`make_background_wind_cfg()`](https://tanerumit.github.io/ipdcstorm/reference/make_background_wind_cfg.md).
+
+- verbose:
+
+  Logical scalar; print progress messages when `TRUE`.
+
 ## Value
 
-Named list of tibbles — one per requested location — with the same
-column schema as `generate_daily_hazard_impact_spatial()`.
+Named list of tibbles — one per requested location — with columns
+`sim_year`, `doy`, `wind_kt`, `surge_m`, `event_id`, `pressure_hpa`,
+`pressure_deficit_hpa`, `rmw_km`, `damage_intensity`, `damage_rate`, and
+`cum_damage`. `doy` is an integer day-of-year (1-365/366) with no
+calendar-date tie-in; synthetic sim_year indices are serial and not
+mapped to real years. Each tibble also carries `location` and
+`gust_factor` as attributes.
 
 ## See also
 

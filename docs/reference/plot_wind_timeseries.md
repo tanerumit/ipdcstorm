@@ -22,8 +22,8 @@ plot_wind_timeseries(
 - daily:
 
   A data frame or tibble of daily records with columns `date` (`Date`),
-  `wind_kt` (numeric, knots), `event_id` (event identifier; `NA` means
-  no event), and `event_class` (character/factor).
+  `wind_kt` (numeric, knots), and `event_id` (event identifier; `NA`
+  means no event).
 
 - events:
 
@@ -54,10 +54,10 @@ A `ggplot` object.
 
 ## Details
 
-If `events` is `NULL`, event summaries are computed from `daily`.
-Segment colors collapse event classes to `TS` and `HUR` (anything not
-equal to `"HUR"` is treated as `TS`). `NA` values in `event_id` are
-ignored when computing events.
+If `events` is `NULL`, event summaries are computed from `daily`. Event
+class is derived from each event's peak daily wind (`HUR` for peaks at
+or above 64 kt, otherwise `TS`). `NA` values in `event_id` are ignored
+when computing events.
 
 ## Examples
 

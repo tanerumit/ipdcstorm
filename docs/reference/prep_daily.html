@@ -57,14 +57,15 @@
 
 
 <dl><dt id="arg-daily-impact">daily_impact<a class="anchor" aria-label="anchor" href="#arg-daily-impact"></a></dt>
-<dd><p>A data frame or tibble with at least a <code>date</code> column coercible
-by <code><a href="https://rdrr.io/r/base/format.html" class="external-link">format()</a></code> (typically <code>Date</code>), one row per day.</p></dd>
+<dd><p>A data frame or tibble with either a <code>date</code> column or
+both <code>sim_year</code> and <code>doy</code> columns (from
+<code><a href="generate_daily_hazard_impact_spatial.html">generate_daily_hazard_impact_spatial()</a></code>).</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p><code>daily_impact</code> with three added integer columns: <code>doy</code> (1-366), <code>month</code>
-(1-12), and <code>year</code> (4-digit calendar year).</p>
+    <p><code>daily_impact</code> with three added integer columns: <code>doy</code> (1-366),
+<code>month</code> (1-12), and <code>year</code> (4-digit calendar year).</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

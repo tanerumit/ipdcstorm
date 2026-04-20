@@ -3,7 +3,7 @@
 > **Prerequisites**
 >
 > This tutorial assumes you have already worked through [Tutorial
-> 1](https://tanerumit.github.io/ipdcstorm/articles/tutorial_1_introduction_setup.qmd),
+> 1](https://tanerumit.github.io/ipdcstorm/articles/tutorial_1_setup.qmd),
 > where the single-site workflow and the main output objects are
 > introduced in more detail.
 
@@ -282,7 +282,10 @@ tropical-storm and hurricane days, along with the average annual
 damage-rate signal over the 200 simulated years.
 
 ``` r
-daily_summary <- bind_rows(daily_baseline, daily_future) |>
+daily_summary <- bind_rows(
+  dplyr::mutate(daily_baseline, scenario = "Baseline"),
+  dplyr::mutate(daily_future, scenario = "Future (+1.5 C)")
+) |>
   group_by(scenario) |>
   summarise(
     tc_days = sum(wind_kt > 0, na.rm = TRUE),

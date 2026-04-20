@@ -1,5 +1,5 @@
 ---
-title: "Tutorial 2 — Model Validation"
+title: "Tutorial 2 - Model Validation"
 subtitle: "Hurricane Wind Hazard Model for the Caribbean"
 author: ""
 date: today
@@ -9,7 +9,7 @@ format:
     toc: true
     toc-depth: 3
     toc-location: left
-    number-sections: true
+    number-sections: false
     code-fold: false
     code-tools: true
     code-copy: true
@@ -37,25 +37,25 @@ knitr::opts_chunk$set(comment = "#>")
 This tutorial assumes you have completed [Tutorial 1](tutorial_1_setup.qmd), which introduces the baseline hazard workflow and the `out` object that we validate here.
 :::
 
-This tutorial mirrors the production validation pipeline in `inst/extcode/02-model-validation.R`.
-We run a stationary baseline simulation, exercise the three-tier validation suite, and inspect the diagnostics that result.
+This tutorial follows the production script `inst/extcode/02-model-validation.R`.
+We run a baseline simulation, put it through three validation checks, and walk through the diagnostics they produce.
 
-## What This Tutorial Covers {#sec-what-this-covers}
+## 1. What This Tutorial Covers {#sec-what-this-covers}
 
 By the end, you will be able to:
 
-- create a baseline model output suitable for validation;
-- configure validation settings with `make_validation_cfg()` and run the full validation workflow with `validate_hazard_model()`;
-- interpret each of the three validation tiers (hindcast return levels, rate sanity, wind-field spot-checks);
-- read the saved plots and tables produced when `save_plots = TRUE` and `save_tables = TRUE`.
+- build a baseline model run ready for validation;
+- set validation options with `make_validation_cfg()` and run all three checks in one call via `validate_hazard_model()`;
+- read each of the three validation tiers and know what they are telling you (return levels, storm rates, wind-field bias);
+- locate the PNG plots and CSV tables the suite writes to disk.
 
-## Overview {#sec-overview}
+## 2. Overview {#sec-overview}
 
-The validation framework has three tiers, run in one suite call:
+Validation runs three checks in a single suite:
 
-1. **Tier 1 — Hindcast.** Hold out the last `HOLDOUT_YEARS` of the historical record, refit on the training period, simulate `N_SIM` synthetic years, and compare simulated vs. observed return levels at the requested return periods. A well-calibrated model places simulated return levels inside the observed confidence interval at most sites.
-2. **Tier 2 — Rate check.** Compare calibrated annual storm-class rates (TS, HUR) against published HURDAT2/IBTrACS climatologies, after adjusting for the methodological mismatch between site-exceedance counting and basin-track counting.
-3. **Tier 3 — Wind field.** Spot-check the Holland wind-profile model against historical station observations for documented storm passages and report site-level bias.
+1. **Tier 1 — Hindcast.** Hide the most recent `HOLDOUT_YEARS` of the record, refit on the older part, simulate `N_SIM` synthetic years, and compare the model's return levels against what the full record says they should be. A well-calibrated model lands inside the observed confidence interval at most sites.
+2. **Tier 2 — Rate check.** Compare the model's annual storm rates (TS, HUR) against published climatology. The check accounts for the fact that the model counts site hits while climatology counts basin-wide tracks.
+3. **Tier 3 — Wind field.** For a handful of historical storms with station records, check whether the modelled wind at each site matches what was actually observed.
 
 ```{r}
 #| label: setup-packages
@@ -64,10 +64,10 @@ library(dplyr)
 library(ggplot2)
 ```
 
-## Configuration {#sec-config}
+## 3. Configuration {#sec-config}
 
-Settings here match the production script `inst/extcode/02-model-validation.R`.
-Lower `N_SIM` to render the tutorial faster while you are exploring; use 2,000 for any defensible result.
+These settings match the production script.
+Lower `N_SIM` while you are exploring; use 2,000 or more for any result you plan to act on.
 
 ```{r}
 #| label: config
@@ -101,10 +101,10 @@ targets <- tibble::tribble(
 )
 ```
 
-## Create a Model Configuration to Validate {#sec-create-output}
+## 4. Create a Model Configuration to Validate {#sec-create-output}
 
-`validate_hazard_model()` runs the hazard model and validation in one call.
-We still build the hazard configuration explicitly so the tutorial makes the model inputs clear.
+`validate_hazard_model()` runs the hazard model and validation together.
+We still spell out the hazard configuration here so the model inputs are visible.
 The packaged 1970+ IBTrACS subset keeps the example self-contained.
 
 ```{r}
@@ -120,10 +120,10 @@ hazard_cfg <- make_hazard_cfg(
 )
 ```
 
-## Validation Configuration {#sec-validation-config}
+## 5. Validation Configuration {#sec-validation-config}
 
-`make_validation_cfg()` packages the validation parameters and the output behaviour into one object.
-Setting `full_output = TRUE` returns the internal hindcast object and the file paths of saved artifacts in addition to the slim summary tibbles.
+`make_validation_cfg()` bundles every validation option — how long the holdout is, which return periods to evaluate, where to write output — into one object.
+Setting `full_output = TRUE` also hands back the internal hindcast object and the file paths of every saved artifact, on top of the compact summary tables.
 
 ```{r}
 #| label: validation-config
@@ -144,19 +144,19 @@ val_cfg
 
 | Parameter | Description |
 |-----------|-------------|
-| `holdout_years` | Number of years withheld from the end of the historical record for the train/test split. |
-| `n_sim` | Number of synthetic years simulated for the hindcast. `NULL` inherits from `out_base`. |
-| `return_periods` | Return periods (yr) at which observed and simulated return levels are compared. |
-| `conf_level` | Confidence level for the observed return-level CI; controls the strictness of the Tier 1 pass test. |
-| `seed` | RNG seed; should match the seed used for the baseline run. |
-| `out_dir` | Destination directory for saved plots and tables. |
-| `save_plots` / `save_tables` | Toggles for writing PNG figures and CSV tables. |
-| `full_output` | When `TRUE`, also returns `hindcast`, `climate_response`, and `artifacts` (file paths). |
+| `holdout_years` | How many recent years to hide from the model and then use to test it. |
+| `n_sim` | How many synthetic years to run for the hindcast. `NULL` reuses the number from `out_base`. |
+| `return_periods` | Return periods (years) where observed and simulated values are compared. |
+| `conf_level` | Width of the observed return-level confidence interval; stricter = harder to pass Tier 1. |
+| `seed` | Random seed; use the same value as the baseline run for a fair comparison. |
+| `out_dir` | Where to write saved plots and tables. |
+| `save_plots` / `save_tables` | On/off switches for writing PNG figures and CSV tables. |
+| `full_output` | When `TRUE`, also returns the richer `hindcast`, `climate_response`, and `artifacts` data. |
 
-## Run the Validation Workflow {#sec-run-validation}
+## 6. Run the Validation Workflow {#sec-run-validation}
 
-A single wrapper call runs the hazard model, then the three-tier validation suite, and returns both outputs.
-The function prints a console summary as it works.
+One call runs the hazard model, then the three validation tiers, and returns both.
+The function prints a short console summary as it goes.
 
 ```{r}
 #| label: run-validation
@@ -177,13 +177,13 @@ val_out$summary
 
 ::: callout-note
 ## What's in `validation_result`
-The wrapper returns `out` (the hazard model output), `val` (the validation results), and `artifacts` (saved PNG/CSV paths when enabled). Within `val`, the main components are `summary`, `comparison` (Tier 1), `rate_check` (Tier 2), `wind_field` (Tier 3), and `plots`. With `full_output = TRUE`, `val` also carries the richer hindcast diagnostics.
+The wrapper returns `out` (the hazard model output), `val` (the validation results), and `artifacts` (file paths if you turned on saving). Inside `val` you will find `summary`, `comparison` (Tier 1), `rate_check` (Tier 2), `wind_field` (Tier 3), and `plots`. With `full_output = TRUE`, `val` also carries more detailed hindcast diagnostics.
 :::
 
-## Tier 1 — Hindcast Return Levels {#sec-tier1}
+## 7. Tier 1 — Hindcast Return Levels {#sec-tier1}
 
-Tier 1 asks whether the model, refit on the training record, reproduces return levels implied by the full observed record.
-The pass test is whether `sim_rl` falls inside the observed `[obs_ci_lo, obs_ci_hi]` interval.
+Tier 1 asks a simple question: if we retrain the model on an earlier slice of the record, does it reproduce the return levels seen in the full record?
+The pass test is whether the simulated return level (`sim_rl`) lands inside the observed confidence interval `[obs_ci_lo, obs_ci_hi]`.
 
 ```{r}
 #| label: tier1-table
@@ -208,11 +208,11 @@ sprintf("Pass rate: %d / %d checks within %d%% CI  (%.1f%%)",
 |--------|-------------|
 | `location` | Target site. |
 | `return_period` | Return period in years. |
-| `obs_full_rl` | Observed return level from the full historical record (kt). |
+| `obs_full_rl` | Observed return level from the full record (kt). |
 | `sim_rl` | Simulated return level from the `N_SIM` ensemble (kt). |
-| `obs_ci_lo` / `obs_ci_hi` | Bounds of the observed return-level CI at `conf_level` (kt). |
-| `obs_in_ci` | `TRUE` if `sim_rl` falls within the observed CI. |
-| `bias_pct` | Percentage bias `100 * (sim_rl - obs_full_rl) / obs_full_rl`; positive = overprediction. |
+| `obs_ci_lo` / `obs_ci_hi` | Lower and upper confidence bounds on the observed value (kt). |
+| `obs_in_ci` | `TRUE` if the simulated value lands inside the observed CI. |
+| `bias_pct` | Percentage bias. Positive means the model is overshooting. |
 
 ```{r}
 #| label: fig-hindcast
@@ -233,20 +233,20 @@ val_out$plots$exceedance_comparison
 ```
 
 ::: callout-note
-## Why the CI is on the observed curve
-CIs are placed on the observed return levels, not the simulated ones. Once the synthetic sample is large, fitting uncertainty on `sim_rl` is small relative to sampling uncertainty in the short observational record.
+## Why the CI is drawn on the observed curve
+The uncertainty band is on the observed return levels, not the simulated ones. With a long synthetic record, the model's return levels are already well-pinned down — the short observational record is the bigger source of uncertainty.
 :::
 
 ::: callout-tip
 ## Read the QQ plot first
-The QQ plot is the fastest way to localize bias by intensity. Upper-tail points above the 1:1 line indicate the model is overshooting the tail; points below indicate underprediction.
+The QQ plot is the fastest way to see where bias lives. Points above the diagonal mean the model overshoots the tail; points below mean it underpredicts.
 :::
 
-## Tier 2 — Rate Sanity Check {#sec-tier2}
+## 8. Tier 2 — Rate Sanity Check {#sec-tier2}
 
-Tier 2 compares the model's annual rates of TS- and HUR-class impacts against published climatology.
-The model counts site exceedances; references count basin-track passages within a radius.
-The check applies an expected-ratio adjustment before flagging.
+Tier 2 compares the model's average yearly count of tropical-storm and hurricane hits against published climatology.
+The model counts times a site is exceeded; climatology counts how often a storm passes through a circle around the site.
+The check adjusts for this counting difference before flagging anything.
 
 ```{r}
 #| label: tier2-table
@@ -267,23 +267,23 @@ if (n_flagged > 0) {
 
 | Column | Description |
 |--------|-------------|
-| `lambda_model_raw` | Raw annual rate estimated by the model before adjustment. |
-| `lambda_ref` | Published reference annual rate for the site/storm class. |
-| `lambda_adj` | Adjusted model rate used for the comparison. |
-| `expected_ratio` | Expected model/reference ratio given counting-method differences. |
-| `adj_ratio` | Adjusted model-to-reference ratio (after `expected_ratio` correction). |
+| `lambda_model_raw` | The model's raw yearly rate before adjustment. |
+| `lambda_ref` | Published reference rate for the site and storm class. |
+| `lambda_adj` | The model rate after the counting-method adjustment. |
+| `expected_ratio` | How the model rate *should* compare to the reference given the method difference. |
+| `adj_ratio` | The adjusted model-to-reference ratio — what actually gets checked. |
 | `flag` | `OK`, `elevated`, `slightly_low`, `HIGH`, or `LOW`. |
 
 ::: callout-note
-## Flag interpretation
-`OK` is within band. `elevated` / `slightly_low` are mild discrepancies worth noting. `HIGH` / `LOW` are stronger mismatches: investigate `search_radius_km`, `historical_start_year`, or possible regional rate departures from basin climatology.
+## What the flags mean
+`OK` is inside the expected band. `elevated` / `slightly_low` are mild mismatches worth noting. `HIGH` / `LOW` are the serious ones — revisit `search_radius_km`, `historical_start_year`, or consider whether the site's rate genuinely differs from basin averages.
 :::
 
-## Tier 3 — Wind-Field Spot-Checks {#sec-tier3}
+## 9. Tier 3 — Wind-Field Spot-Checks {#sec-tier3}
 
-Tier 3 compares modelled site winds for individual historical storms against station observations.
-Observations are graded by quality class with class-specific bias tolerances:
-`A` = direct, ±15 %; `B` = converted, ±25 %; `C` = approximate, ±35 %.
+Tier 3 compares the model's site wind for a handful of historical storms against what real weather stations actually recorded.
+Observations are graded by how reliable they are and each grade gets a different tolerance:
+`A` (direct measurement) = ±15 %, `B` (converted) = ±25 %, `C` (estimated) = ±35 %.
 
 ```{r}
 #| label: tier3-table
@@ -293,14 +293,14 @@ val_out$wind_field |>
 
 | Column | Description |
 |--------|-------------|
-| `storm_name` | Historical storm used for the comparison. |
+| `storm_name` | Historical storm being spot-checked. |
 | `location` | Target site. |
-| `obs_1min_equiv_kt` | Observed wind, converted to a 1-minute sustained equivalent (kt). |
-| `model_V_site_kt` | Modelled peak site wind (kt). |
-| `bias_kt` | Model − observed (kt). |
+| `obs_1min_equiv_kt` | What the station recorded, converted to a 1-minute sustained wind (kt). |
+| `model_V_site_kt` | What the model said the site wind was (kt). |
+| `bias_kt` | Model minus observed (kt). |
 | `bias_pct` | Percentage bias. |
-| `obs_quality` | Observation quality class (`A`, `B`, `C`). |
-| `bias_ok` | `TRUE` if `|bias_pct|` falls within the class tolerance. |
+| `obs_quality` | Observation grade (`A`, `B`, `C`). |
+| `bias_ok` | `TRUE` if `|bias_pct|` is within this grade's tolerance. |
 
 ```{r}
 #| label: fig-wind-field
@@ -316,30 +316,30 @@ val_out$plots$bias_decomposition
 
 ::: callout-note
 ## This tier is the hardest to pass cleanly
-Station observations are point measurements affected by terrain, exposure, and instrumentation. Biases of order ±20 % are expected; persistent same-sign bias across many storms suggests the radius–wind relationship needs regional tuning.
+Station records are point measurements, shaped by local terrain, instrument setup, and exposure. Biases of ±20 % or so are normal. What matters is whether the bias is persistently one-sided across many storms — that suggests the wind-field settings need regional tuning.
 :::
 
-## Interpreting Results and Next Steps {#sec-interpretation}
+## 10. Interpreting Results and Next Steps {#sec-interpretation}
 
-Read the tiers together rather than in isolation:
+Read the three tiers together, not one by one:
 
-- A **Tier 1** miss (sim outside CI) without a Tier 2 or Tier 3 problem usually points to tail-shape issues — check the GEV fit, holdout length, and whether the most intense observed events fall in the holdout.
-- A **Tier 2** flag normally points to a counting/scope mismatch — re-examine `search_radius_km`, `historical_start_year`, and the per-class reference ratios.
-- A **Tier 3** persistent bias points to the wind-profile parameterisation (Holland B, RMW estimate, asymmetry) rather than to the stochastic generator.
+- A **Tier 1** miss on its own, with Tier 2 and Tier 3 clean, usually means the model is getting the tail shape wrong — look at the GEV fit, the holdout length, and whether the biggest observed storms ended up in the holdout.
+- A **Tier 2** flag usually means a counting or scope mismatch — revisit `search_radius_km`, `historical_start_year`, and the reference-rate assumptions.
+- A **Tier 3** persistent bias points to the wind-field model (Holland profile, eye radius, asymmetry) rather than the random season generator.
 
-Use the bias decomposition plot to separate frequency-driven bias (too many or too few impactful events) from intensity-driven bias (events of the right count but wrong magnitude).
+The bias decomposition plot helps separate two very different problems: too many or too few storms (frequency bias) vs. the right number of storms but wrong strength (intensity bias).
 
 ::: callout-tip
-## One-step shortcut
-`validate_hazard_model()` is the recommended public entry point for validation. Use the returned `out` object when you want to inspect the fitted hazard model alongside the validation diagnostics.
+## One-call shortcut
+`validate_hazard_model()` is the recommended entry point. The returned `out` object lets you inspect the fitted model alongside the validation results.
 :::
 
 ::: callout-tip
-## Targeted reruns
-The package also exposes the individual tier functions: `validate_rates()` and `validate_wind_field()`. Use these to iterate on a single tier without re-running the others.
+## Re-run just one tier
+The package also exposes the individual checks: `validate_rates()` and `validate_wind_field()`. Use these when you are iterating on one tier and don't want to wait for the others.
 :::
 
-## Saved Outputs {#sec-saved-outputs}
+## 11. Saved Outputs {#sec-saved-outputs}
 
 With `save_plots = TRUE` and `save_tables = TRUE`, the suite writes a small report bundle to `OUT_DIR`.
 
@@ -360,5 +360,5 @@ val_out$artifacts
 | `wind_field.csv` | Tier 3 wind-field bias table. |
 | `validation_summary.csv` | Compact per-location validation summary across tiers. |
 
-Once you can read the three tiers fluently, the same workflow scales to your own sites and longer model runs.
-A model that fails Tier 1 at more than one site should be recalibrated (revisit `search_radius_km` or `historical_start_year`) before drawing conclusions from any climate-change projection built on top of it.
+Once the three tiers make intuitive sense, the same workflow scales to your own sites and longer model runs.
+A model that misses Tier 1 at more than one site needs recalibration (revisit `search_radius_km` or `historical_start_year`) before you trust any climate-change projection built on top of it.

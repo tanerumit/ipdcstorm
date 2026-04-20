@@ -16,6 +16,25 @@ using common random numbers (CRN). The result is a directly comparable
 set of daily wind traces where any difference between baseline and
 future is attributable to climate forcing alone.
 
+> **Two stress-test variants**
+>
+> This tutorial uses the **filter-based** variant: generate a large
+> random ensemble, then pick years whose site-level peak wind exceeds an
+> IRMA-like threshold. It is the simplest entry point and runs quickly.
+>
+> The package also ships an **anchored-pool** variant (recommended for
+> production) as the example script
+> `inst/extcode/05-stress-test-experiment.R`. It forces every baseline
+> year to contain a major historical hurricane drawn from a fixed pool
+> (Irma, Maria, Hugo, Luis, Lenny, Georges), adds stochastic per-year
+> jitter to timing/intensity/radius via the `pin_jitter` argument of
+> [`generate_daily_hazard_impact_spatial()`](https://tanerumit.github.io/ipdcstorm/reference/generate_daily_hazard_impact_spatial.md),
+> applies HAZUS-style state-dependent damage amplification, and uses
+> `compute_compound_stress_year_metrics()` with a 90-day compound
+> window. See the script for the full workflow — the helpers live in
+> `R/stress_test_helpers.R` and are accessed via
+> `ipdcstorm:::.<name>()`.
+
 ## 1 What This Tutorial Covers
 
 By the end, you will be able to:
@@ -115,7 +134,7 @@ Each year is summarised on basin-wide metrics: peak site-level wind,
 hurricane- and storm-day counts, and integrated damage across all sites.
 
 ``` r
-daily_base <- bind_rows(daily_base_list)
+daily_base <- bind_rows(daily_base_list, .id = "location")
 
 annual_all <- daily_base |>
   group_by(sim_year, location) |>
@@ -201,7 +220,7 @@ focal_sids <- setNames(vector("list", length(selected_ids)),
 
 for (yr in selected_ids) {
   yr_hur <- bind_rows(lapply(baseline_stress, function(df) {
-    df[df$sim_year == yr & !is.na(df$event_class) & df$event_class == "HUR", ]
+    df[df$sim_year == yr & !is.na(df$event_id) & df$wind_kt >= 64, ]
   }))
   if (nrow(yr_hur) == 0L) {
     focal_sids[[as.character(yr)]] <- NA_character_
@@ -311,13 +330,11 @@ month_doy_starts <- month_doy_all[season_months]
 month_labels     <- month.abb[season_months]
 
 base_df <- baseline_stress[[focal_location]] |>
-  mutate(scenario = "Baseline",
-         doy      = as.integer(format(date, "%j")))
+  mutate(scenario = "Baseline")
 
 knmi_df <- bind_rows(lapply(knmi_scenarios, function(scen) {
   cc_stress[[scen]][[focal_location]] |>
-    mutate(scenario = scen,
-           doy      = as.integer(format(date, "%j")))
+    mutate(scenario = scen)
 }))
 
 trace_labels <- setNames(

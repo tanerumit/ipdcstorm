@@ -66,8 +66,8 @@ event starts, optionally faceted by event class.</p>
 
 <dl><dt id="arg-daily">daily<a class="anchor" aria-label="anchor" href="#arg-daily"></a></dt>
 <dd><p>A data frame or tibble with at least <code>date</code> (<code>Date</code>),
-<code>event_id</code>, <code>event_class</code>, plus fields required by <code><a href="prep_events.html">prep_events()</a></code> when
-<code>metric = "starts"</code> (<code>location</code>, <code>sim_year</code>, <code>wind_kt</code>).</p></dd>
+<code>event_id</code>, plus fields required by <code><a href="prep_events.html">prep_events()</a></code> when
+<code>metric = "starts"</code> (<code>sim_year</code>, <code>wind_kt</code>, and optional <code>location</code>).</p></dd>
 
 
 <dt id="arg-metric">metric<a class="anchor" aria-label="anchor" href="#arg-metric"></a></dt>
@@ -91,8 +91,8 @@ event starts, optionally faceted by event class.</p>
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>For <code>metric = "event_days"</code>, each day with non-<code>NA</code> <code>event_id</code>
 contributes one count. For <code>metric = "starts"</code>, counts are based on event
-start dates derived from grouped events. Event classes are collapsed to
-<code>TS</code>/<code>HUR</code> using the same rule as <code><a href="prep_events.html">prep_events()</a></code>.</p>
+start dates derived from grouped events. Event classes are derived from the
+event peak wind using the same rule as <code><a href="prep_events.html">prep_events()</a></code>.</p>
     </div>
 
     <div class="section level2">
@@ -106,7 +106,7 @@ start dates derived from grouped events. Event classes are collapsed to
 <span class="r-in"><span>  sim_year <span class="op">=</span> <span class="fl">2001</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="fu">plot_seasonality_doy</span><span class="op">(</span><span class="va">d</span>, metric <span class="op">=</span> <span class="st">"event_days"</span><span class="op">)</span></span></span>
-<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Removed 4 rows containing missing values or values outside the scale range</span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Removed 2 rows containing missing values or values outside the scale range</span>
 <span class="r-wrn co"><span class="r-pr">#&gt;</span> (`geom_bar()`).</span>
 <span class="r-plt img"><img src="plot_seasonality_doy-1.png" alt="" width="700" height="433"></span>
 </code></pre></div>
